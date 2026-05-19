@@ -3,22 +3,22 @@ package op_test
 import (
 	"testing"
 
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 	"github.com/stretchr/testify/assert"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
 )
 
 func TestAuthorizeCodeChallenge(t *testing.T) {
 	tests := []struct {
-		name         string
-		codeVerifier string
-		codeChallenge    *oidc.CodeChallenge
-		want         func(t *testing.T, err error)
+		name          string
+		codeVerifier  string
+		codeChallenge *oidc.CodeChallenge
+		want          func(t *testing.T, err error)
 	}{
 		{
-			name:         "missing both code_verifier and code_challenge",
-			codeVerifier: "",
-			codeChallenge:    nil,
+			name:          "missing both code_verifier and code_challenge",
+			codeVerifier:  "",
+			codeChallenge: nil,
 			want: func(t *testing.T, err error) {
 				assert.Nil(t, err)
 			},
@@ -46,9 +46,9 @@ func TestAuthorizeCodeChallenge(t *testing.T) {
 			},
 		},
 		{
-			name:         "code_verifier provided without code_challenge",
-			codeVerifier: "code_verifier",
-			codeChallenge:    nil,
+			name:          "code_verifier provided without code_challenge",
+			codeVerifier:  "code_verifier",
+			codeChallenge: nil,
 			want: func(t *testing.T, err error) {
 				assert.ErrorContains(t, err, "code_verifier unexpectedly provided")
 			},

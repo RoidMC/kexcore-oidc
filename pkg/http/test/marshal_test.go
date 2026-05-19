@@ -1,4 +1,4 @@
-package http
+package http_test
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/http"
 )
 
 func TestConcatenateJSON(t *testing.T) {
@@ -80,7 +81,7 @@ func TestConcatenateJSON(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ConcatenateJSON(tt.args.first, tt.args.second)
+			got, err := http.ConcatenateJSON(tt.args.first, tt.args.second)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ConcatenateJSON() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -147,7 +148,7 @@ func TestMarshalJSONWithStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			MarshalJSONWithStatus(w, tt.args.i, tt.args.status)
+			http.MarshalJSONWithStatus(w, tt.args.i, tt.args.status)
 			assert.Equal(t, tt.res.statusCode, w.Result().StatusCode)
 			assert.Equal(t, "application/json", w.Header().Get("content-type"))
 			assert.Equal(t, tt.res.body, w.Body.String())

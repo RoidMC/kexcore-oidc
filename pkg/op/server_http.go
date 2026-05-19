@@ -7,10 +7,10 @@ import (
 	"net/url"
 
 	"github.com/go-chi/chi/v5"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 	"github.com/rs/cors"
 	"github.com/zitadel/logging"
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
 	"github.com/zitadel/schema"
 )
 

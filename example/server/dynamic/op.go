@@ -10,8 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/text/language"
 
-	"github.com/zitadel/oidc/v3/example/server/storage"
-	"github.com/zitadel/oidc/v3/pkg/op"
+	"github.com/roidmc/kexcore-oidc/v1/example/server/storage"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
 
 const (

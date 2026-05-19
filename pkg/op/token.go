@@ -5,8 +5,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/zitadel/oidc/v3/pkg/crypto"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 type TokenCreator interface {

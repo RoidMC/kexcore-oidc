@@ -9,13 +9,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-jose/go-jose/v4"
+	"github.com/roidmc/kexcore-oidc/v1/internal/otel"
 	"github.com/rs/cors"
-	"github.com/zitadel/oidc/v3/internal/otel"
 	"github.com/zitadel/schema"
 	"golang.org/x/text/language"
 
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 const (

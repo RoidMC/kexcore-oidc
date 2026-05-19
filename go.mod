@@ -1,9 +1,10 @@
-module github.com/zitadel/oidc/v3
+module github.com/roidmc/kexcore-oidc/v1
 
 go 1.25.0
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/emmansun/gmsm v0.43.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/golang/mock v1.6.0

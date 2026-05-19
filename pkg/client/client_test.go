@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
 
 func TestDiscover(t *testing.T) {

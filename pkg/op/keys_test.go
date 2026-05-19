@@ -11,9 +11,9 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
-	"github.com/zitadel/oidc/v3/pkg/op/mock"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op/mock"
 )
 
 func TestKeys(t *testing.T) {

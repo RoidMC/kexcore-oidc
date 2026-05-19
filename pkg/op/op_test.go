@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/muhlemmer/gu"
+	"github.com/roidmc/kexcore-oidc/v1/example/server/storage"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/oidc/v3/example/server/storage"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
 	"golang.org/x/text/language"
 )
 

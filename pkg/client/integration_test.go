@@ -28,14 +28,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
-	"github.com/zitadel/oidc/v3/example/server/exampleop"
-	"github.com/zitadel/oidc/v3/example/server/storage"
-	"github.com/zitadel/oidc/v3/pkg/client/rp"
-	"github.com/zitadel/oidc/v3/pkg/client/rs"
-	"github.com/zitadel/oidc/v3/pkg/client/tokenexchange"
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
+	"github.com/roidmc/kexcore-oidc/v1/example/server/exampleop"
+	"github.com/roidmc/kexcore-oidc/v1/example/server/storage"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client/rp"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client/rs"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client/tokenexchange"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
 
 var Logger = slog.New(

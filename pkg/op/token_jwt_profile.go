@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 type JWTAuthorizationGrantExchanger interface {

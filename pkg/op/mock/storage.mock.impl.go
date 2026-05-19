@@ -8,8 +8,8 @@ import (
 
 	"github.com/golang/mock/gomock"
 
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
 
 func NewStorage(t *testing.T) op.Storage {

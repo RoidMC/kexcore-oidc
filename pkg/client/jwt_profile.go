@@ -6,8 +6,8 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 // JWTProfileExchange handles the oauth2 jwt profile exchange

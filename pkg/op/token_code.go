@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 // CodeExchange handles the OAuth 2.0 authorization_code grant, including

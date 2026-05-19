@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"os"
 
-	tu "github.com/zitadel/oidc/v3/internal/testutil"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	tu "github.com/roidmc/kexcore-oidc/v1/internal/testutil"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 var custom = map[string]any{

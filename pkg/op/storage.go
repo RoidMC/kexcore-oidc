@@ -1,3 +1,9 @@
+// Copyright © 2022 Ory Corp
+// Copyright © 2026 KEXCORE Team
+// SPDX-License-Identifier: Apache-2.0
+//
+// Modified by KEXCORE Team for SM2/SM3/SM4 support.
+
 package op
 
 import (
@@ -8,7 +14,7 @@ import (
 	jose "github.com/go-jose/go-jose/v4"
 	"golang.org/x/text/language"
 
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 type AuthStorage interface {

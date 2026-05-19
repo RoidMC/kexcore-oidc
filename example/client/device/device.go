@@ -45,9 +45,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/zitadel/oidc/v3/pkg/client/rp"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client/rp"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 var (

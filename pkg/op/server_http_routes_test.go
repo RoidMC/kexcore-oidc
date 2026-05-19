@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zitadel/oidc/v3/example/server/storage"
-	"github.com/zitadel/oidc/v3/pkg/client"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
+	"github.com/roidmc/kexcore-oidc/v1/example/server/storage"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
 
 func jwtProfile() (string, error) {
