@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright Zitadel 
+// Copyright Zitadel
 // Modifications Copyright 2026 RoidMC Studios
 
 package http
@@ -34,6 +34,29 @@ type Encoder interface {
 type FormAuthorization func(url.Values)
 type RequestAuthorization func(*http.Request)
 
+
+// AuthorizeBasic returns a RequestAuthorization that sets HTTP Basic
+// authentication on the request using the provided user and password.
+//
+// Per RFC 6749 §2.3.1, OAuth 2.0 clients SHOULD encode client_id and
+// client_secret via application/x-www-form-urlencoded before applying
+// Basic auth:
+//
+//	base64(formUrlEncode(client_id) + ":" + formUrlEncode(client_secret))
+//
+// This is correct per spec, and some authorization servers (e.g. Keycloak)
+// strictly URL-decode credentials on receipt. However, many other servers
+// (Auth0, Okta, Google, GitHub) accept raw credentials directly, and
+// double-encoding secrets containing '@' or ':' causes authentication
+// failures with those providers.
+//
+// We pass raw values to SetBasicAuth for broader real-world compatibility.
+// Downstream callers that need strict RFC compliance should use their own
+// RequestAuthorization.
+//
+// To restore RFC-compliant behaviour, replace the body with:
+//
+//	req.SetBasicAuth(url.QueryEscape(user), url.QueryEscape(password))
 func AuthorizeBasic(user, password string) RequestAuthorization {
 	return func(req *http.Request) {
 		req.SetBasicAuth(user, password)
@@ -61,7 +84,8 @@ func FormRequest(ctx context.Context, endpoint string, request any, encoder Enco
 }
 
 // This part of the design references KexCore's Webhook Engine security design
-//  Ref: https://github.com/RoidMC/KexCore/blob/main/core/internal/event/dispatcher.go
+//
+//	Ref: https://github.com/RoidMC/KexCore/blob/main/core/internal/event/dispatcher.go
 const defaultMaxRespBodySize = 1 << 20 // 1 MB
 
 func HttpRequest(client *http.Client, req *http.Request, response any) error {
