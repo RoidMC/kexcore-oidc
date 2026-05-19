@@ -1,12 +1,18 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel 
+// Modifications Copyright 2026 RoidMC Studios
+
 package http_test
 
 import (
 	"bytes"
+	stdhttp "net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConcatenateJSON(t *testing.T) {
@@ -93,6 +99,18 @@ func TestConcatenateJSON(t *testing.T) {
 	}
 }
 
+func TestConcatenateJSON_DoesNotModifyInput(t *testing.T) {
+	first := []byte(`{"some": "thing"}`)
+	second := []byte(`{"another": "thing"}`)
+	firstCopy := make([]byte, len(first))
+	copy(firstCopy, first)
+
+	_, err := http.ConcatenateJSON(first, second)
+	assert.NoError(t, err)
+	// Verify that the original slice was not modified
+	assert.Equal(t, firstCopy, first, "ConcatenateJSON should not modify the input slice")
+}
+
 func TestMarshalJSONWithStatus(t *testing.T) {
 	type args struct {
 		i      any
@@ -142,6 +160,31 @@ func TestMarshalJSONWithStatus(t *testing.T) {
 				200,
 				`{"test":"ok"}
 `,
+			},
+		},
+		{
+			"custom status code",
+			args{
+				struct {
+					Error string `json:"error"`
+				}{"not found"},
+				stdhttp.StatusNotFound,
+			},
+			res{
+				stdhttp.StatusNotFound,
+				`{"error":"not found"}
+`,
+			},
+		},
+		{
+			"nil pointer",
+			args{
+				(*struct{ Foo string })(nil),
+				stdhttp.StatusOK,
+			},
+			res{
+				stdhttp.StatusOK,
+				"",
 			},
 		},
 	}
