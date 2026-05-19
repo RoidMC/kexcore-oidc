@@ -34,7 +34,6 @@ type Encoder interface {
 type FormAuthorization func(url.Values)
 type RequestAuthorization func(*http.Request)
 
-
 // AuthorizeBasic returns a RequestAuthorization that sets HTTP Basic
 // authentication on the request using the provided user and password.
 //

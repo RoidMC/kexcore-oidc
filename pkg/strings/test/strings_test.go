@@ -1,6 +1,15 @@
-package strings
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel 
+// Modifications Copyright 2026 RoidMC Studios
 
-import "testing"
+package strings_test
+
+import (
+	"testing"
+
+	"github.com/roidmc/kexcore-oidc/v1/pkg/strings"
+)
 
 func TestContains(t *testing.T) {
 	type args struct {
@@ -40,7 +49,7 @@ func TestContains(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := Contains(tt.args.list, tt.args.needle); got != tt.want {
+			if got := strings.Contains(tt.args.list, tt.args.needle); got != tt.want {
 				t.Errorf("Contains() = %v, want %v", got, tt.want)
 			}
 		})
