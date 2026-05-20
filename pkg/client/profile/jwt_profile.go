@@ -1,7 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel 
+// Modifications Copyright 2026 RoidMC Studios
+
 package profile
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -21,12 +27,13 @@ type TokenSource interface {
 // it will request a token using the OAuth2 JWT Profile Grant
 // therefore sending an `assertion` by signing a JWT with the provided private key
 type jwtProfileTokenSource struct {
-	clientID      string
-	audience      []string
-	signer        jose.Signer
-	scopes        []string
-	httpClient    *http.Client
-	tokenEndpoint string
+	clientID          string
+	audience          []string
+	signer            jose.Signer
+	scopes            []string
+	httpClient        *http.Client
+	tokenEndpoint     string
+	assertionDuration time.Duration
 }
 
 // NewJWTProfileTokenSourceFromKeyFile returns an implementation of TokenSource
@@ -67,16 +74,26 @@ func NewJWTProfileTokenSourceFromKeyFileData(ctx context.Context, issuer string,
 //
 // The passed context is only used for the call to the Discover endpoint.
 func NewJWTProfileTokenSource(ctx context.Context, issuer, clientID, keyID string, key []byte, scopes []string, options ...func(source *jwtProfileTokenSource)) (TokenSource, error) {
+	if issuer == "" {
+		return nil, fmt.Errorf("oidc: issuer must not be empty")
+	}
+	if clientID == "" {
+		return nil, fmt.Errorf("oidc: clientID must not be empty")
+	}
+	if len(key) == 0 {
+		return nil, fmt.Errorf("oidc: key must not be empty")
+	}
 	signer, err := client.NewSignerFromPrivateKeyByte(key, keyID)
 	if err != nil {
 		return nil, err
 	}
 	source := &jwtProfileTokenSource{
-		clientID:   clientID,
-		audience:   []string{issuer},
-		signer:     signer,
-		scopes:     scopes,
-		httpClient: http.DefaultClient,
+		clientID:          clientID,
+		audience:          []string{issuer},
+		signer:            signer,
+		scopes:            scopes,
+		httpClient:        &http.Client{Timeout: 30 * time.Second},
+		assertionDuration: time.Hour,
 	}
 	for _, opt := range options {
 		opt(source)
@@ -97,8 +114,17 @@ func WithHTTPClient(client *http.Client) func(source *jwtProfileTokenSource) {
 	}
 }
 
+// WithAssertionDuration sets the duration for the JWT assertion expiration.
+// If not set, defaults to 1 hour.
+func WithAssertionDuration(d time.Duration) func(source *jwtProfileTokenSource) {
+	return func(source *jwtProfileTokenSource) {
+		source.assertionDuration = d
+	}
+}
+
 func WithStaticTokenEndpoint(issuer, tokenEndpoint string) func(source *jwtProfileTokenSource) {
 	return func(source *jwtProfileTokenSource) {
+		source.audience = []string{issuer}
 		source.tokenEndpoint = tokenEndpoint
 	}
 }
@@ -116,7 +142,7 @@ func (j *jwtProfileTokenSource) Token() (*oauth2.Token, error) {
 }
 
 func (j *jwtProfileTokenSource) TokenCtx(ctx context.Context) (*oauth2.Token, error) {
-	assertion, err := client.SignedJWTProfileAssertion(j.clientID, j.audience, time.Hour, j.signer)
+	assertion, err := client.SignedJWTProfileAssertion(j.clientID, j.audience, j.assertionDuration, j.signer)
 	if err != nil {
 		return nil, err
 	}
