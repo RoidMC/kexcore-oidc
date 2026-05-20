@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright 2026 RoidMC Studi
+// Copyright 2026 RoidMC Studios
 
 package crypto
 
