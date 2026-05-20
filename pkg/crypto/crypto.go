@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package crypto
 
 import (
@@ -32,7 +37,7 @@ func EncryptBytesAES(plainText []byte, key string) ([]byte, error) {
 		return nil, err
 	}
 
-	stream := cipher.NewCFBEncrypter(block, iv)
+	stream := cipher.NewCTR(block, iv)
 	stream.XORKeyStream(cipherText[aes.BlockSize:], plainText)
 
 	return cipherText, nil
@@ -62,8 +67,37 @@ func DecryptBytesAES(cipherText []byte, key string) ([]byte, error) {
 	iv := cipherText[:aes.BlockSize]
 	cipherText = cipherText[aes.BlockSize:]
 
-	stream := cipher.NewCFBDecrypter(block, iv)
+	stream := cipher.NewCTR(block, iv)
 	stream.XORKeyStream(cipherText, cipherText)
 
 	return cipherText, err
+}
+
+func EncryptSM4(data string, key string) (string, error) {
+	encrypted, err := EncryptBytesSM4([]byte(data), key)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(encrypted), nil
+}
+
+func EncryptBytesSM4(plainText []byte, key string) ([]byte, error) {
+	return SM4EncryptGCM([]byte(key), plainText, nil)
+}
+
+func DecryptSM4(data string, key string) (string, error) {
+	text, err := base64.RawURLEncoding.DecodeString(data)
+	if err != nil {
+		return "", err
+	}
+	decrypted, err := DecryptBytesSM4(text, key)
+	if err != nil {
+		return "", err
+	}
+	return string(decrypted), nil
+}
+
+func DecryptBytesSM4(cipherText []byte, key string) ([]byte, error) {
+	return SM4DecryptGCM([]byte(key), cipherText, nil)
 }

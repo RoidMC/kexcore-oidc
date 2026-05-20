@@ -36,6 +36,22 @@ func (c *aesCrypto) Decrypt(s string) (string, error) {
 	return crypto.DecryptAES(s, c.key)
 }
 
+type sm4Crypto struct {
+	key string
+}
+
+func NewSM4Crypto(key [16]byte) Crypto {
+	return &sm4Crypto{key: string(key[:])}
+}
+
+func (c *sm4Crypto) Encrypt(s string) (string, error) {
+	return crypto.EncryptSM4(s, c.key)
+}
+
+func (c *sm4Crypto) Decrypt(s string) (string, error) {
+	return crypto.DecryptSM4(s, c.key)
+}
+
 type aes256GCMCrypto struct {
 	key   []byte
 	keyId string
