@@ -1,17 +1,81 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package crypto_test
 
 import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509/pkix"
+	"encoding/asn1"
+	"encoding/pem"
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/assert"
 
+	gmsm "github.com/emmansun/gmsm/sm2"
+
 	zcrypto "github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 )
+
+var oidSM2 = asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 301}
+
+type pkcs8Key struct {
+	Version    int
+	Algo       pkix.AlgorithmIdentifier
+	PrivateKey []byte
+}
+
+type ecPrivateKey struct {
+	Version       int
+	PrivateKey    []byte
+	NamedCurveOID asn1.ObjectIdentifier `asn1:"optional,explicit,tag:0"`
+	PublicKey     asn1.BitString        `asn1:"optional,explicit,tag:1"`
+}
+
+func sm2PrivateKeyToPEM(sm2Key *gmsm.PrivateKey) ([]byte, error) {
+	ecdhKey, err := sm2Key.ECDH()
+	if err != nil {
+		return nil, err
+	}
+	privBytes := ecdhKey.Bytes()
+
+	pubKey := sm2Key.PublicKey
+	pubBytes := make([]byte, 1+2*32)
+	pubBytes[0] = 4
+	pubKey.X.FillBytes(pubBytes[1 : 1+32])
+	pubKey.Y.FillBytes(pubBytes[1+32 : 1+2*32])
+
+	inner, err := asn1.Marshal(ecPrivateKey{
+		Version:       1,
+		PrivateKey:    privBytes,
+		NamedCurveOID: oidSM2,
+		PublicKey:     asn1.BitString{Bytes: pubBytes, BitLength: 8 * len(pubBytes)},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	outer, err := asn1.Marshal(pkcs8Key{
+		Version: 0,
+		Algo: pkix.AlgorithmIdentifier{
+			Algorithm:  oidSM2,
+			Parameters: asn1.NullRawValue,
+		},
+		PrivateKey: inner,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: outer}), nil
+}
 
 func TestBytesToPrivateKey(t *testing.T) {
 	type args struct {
@@ -121,6 +185,21 @@ MC4CAQAwBQYDK2VwBCIEIHu6ZtDsjjauMasBxnS9Fg87UJwKfcT/oiq6S0ktbky8
 				err:       nil,
 			},
 		},
+		{
+			name: "PKCS#8 SM2",
+			args: args{
+				key: func() []byte {
+					sm2Key, _ := gmsm.GenerateKey(rand.Reader)
+					pem, _ := sm2PrivateKeyToPEM(sm2Key)
+					return pem
+				}(),
+			},
+			want: want{
+				key:       &gmsm.PrivateKey{},
+				algorithm: zcrypto.SM2,
+				err:       nil,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -131,4 +210,12 @@ MC4CAQAwBQYDK2VwBCIEIHu6ZtDsjjauMasBxnS9Fg87UJwKfcT/oiq6S0ktbky8
 		})
 
 	}
+}
+
+func TestBytesToPrivateKey_ErrUnsupportedFormat(t *testing.T) {
+	pemBlock := []byte(`-----BEGIN RSA PRIVATE KEY-----
+AQIDBAUGBwg=
+-----END RSA PRIVATE KEY-----`)
+	_, _, err := zcrypto.BytesToPrivateKey(pemBlock)
+	assert.ErrorIs(t, err, zcrypto.ErrUnsupportedFormat)
 }

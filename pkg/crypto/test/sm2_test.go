@@ -6,6 +6,7 @@ package crypto_test
 
 import (
 	"bytes"
+	"crypto/rand"
 	"testing"
 
 	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
@@ -217,5 +218,54 @@ func TestSM2TamperedSignature(t *testing.T) {
 	valid := crypto.SM2Verify(&privateKey.PublicKey, data, signature)
 	if valid {
 		t.Error("tampered signature should not be valid")
+	}
+}
+
+func TestSM2KeyExchange(t *testing.T) {
+	initiatorPriv, _ := crypto.SM2GenerateKey()
+	responderPriv, _ := crypto.SM2GenerateKey()
+
+	uidA := []byte("initiator@example.com")
+	uidB := []byte("responder@example.com")
+	keyLen := 16
+
+	initiatorKE, err := crypto.SM2KeyExchange(initiatorPriv, &responderPriv.PublicKey, uidA, uidB, keyLen, true)
+	if err != nil {
+		t.Fatalf("SM2KeyExchange initiator failed: %v", err)
+	}
+	defer initiatorKE.Destroy()
+
+	responderKE, err := crypto.SM2KeyExchange(responderPriv, &initiatorPriv.PublicKey, uidB, uidA, keyLen, true)
+	if err != nil {
+		t.Fatalf("SM2KeyExchange responder failed: %v", err)
+	}
+	defer responderKE.Destroy()
+
+	rA, err := initiatorKE.InitKeyExchange(rand.Reader)
+	if err != nil {
+		t.Fatalf("InitKeyExchange failed: %v", err)
+	}
+
+	rB, sB, err := responderKE.RepondKeyExchange(rand.Reader, rA)
+	if err != nil {
+		t.Fatalf("RepondKeyExchange failed: %v", err)
+	}
+
+	keyA, s2, err := initiatorKE.ConfirmResponder(rB, sB)
+	if err != nil {
+		t.Fatalf("ConfirmResponder failed: %v", err)
+	}
+
+	keyB, err := responderKE.ConfirmInitiator(s2)
+	if err != nil {
+		t.Fatalf("responder ConfirmInitiator failed: %v", err)
+	}
+
+	if !bytes.Equal(keyA, keyB) {
+		t.Errorf("key exchange mismatch: initiator key %x != responder key %x", keyA, keyB)
+	}
+
+	if len(keyA) != keyLen {
+		t.Errorf("expected key length %d, got %d", keyLen, len(keyA))
 	}
 }
