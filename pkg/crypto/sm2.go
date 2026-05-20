@@ -1,4 +1,6 @@
-// Copyright (c) 2026 KexCore
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2026 RoidMC Studios
 
 package crypto
 

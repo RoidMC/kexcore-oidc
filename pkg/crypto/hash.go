@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel 
+// Modifications Copyright 2026 RoidMC Studios
+
 package crypto
 
 import (
@@ -8,7 +13,12 @@ import (
 	"fmt"
 	"hash"
 
+	"github.com/emmansun/gmsm/sm3"
 	jose "github.com/go-jose/go-jose/v4"
+)
+
+const (
+	SM2 jose.SignatureAlgorithm = "SM2"
 )
 
 var ErrUnsupportedAlgorithm = errors.New("unsupported signing algorithm")
@@ -28,6 +38,9 @@ func GetHashAlgorithm(sigAlgorithm jose.SignatureAlgorithm) (hash.Hash, error) {
 	// It is unlikely ed448 will ever be supported: https://github.com/golang/go/issues/29390
 	case jose.EdDSA:
 		return sha512.New(), nil
+
+	case SM2:
+		return sm3.New(), nil
 
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedAlgorithm, sigAlgorithm)
