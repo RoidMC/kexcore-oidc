@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package rp
 
 import (
@@ -16,10 +21,9 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 
-	"github.com/zitadel/logging"
-
 	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
@@ -189,7 +193,7 @@ func (rp *relyingParty) UnauthorizedHandler() func(http.ResponseWriter, *http.Re
 }
 
 func (rp *relyingParty) Logger(ctx context.Context) (logger *slog.Logger, ok bool) {
-	logger, ok = logging.FromContext(ctx)
+	logger, ok = logctx.FromContext(ctx)
 	if ok {
 		return logger, ok
 	}

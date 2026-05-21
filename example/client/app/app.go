@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package main
 
 import (
@@ -15,10 +20,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
-	"github.com/zitadel/logging"
-
 	"github.com/roidmc/kexcore-oidc/v1/pkg/client/rp"
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
@@ -58,8 +62,8 @@ func main() {
 		Timeout: time.Minute,
 	}
 	// enable outgoing request logging
-	logging.EnableHTTPClient(client,
-		logging.WithClientGroup("client"),
+	logctx.EnableHTTPClient(client,
+		logctx.WithClientGroup("client"),
 	)
 
 	options := []rp.Option{
@@ -85,7 +89,7 @@ func main() {
 
 	// One can add a logger to the context,
 	// pre-defining log attributes as required.
-	ctx := logging.ToContext(context.TODO(), logger)
+	ctx := logctx.ToContext(context.TODO(), logger)
 	provider, err := rp.NewRelyingPartyOIDC(ctx, issuer, clientID, clientSecret, redirectURI, scopes, options...)
 	if err != nil {
 		logrus.Fatalf("error creating provider %s", err.Error())
@@ -181,10 +185,10 @@ func main() {
 	// simple counter for request IDs
 	var counter atomic.Int64
 	// enable incoming request logging
-	mw := logging.Middleware(
-		logging.WithLogger(logger),
-		logging.WithGroup("server"),
-		logging.WithIDFunc(func() slog.Attr {
+	mw := logctx.Middleware(
+		logctx.WithLogger(logger),
+		logctx.WithGroup("server"),
+		logctx.WithIDFunc(func() slog.Attr {
 			return slog.Int64("id", counter.Add(1))
 		}),
 	)

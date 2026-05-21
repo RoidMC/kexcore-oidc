@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -8,9 +13,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 	"github.com/rs/cors"
-	"github.com/zitadel/logging"
 	"github.com/zitadel/schema"
 )
 
@@ -101,7 +106,7 @@ func (s *webServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *webServer) getLogger(ctx context.Context) *slog.Logger {
-	if logger, ok := logging.FromContext(ctx); ok {
+	if logger, ok := logctx.FromContext(ctx); ok {
 		return logger
 	}
 	return s.logger

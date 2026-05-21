@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package client
 
 import (
@@ -12,11 +17,11 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/roidmc/kexcore-oidc/v1/internal/otel"
-	"github.com/zitadel/logging"
 	"golang.org/x/oauth2"
 
 	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
@@ -48,7 +53,7 @@ func Discover(ctx context.Context, issuer string, httpClient *http.Client, wellK
 	if err != nil {
 		return nil, errors.Join(oidc.ErrDiscoveryFailed, err)
 	}
-	if logger, ok := logging.FromContext(ctx); ok {
+	if logger, ok := logctx.FromContext(ctx); ok {
 		logger.Debug("discover", "config", discoveryConfig)
 	}
 

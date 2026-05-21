@@ -1,10 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package rp
 
 import (
 	"context"
 	"log/slog"
 
-	"github.com/zitadel/logging"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
 )
 
 func logCtxWithRPData(ctx context.Context, rp RelyingParty, attrs ...any) context.Context {
@@ -13,5 +18,5 @@ func logCtxWithRPData(ctx context.Context, rp RelyingParty, attrs ...any) contex
 		return ctx
 	}
 	logger = logger.With(slog.Group("rp", attrs...))
-	return logging.ToContext(ctx, logger)
+	return logctx.ToContext(ctx, logger)
 }
