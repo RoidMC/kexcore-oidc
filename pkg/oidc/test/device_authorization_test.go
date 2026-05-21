@@ -1,9 +1,15 @@
-package oidc
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
+package oidc_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 func TestDeviceAuthorizationResponse_UnmarshalJSON(t *testing.T) {
@@ -15,7 +21,7 @@ func TestDeviceAuthorizationResponse_UnmarshalJSON(t *testing.T) {
 		"interval": 5
 	}`
 
-	expected := &DeviceAuthorizationResponse{
+	expected := &oidc.DeviceAuthorizationResponse{
 		DeviceCode:      "deviceCode",
 		UserCode:        "userCode",
 		VerificationURI: "http://example.com/verify",
@@ -23,7 +29,7 @@ func TestDeviceAuthorizationResponse_UnmarshalJSON(t *testing.T) {
 		Interval:        5,
 	}
 
-	var resp DeviceAuthorizationResponse
+	var resp oidc.DeviceAuthorizationResponse
 	err := resp.UnmarshalJSON([]byte(jsonStr))
 	assert.NoError(t, err)
 	assert.Equal(t, expected, &resp)
