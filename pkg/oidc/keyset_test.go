@@ -308,7 +308,7 @@ func TestFindKey(t *testing.T) {
 			// For matching results, verify the raw key type
 			if tt.args.expectedAlg == "RS256" && len(tt.args.keys) > 0 {
 				if got == nil {
-					t.Errorf("FindKey() returned nil key for expected match")
+					t.Errorf("FindMatchingKey() returned nil key for expected match")
 					return
 				}
 			}

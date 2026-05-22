@@ -8,7 +8,6 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
@@ -57,24 +56,3 @@ func jsonWebKeySet(keys []Key) jwk.Set {
 	}
 	return webKeys
 }
-
-// Deprecated: keyTypeFromAlg is no longer needed with jwx v4,
-// which infers kty automatically via jwk.Import.
-// Kept for reference only.
-func keyTypeFromAlg(alg string) string {
-	switch {
-	case len(alg) >= 2 && (alg[:2] == "RS" || alg[:2] == "PS"):
-		return "RSA"
-	case len(alg) >= 2 && alg[:2] == "ES":
-		return "EC"
-	case alg == "EdDSA":
-		return "OKP"
-	case alg == "SM2":
-		return "EC"
-	default:
-		return ""
-	}
-}
-
-// Ensure jwa import is used
-var _ = jwa.RSA()

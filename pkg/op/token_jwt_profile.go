@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -91,13 +96,6 @@ func CreateJWTTokenResponse(ctx context.Context, tokenRequest TokenRequest, crea
 		ExpiresIn:   uint64(validity.Seconds()),
 		Scope:       tokenRequest.GetScopes(),
 	}, nil
-}
-
-// ParseJWTProfileRequest has been renamed to ParseJWTProfileGrantRequest
-//
-// deprecated: use ParseJWTProfileGrantRequest
-func ParseJWTProfileRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.JWTProfileGrantRequest, error) {
-	return ParseJWTProfileGrantRequest(r, decoder)
 }
 
 type jwtProfileClient struct {
