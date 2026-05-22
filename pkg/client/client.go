@@ -15,11 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/roidmc/kexcore-oidc/v1/internal/otel"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	"golang.org/x/oauth2"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
@@ -221,19 +220,15 @@ func CallTokenExchangeEndpoint(ctx context.Context, request any, authFn any, cal
 	return tokenRes, nil
 }
 
-func NewSignerFromPrivateKeyByte(key []byte, keyID string) (jose.Signer, error) {
+func NewSignerFromPrivateKeyByte(key []byte, keyID string) (*crypto.Signer, error) {
 	privateKey, algorithm, err := crypto.BytesToPrivateKey(key)
 	if err != nil {
 		return nil, err
 	}
-	signingKey := jose.SigningKey{
-		Algorithm: algorithm,
-		Key:       &jose.JSONWebKey{Key: privateKey, KeyID: keyID},
-	}
-	return jose.NewSigner(signingKey, &jose.SignerOptions{})
+	return crypto.NewSigner(algorithm, privateKey, keyID)
 }
 
-func SignedJWTProfileAssertion(clientID string, audience []string, expiration time.Duration, signer jose.Signer) (string, error) {
+func SignedJWTProfileAssertion(clientID string, audience []string, expiration time.Duration, signer *crypto.Signer) (string, error) {
 	iat := time.Now()
 	exp := iat.Add(expiration)
 	return crypto.Sign(&oidc.JWTTokenRequest{

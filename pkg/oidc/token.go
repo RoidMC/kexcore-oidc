@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package oidc
 
 import (
@@ -5,7 +10,6 @@ import (
 	"os"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
 	"golang.org/x/oauth2"
 
 	"github.com/muhlemmer/gu"
@@ -51,7 +55,7 @@ type TokenClaims struct {
 	Actor                               *ActorClaims                    `json:"act,omitempty"`
 
 	// Additional information set by this framework
-	SignatureAlg jose.SignatureAlgorithm `json:"-"`
+	SignatureAlg string `json:"-"`
 }
 
 func (c *TokenClaims) GetIssuer() string {
@@ -86,7 +90,7 @@ func (c *TokenClaims) GetAuthorizedParty() string {
 	return c.AuthorizedParty
 }
 
-func (c *TokenClaims) GetSignatureAlgorithm() jose.SignatureAlgorithm {
+func (c *TokenClaims) GetSignatureAlgorithm() string {
 	return c.SignatureAlg
 }
 
@@ -94,7 +98,7 @@ func (c *TokenClaims) GetAuthenticationContextClassReference() string {
 	return c.AuthenticationContextClassReference
 }
 
-func (c *TokenClaims) SetSignatureAlgorithm(algorithm jose.SignatureAlgorithm) {
+func (c *TokenClaims) SetSignatureAlgorithm(algorithm string) {
 	c.SignatureAlg = algorithm
 }
 
@@ -328,7 +332,7 @@ func NewJWTProfileAssertion(userID, keyID string, audience []string, key []byte,
 	return j
 }
 
-func ClaimHash(claim string, sigAlgorithm jose.SignatureAlgorithm) (string, error) {
+func ClaimHash(claim string, sigAlgorithm string) (string, error) {
 	hash, err := crypto.GetHashAlgorithm(sigAlgorithm)
 	if err != nil {
 		return "", err
@@ -351,11 +355,7 @@ func GenerateJWTProfileToken(assertion *JWTProfileAssertionClaims) (string, erro
 	if err != nil {
 		return "", err
 	}
-	key := jose.SigningKey{
-		Algorithm: algorithm,
-		Key:       &jose.JSONWebKey{Key: privateKey, KeyID: assertion.PrivateKeyID},
-	}
-	signer, err := jose.NewSigner(key, &jose.SignerOptions{})
+	signer, err := crypto.NewSigner(algorithm, privateKey, assertion.PrivateKeyID)
 	if err != nil {
 		return "", err
 	}
@@ -364,11 +364,7 @@ func GenerateJWTProfileToken(assertion *JWTProfileAssertionClaims) (string, erro
 	if err != nil {
 		return "", err
 	}
-	signedAssertion, err := signer.Sign(marshalledAssertion)
-	if err != nil {
-		return "", err
-	}
-	return signedAssertion.CompactSerialize()
+	return signer.Sign(marshalledAssertion)
 }
 
 type TokenExchangeResponse struct {

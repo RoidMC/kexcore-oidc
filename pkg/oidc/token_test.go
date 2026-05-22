@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package oidc
 
 import (
@@ -5,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/text/language"
 )
@@ -25,7 +29,7 @@ var (
 		AuthenticationContextClassReference: "something",
 		AuthenticationMethodsReferences:     []string{"some", "methods"},
 		ClientID:                            "777",
-		SignatureAlg:                        jose.ES256,
+		SignatureAlg:                        "ES256",
 	}
 	accessTokenData = &AccessTokenClaims{
 		TokenClaims: tokenClaimsData,
@@ -135,8 +139,8 @@ func TestTokenClaims(t *testing.T) {
 	assert.Equal(t, claims.SignatureAlg, tokenClaimsData.GetSignatureAlgorithm())
 	assert.Equal(t, claims.AuthenticationContextClassReference, tokenClaimsData.GetAuthenticationContextClassReference())
 
-	claims.SetSignatureAlgorithm(jose.ES384)
-	assert.Equal(t, jose.ES384, claims.SignatureAlg)
+	claims.SetSignatureAlgorithm("ES384")
+	assert.Equal(t, "ES384", claims.SignatureAlg)
 }
 
 func TestNewAccessTokenClaims(t *testing.T) {

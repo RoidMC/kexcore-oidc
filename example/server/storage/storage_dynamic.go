@@ -1,11 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package storage
 
 import (
 	"context"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
-
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
@@ -158,7 +162,7 @@ func (s *multiStorage) SigningKey(ctx context.Context) (op.SigningKey, error) {
 
 // SignatureAlgorithms implements the op.Storage interface
 // it will be called to get the sign
-func (s *multiStorage) SignatureAlgorithms(ctx context.Context) ([]jose.SignatureAlgorithm, error) {
+func (s *multiStorage) SignatureAlgorithms(ctx context.Context) ([]string, error) {
 	storage, err := s.storageFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -249,7 +253,7 @@ func (s *multiStorage) GetPrivateClaimsFromScopes(ctx context.Context, userID, c
 
 // GetKeyByIDAndClientID implements the op.Storage interface
 // it will be called to validate the signatures of a JWT (JWT Profile Grant and Authentication)
-func (s *multiStorage) GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (*jose.JSONWebKey, error) {
+func (s *multiStorage) GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (jwk.Key, error) {
 	storage, err := s.storageFromContext(ctx)
 	if err != nil {
 		return nil, err

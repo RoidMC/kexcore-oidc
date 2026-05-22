@@ -7,7 +7,6 @@ package mock
 import (
 	reflect "reflect"
 
-	jose "github.com/go-jose/go-jose/v4"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -63,10 +62,10 @@ func (mr *MockSigningKeyMockRecorder) Key() *gomock.Call {
 }
 
 // SignatureAlgorithm mocks base method.
-func (m *MockSigningKey) SignatureAlgorithm() jose.SignatureAlgorithm {
+func (m *MockSigningKey) SignatureAlgorithm() string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SignatureAlgorithm")
-	ret0, _ := ret[0].(jose.SignatureAlgorithm)
+	ret0, _ := ret[0].(string)
 	return ret0
 }
 
@@ -100,10 +99,10 @@ func (m *MockKey) EXPECT() *MockKeyMockRecorder {
 }
 
 // Algorithm mocks base method.
-func (m *MockKey) Algorithm() jose.SignatureAlgorithm {
+func (m *MockKey) Algorithm() string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Algorithm")
-	ret0, _ := ret[0].(jose.SignatureAlgorithm)
+	ret0, _ := ret[0].(string)
 	return ret0
 }
 

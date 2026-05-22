@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright Zitadel 
+// Copyright Zitadel
 // Modifications Copyright 2026 RoidMC Studios
 
 package profile
@@ -11,10 +11,10 @@ import (
 	"net/http"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
 	"golang.org/x/oauth2"
 
 	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
+	kcrypto "github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
@@ -29,7 +29,7 @@ type TokenSource interface {
 type jwtProfileTokenSource struct {
 	clientID          string
 	audience          []string
-	signer            jose.Signer
+	signer            *kcrypto.Signer
 	scopes            []string
 	httpClient        *http.Client
 	tokenEndpoint     string

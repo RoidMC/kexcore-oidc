@@ -1,8 +1,8 @@
-// Copyright © 2022 Ory Corp
-// Copyright © 2026 KEXCORE Team
 // SPDX-License-Identifier: Apache-2.0
 //
-// Modified by KEXCORE Team for SM2/SM3/SM4 support.
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+// SM2/SM3/SM4 support.
 
 package op
 
@@ -11,9 +11,9 @@ import (
 	"errors"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
 	"golang.org/x/text/language"
 
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
@@ -71,7 +71,7 @@ type AuthStorage interface {
 	GetRefreshTokenInfo(ctx context.Context, clientID string, token string) (userID string, tokenID string, err error)
 
 	SigningKey(context.Context) (SigningKey, error)
-	SignatureAlgorithms(context.Context) ([]jose.SignatureAlgorithm, error)
+	SignatureAlgorithms(context.Context) ([]string, error)
 	KeySet(context.Context) ([]Key, error)
 }
 
@@ -140,7 +140,7 @@ type OPStorage interface {
 	SetUserinfoFromToken(ctx context.Context, userinfo *oidc.UserInfo, tokenID, subject, origin string) error
 	SetIntrospectionFromToken(ctx context.Context, userinfo *oidc.IntrospectionResponse, tokenID, subject, clientID string) error
 	GetPrivateClaimsFromScopes(ctx context.Context, userID, clientID string, scopes []string) (map[string]any, error)
-	GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (*jose.JSONWebKey, error)
+	GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (jwk.Key, error)
 	ValidateJWTProfileScopes(ctx context.Context, userID string, scopes []string) ([]string, error)
 }
 

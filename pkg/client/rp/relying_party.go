@@ -16,12 +16,12 @@ import (
 	"slices"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 
 	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
@@ -65,7 +65,7 @@ type RelyingParty interface {
 	IsOAuth2Only() bool
 
 	// Signer is used if the relaying party uses the JWT Profile
-	Signer() jose.Signer
+	Signer() *crypto.Signer
 
 	// GetEndSessionEndpoint returns the endpoint to sign out on a IDP
 	GetEndSessionEndpoint() string
@@ -123,7 +123,7 @@ type relyingParty struct {
 	unauthorizedHandler func(http.ResponseWriter, *http.Request, string, string)
 	idTokenVerifier     *IDTokenVerifier
 	verifierOpts        []VerifierOption
-	signer              jose.Signer
+	signer              *crypto.Signer
 	logger              *slog.Logger
 }
 
@@ -151,7 +151,7 @@ func (rp *relyingParty) IsOAuth2Only() bool {
 	return rp.oauth2Only
 }
 
-func (rp *relyingParty) Signer() jose.Signer {
+func (rp *relyingParty) Signer() *crypto.Signer {
 	return rp.signer
 }
 
@@ -412,12 +412,12 @@ func WithSigningAlgsFromDiscovery() Option {
 	}
 }
 
-type SignerFromKey func() (jose.Signer, error)
+type SignerFromKey func() (*crypto.Signer, error)
 
 // Deprecated: use [SignerFromKeyAndKeyID] instead.
 // The function will be removed in the next major release.
 func SignerFromKeyPath(path string) SignerFromKey {
-	return func() (jose.Signer, error) {
+	return func() (*crypto.Signer, error) {
 		config, err := client.ConfigFromKeyFile(path)
 		if err != nil {
 			return nil, err
@@ -429,7 +429,7 @@ func SignerFromKeyPath(path string) SignerFromKey {
 // Deprecated: use [SignerFromKeyAndKeyID] instead.
 // The function will be removed in the next major release.
 func SignerFromKeyFile(fileData []byte) SignerFromKey {
-	return func() (jose.Signer, error) {
+	return func() (*crypto.Signer, error) {
 		config, err := client.ConfigFromKeyFileData(fileData)
 		if err != nil {
 			return nil, err
@@ -439,7 +439,7 @@ func SignerFromKeyFile(fileData []byte) SignerFromKey {
 }
 
 func SignerFromKeyAndKeyID(key []byte, keyID string) SignerFromKey {
-	return func() (jose.Signer, error) {
+	return func() (*crypto.Signer, error) {
 		return client.NewSignerFromPrivateKeyByte(key, keyID)
 	}
 }

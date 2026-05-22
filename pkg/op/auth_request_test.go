@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op_test
 
 import (
@@ -9,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -1192,7 +1198,7 @@ func TestAuthResponseCode(t *testing.T) {
 			assert.Equal(t, tt.res.wantCacheControlHeader, resp.Header.Get("Cache-Control"))
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			assert.Equal(t, tt.res.wantBody, string(body))
+			assert.Equal(t, tt.res.wantBody, strings.ReplaceAll(string(body), "\r\n", "\n"))
 		})
 	}
 }

@@ -7,7 +7,6 @@ package crypto_test
 import (
 	"testing"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -16,24 +15,27 @@ import (
 
 func TestGetHashAlgorithm_KnownAlgorithms(t *testing.T) {
 	tests := []struct {
-		alg      jose.SignatureAlgorithm
+		alg      string
 		wantSize int
 	}{
-		{jose.RS256, 32},
-		{jose.ES256, 32},
-		{jose.PS256, 32},
-		{jose.RS384, 48},
-		{jose.ES384, 48},
-		{jose.PS384, 48},
-		{jose.RS512, 64},
-		{jose.ES512, 64},
-		{jose.PS512, 64},
-		{jose.EdDSA, 64},
+		{"RS256", 32},
+		{"ES256", 32},
+		{"PS256", 32},
+		{"HS256", 32},
+		{"RS384", 48},
+		{"ES384", 48},
+		{"PS384", 48},
+		{"HS384", 48},
+		{"RS512", 64},
+		{"ES512", 64},
+		{"PS512", 64},
+		{"HS512", 64},
+		{"EdDSA", 64},
 		{crypto.SM2, 32}, // SM2-SM3 mode: SM3 produces 32-byte digest
 	}
 
 	for _, tt := range tests {
-		t.Run(string(tt.alg), func(t *testing.T) {
+		t.Run(tt.alg, func(t *testing.T) {
 			h, err := crypto.GetHashAlgorithm(tt.alg)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantSize, h.Size(), "unexpected hash size for %s", tt.alg)
@@ -42,7 +44,7 @@ func TestGetHashAlgorithm_KnownAlgorithms(t *testing.T) {
 }
 
 func TestGetHashAlgorithm_Unsupported(t *testing.T) {
-	_, err := crypto.GetHashAlgorithm(jose.HS256)
+	_, err := crypto.GetHashAlgorithm("UnsupportedAlg")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, crypto.ErrUnsupportedAlgorithm)
 }
@@ -70,8 +72,8 @@ func TestSM2SM3Binding(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 32, h.Size(), "SM2 must bind to SM3 which produces 256-bit (32-byte) digest")
 
-	// Ensure SM2 signature algorithm is distinct from standard Jose algorithms.
-	assert.Equal(t, jose.SignatureAlgorithm("SM2"), crypto.SM2)
+	// Ensure SM2 is our defined constant.
+	assert.Equal(t, "SM2", crypto.SM2)
 }
 
 func TestHashString_NilHash(t *testing.T) {

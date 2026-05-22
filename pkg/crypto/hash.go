@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright Zitadel 
-// Modifications Copyright 2026 RoidMC Studios
+// Copyright 2026 RoidMC Studios
 
 package crypto
 
@@ -14,29 +13,29 @@ import (
 	"hash"
 
 	"github.com/emmansun/gmsm/sm3"
-	jose "github.com/go-jose/go-jose/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 )
 
 const (
-	SM2 jose.SignatureAlgorithm = "SM2"
+	SM2 = "SM2"
 )
 
 var ErrUnsupportedAlgorithm = errors.New("unsupported signing algorithm")
 
-func GetHashAlgorithm(sigAlgorithm jose.SignatureAlgorithm) (hash.Hash, error) {
+func GetHashAlgorithm(sigAlgorithm string) (hash.Hash, error) {
 	switch sigAlgorithm {
-	case jose.RS256, jose.ES256, jose.PS256:
+	case jwa.RS256().String(), jwa.ES256().String(), jwa.PS256().String(), jwa.HS256().String():
 		return sha256.New(), nil
-	case jose.RS384, jose.ES384, jose.PS384:
+	case jwa.RS384().String(), jwa.ES384().String(), jwa.PS384().String(), jwa.HS384().String():
 		return sha512.New384(), nil
-	case jose.RS512, jose.ES512, jose.PS512:
+	case jwa.RS512().String(), jwa.ES512().String(), jwa.PS512().String(), jwa.HS512().String():
 		return sha512.New(), nil
 
 	// There is no published spec for this yet, but we have confirmation it will get published.
 	// There is consensus here: https://bitbucket.org/openid/connect/issues/1125/_hash-algorithm-for-eddsa-id-tokens
-	// Currently Go and go-jose only supports the ed25519 curve key for EdDSA, so we can safely assume sha512 here.
+	// Currently Go only supports the ed25519 curve key for EdDSA, so we can safely assume sha512 here.
 	// It is unlikely ed448 will ever be supported: https://github.com/golang/go/issues/29390
-	case jose.EdDSA:
+	case jwa.EdDSA().String():
 		return sha512.New(), nil
 
 	case SM2:

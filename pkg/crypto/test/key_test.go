@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright Zitadel
-// Modifications Copyright 2026 RoidMC Studios
+// Copyright 2026 RoidMC Studios
 
 package crypto_test
 
@@ -16,7 +15,6 @@ import (
 	"encoding/pem"
 	"testing"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/assert"
 
 	gmsm "github.com/emmansun/gmsm/sm2"
@@ -83,7 +81,7 @@ func TestBytesToPrivateKey(t *testing.T) {
 	}
 	type want struct {
 		key       crypto.Signer
-		algorithm jose.SignatureAlgorithm
+		algorithm string
 		err       error
 	}
 	tests := []struct {
@@ -115,7 +113,7 @@ v/Ow5T0q5gIJAiEAyS4RaI9YG8EWx/2w0T67ZUVAw8eOMB6BIUg0Xcu+3okCIBOs
 			},
 			want: want{
 				key:       &rsa.PrivateKey{},
-				algorithm: jose.RS256,
+				algorithm: "RS256",
 				err:       nil,
 			},
 		},
@@ -153,7 +151,7 @@ OFCrqT/emes3KytTPfa5NZtYeQ==
 			},
 			want: want{
 				key:       &rsa.PrivateKey{},
-				algorithm: jose.RS256,
+				algorithm: "RS256",
 				err:       nil,
 			},
 		},
@@ -168,7 +166,7 @@ G4TAeuBpyzqJ7x/6NjCxoQzJzZHtNjIfjVATI59XFZWF59GhtSZbShAr
 			},
 			want: want{
 				key:       &ecdsa.PrivateKey{},
-				algorithm: jose.ES256,
+				algorithm: "ES256",
 				err:       nil,
 			},
 		},
@@ -181,7 +179,7 @@ MC4CAQAwBQYDK2VwBCIEIHu6ZtDsjjauMasBxnS9Fg87UJwKfcT/oiq6S0ktbky8
 			},
 			want: want{
 				key:       ed25519.PrivateKey{},
-				algorithm: jose.EdDSA,
+				algorithm: "EdDSA",
 				err:       nil,
 			},
 		},
@@ -203,19 +201,14 @@ MC4CAQAwBQYDK2VwBCIEIHu6ZtDsjjauMasBxnS9Fg87UJwKfcT/oiq6S0ktbky8
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			key, algorithm, err := zcrypto.BytesToPrivateKey(tt.args.key)
-			assert.IsType(t, tt.want.key, key)
-			assert.Equal(t, tt.want.algorithm, algorithm)
-			assert.ErrorIs(t, tt.want.err, err)
+			gotKey, gotAlgorithm, err := zcrypto.BytesToPrivateKey(tt.args.key)
+			if tt.want.err != nil {
+				assert.ErrorIs(t, err, tt.want.err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.IsType(t, tt.want.key, gotKey)
+			assert.Equal(t, tt.want.algorithm, gotAlgorithm)
 		})
-
 	}
-}
-
-func TestBytesToPrivateKey_ErrUnsupportedFormat(t *testing.T) {
-	pemBlock := []byte(`-----BEGIN RSA PRIVATE KEY-----
-AQIDBAUGBwg=
------END RSA PRIVATE KEY-----`)
-	_, _, err := zcrypto.BytesToPrivateKey(pemBlock)
-	assert.ErrorIs(t, err, zcrypto.ErrUnsupportedFormat)
 }

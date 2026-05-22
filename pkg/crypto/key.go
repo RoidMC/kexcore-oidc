@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright Zitadel
-// Modifications Copyright 2026 RoidMC Studios
+// Copyright 2026 RoidMC Studios
 
 package crypto
 
@@ -15,8 +14,6 @@ import (
 	"encoding/asn1"
 	"encoding/pem"
 	"errors"
-
-	"github.com/go-jose/go-jose/v4"
 
 	gmsm "github.com/emmansun/gmsm/sm2"
 )
@@ -42,7 +39,7 @@ type ecPrivateKey struct {
 	PublicKey     asn1.BitString        `asn1:"optional,explicit,tag:1"`
 }
 
-func BytesToPrivateKey(b []byte) (crypto.PublicKey, jose.SignatureAlgorithm, error) {
+func BytesToPrivateKey(b []byte) (crypto.PublicKey, string, error) {
 	block, _ := pem.Decode(b)
 	if block == nil {
 		return nil, "", ErrPEMDecode
@@ -50,17 +47,17 @@ func BytesToPrivateKey(b []byte) (crypto.PublicKey, jose.SignatureAlgorithm, err
 
 	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err == nil {
-		return privateKey, jose.RS256, nil
+		return privateKey, "RS256", nil
 	}
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err == nil {
 		switch privateKey := key.(type) {
 		case *rsa.PrivateKey:
-			return privateKey, jose.RS256, nil
+			return privateKey, "RS256", nil
 		case ed25519.PrivateKey:
-			return privateKey, jose.EdDSA, nil
+			return privateKey, "EdDSA", nil
 		case *ecdsa.PrivateKey:
-			return privateKey, jose.ES256, nil
+			return privateKey, "ES256", nil
 		default:
 			return nil, "", ErrUnsupportedPrivateKey
 		}

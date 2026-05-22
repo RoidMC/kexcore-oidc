@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package oidc
 
 import (
@@ -11,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
+	"github.com/lestrrat-go/jwx/v4/jws"
 )
 
 type Claims interface {
@@ -28,12 +33,12 @@ type Claims interface {
 }
 
 type ClaimsSignature interface {
-	SetSignatureAlgorithm(algorithm jose.SignatureAlgorithm)
+	SetSignatureAlgorithm(algorithm string)
 }
 
 type IDClaims interface {
 	Claims
-	GetSignatureAlgorithm() jose.SignatureAlgorithm
+	GetSignatureAlgorithm() string
 	GetAccessTokenHash() string
 }
 
@@ -174,26 +179,25 @@ func CheckAZPVerifier(claims Claims, azp AZPVerifier) error {
 }
 
 func CheckSignature(ctx context.Context, token string, payload []byte, claims ClaimsSignature, supportedSigAlgs []string, set KeySet) error {
-	jws, err := jose.ParseSigned(token, toJoseSignatureAlgorithms(supportedSigAlgs))
+	jwsMsg, err := jws.Parse([]byte(token))
 	if err != nil {
-		var unexpectedSigAlgErr *jose.ErrUnexpectedSignatureAlgorithm
-		if errors.As(err, &unexpectedSigAlgErr) ||
-			errors.Is(err, jose.ErrUnsupportedAlgorithm) {
-			// TODO(v4): we should wrap errors instead of returning static ones.
-			// This is a workaround so we keep returning the same error for now.
-			return ErrSignatureUnsupportedAlg
-		}
 		return ErrParse
 	}
-	if len(jws.Signatures) == 0 {
+	if len(jwsMsg.Signatures()) == 0 {
 		return ErrSignatureMissing
 	}
-	if len(jws.Signatures) > 1 {
+	if len(jwsMsg.Signatures()) > 1 {
 		return ErrSignatureMultiple
 	}
-	sig := jws.Signatures[0]
+	sig := jwsMsg.Signatures()[0]
+	sigAlg, _ := sig.ProtectedHeaders().Algorithm()
+	alg := sigAlg.String()
 
-	signedPayload, err := set.VerifySignature(ctx, jws)
+	if !isSupportedSigAlg(alg, supportedSigAlgs) {
+		return ErrSignatureUnsupportedAlg
+	}
+
+	signedPayload, err := set.VerifySignature(ctx, []byte(token))
 	if err != nil {
 		return fmt.Errorf("%w (%w)", ErrSignatureInvalid, err)
 	}
@@ -202,21 +206,21 @@ func CheckSignature(ctx context.Context, token string, payload []byte, claims Cl
 		return ErrSignatureInvalidPayload
 	}
 
-	claims.SetSignatureAlgorithm(jose.SignatureAlgorithm(sig.Header.Algorithm))
+	claims.SetSignatureAlgorithm(alg)
 
 	return nil
 }
 
-// TODO(v4): Use the new jose.SignatureAlgorithm type directly, instead of string.
-func toJoseSignatureAlgorithms(algorithms []string) []jose.SignatureAlgorithm {
-	out := make([]jose.SignatureAlgorithm, len(algorithms))
-	for i := range algorithms {
-		out[i] = jose.SignatureAlgorithm(algorithms[i])
+func isSupportedSigAlg(alg string, supportedSigAlgs []string) bool {
+	if len(supportedSigAlgs) == 0 {
+		return true
 	}
-	if len(out) == 0 {
-		out = append(out, jose.RS256, jose.ES256, jose.PS256)
+	for _, a := range supportedSigAlgs {
+		if a == alg {
+			return true
+		}
 	}
-	return out
+	return false
 }
 
 func CheckExpiration(claims Claims, offset time.Duration) error {

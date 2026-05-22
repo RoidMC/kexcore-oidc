@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
@@ -35,7 +35,7 @@ func NewTokenExchangerClientCredentials(ctx context.Context, issuer, clientID, c
 	return newOAuthTokenExchange(ctx, issuer, authorizer, options...)
 }
 
-func NewTokenExchangerJWTProfile(ctx context.Context, issuer, clientID string, signer jose.Signer, options ...func(source *OAuthTokenExchange)) (TokenExchanger, error) {
+func NewTokenExchangerJWTProfile(ctx context.Context, issuer, clientID string, signer *crypto.Signer, options ...func(source *OAuthTokenExchange)) (TokenExchanger, error) {
 	authorizer := func() (any, error) {
 		assertion, err := client.SignedJWTProfileAssertion(clientID, []string{issuer}, time.Hour, signer)
 		if err != nil {

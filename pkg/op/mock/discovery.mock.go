@@ -8,7 +8,6 @@ import (
 	context "context"
 	reflect "reflect"
 
-	jose "github.com/go-jose/go-jose/v4"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -36,10 +35,10 @@ func (m *MockDiscoverStorage) EXPECT() *MockDiscoverStorageMockRecorder {
 }
 
 // SignatureAlgorithms mocks base method.
-func (m *MockDiscoverStorage) SignatureAlgorithms(arg0 context.Context) ([]jose.SignatureAlgorithm, error) {
+func (m *MockDiscoverStorage) SignatureAlgorithms(arg0 context.Context) ([]string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SignatureAlgorithms", arg0)
-	ret0, _ := ret[0].([]jose.SignatureAlgorithm)
+	ret0, _ := ret[0].([]string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

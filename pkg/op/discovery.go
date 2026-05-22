@@ -1,17 +1,20 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
 	"context"
 	"net/http"
 
-	jose "github.com/go-jose/go-jose/v4"
-
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 type DiscoverStorage interface {
-	SignatureAlgorithms(context.Context) ([]jose.SignatureAlgorithm, error)
+	SignatureAlgorithms(context.Context) ([]string, error)
 }
 
 var DefaultSupportedScopes = []string{
@@ -151,11 +154,7 @@ func SigAlgorithms(ctx context.Context, storage DiscoverStorage) []string {
 	if err != nil {
 		return nil
 	}
-	algs := make([]string, len(algorithms))
-	for i, algorithm := range algorithms {
-		algs[i] = string(algorithm)
-	}
-	return algs
+	return algorithms
 }
 
 func RequestObjectSigAlgorithms(c Configuration) []string {

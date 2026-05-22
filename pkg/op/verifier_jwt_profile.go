@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -5,7 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
@@ -98,11 +103,12 @@ func VerifyJWTAssertion(ctx context.Context, assertion string, v *JWTProfileVeri
 	return request, nil
 }
 
+// JWTProfileKeyStorage interface for fetching keys by ID and client ID
 type JWTProfileKeyStorage interface {
-	GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (*jose.JSONWebKey, error)
+	GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (jwk.Key, error)
 }
 
-// SubjectIsIssuer
+// SubjectIsIssuer checks that subject equals issuer
 func SubjectIsIssuer(request *oidc.JWTTokenRequest) error {
 	if request.Issuer != request.Subject {
 		return oidc.ErrSubjectInvalid
@@ -116,14 +122,31 @@ type jwtProfileKeySet struct {
 }
 
 // VerifySignature implements oidc.KeySet by getting the public key from Storage implementation
-func (k *jwtProfileKeySet) VerifySignature(ctx context.Context, jws *jose.JSONWebSignature) (payload []byte, err error) {
+func (k *jwtProfileKeySet) VerifySignature(ctx context.Context, rawToken []byte) (payload []byte, err error) {
 	ctx, span := Tracer.Start(ctx, "VerifySignature")
 	defer span.End()
 
-	keyID, _ := oidc.GetKeyIDAndAlg(jws)
+	jwsMsg, err := jws.Parse(rawToken)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing token: %w", err)
+	}
+
+	keyID, _ := oidc.GetKeyIDAndAlg(jwsMsg)
 	key, err := k.storage.GetKeyByIDAndClientID(ctx, keyID, k.clientID)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching keys: %w", err)
 	}
-	return jws.Verify(key)
+
+	// Verify using jwx
+	sig := jwsMsg.Signatures()[0]
+	sigAlg, ok := sig.ProtectedHeaders().Algorithm()
+	if !ok {
+		return nil, fmt.Errorf("error fetching keys: missing algorithm in token header")
+	}
+	payload, err = jws.Verify(rawToken, jws.WithKey(sigAlg, key))
+	if err != nil {
+		return nil, err
+	}
+
+	return payload, nil
 }

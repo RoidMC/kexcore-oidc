@@ -1,10 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2026 RoidMC Studios
+
 package op
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/go-jose/go-jose/v4"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwe"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 )
 
@@ -65,43 +71,39 @@ func NewAES256GCMCrypto(key [32]byte, keyId string) Crypto {
 }
 
 func (c *aes256GCMCrypto) Encrypt(s string) (string, error) {
-	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{
-		Algorithm: jose.A256GCMKW,
-		Key:       c.key,
-		KeyID:     c.keyId,
-	}, nil)
+	jwkKey, err := jwk.Import[jwk.SymmetricKey](c.key)
 	if err != nil {
-		return "", fmt.Errorf("failed to create encrypter: %v", err)
+		return "", fmt.Errorf("failed to import key: %w", err)
+	}
+	_ = jwkKey.Set(jwk.KeyIDKey, c.keyId)
+
+	encrypted, err := jwe.Encrypt(
+		[]byte(s),
+		jwe.WithKey(jwa.A256GCMKW(), jwkKey),
+		jwe.WithContentEncryption(jwa.A256GCM()),
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to encrypt: %w", err)
 	}
 
-	encrypted, err := encrypter.Encrypt([]byte(s))
-	if err != nil {
-		return "", fmt.Errorf("failed to encrypt: %v", err)
-	}
-
-	serialized, err := encrypted.CompactSerialize()
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize encrypted value: %v", err)
-	}
-
+	serialized := string(encrypted)
 	return serialized, nil
 }
 
 func (c *aes256GCMCrypto) Decrypt(s string) (string, error) {
-	jwe, err := jose.ParseEncrypted(s, []jose.KeyAlgorithm{jose.A256GCMKW}, []jose.ContentEncryption{jose.A256GCM})
+	decrypted, err := jwe.Decrypt(
+		[]byte(s),
+		jwe.WithKey(jwa.A256GCMKW(), c.key),
+	)
 	if err != nil {
-		return "", fmt.Errorf("failed to create jwe: %v", err)
-	}
-	decrypted, err := jwe.Decrypt(c.key)
-	if err != nil {
-		return "", fmt.Errorf("failed to decrypt value: %v", err)
+		return "", fmt.Errorf("failed to decrypt: %w", err)
 	}
 	return string(decrypted), nil
 }
 
 type CompositeCrypto struct {
 	encrypter Encrypter
-	// decrypters is a list so that older encrypted values can stil be decrypted.
+	// decrypters is a list so that older encrypted values can still be decrypted.
 	decrypters []Decrypter
 }
 

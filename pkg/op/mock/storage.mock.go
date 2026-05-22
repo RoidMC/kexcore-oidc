@@ -9,8 +9,8 @@ import (
 	reflect "reflect"
 	time "time"
 
-	jose "github.com/go-jose/go-jose/v4"
 	gomock "github.com/golang/mock/gomock"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	oidc "github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 	op "github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
@@ -160,10 +160,10 @@ func (mr *MockStorageMockRecorder) GetClientByClientID(arg0, arg1 interface{}) *
 }
 
 // GetKeyByIDAndClientID mocks base method.
-func (m *MockStorage) GetKeyByIDAndClientID(arg0 context.Context, arg1, arg2 string) (*jose.JSONWebKey, error) {
+func (m *MockStorage) GetKeyByIDAndClientID(arg0 context.Context, arg1, arg2 string) (jwk.Key, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetKeyByIDAndClientID", arg0, arg1, arg2)
-	ret0, _ := ret[0].(*jose.JSONWebKey)
+	ret0, _ := ret[0].(jwk.Key)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -305,10 +305,10 @@ func (mr *MockStorageMockRecorder) SetUserinfoFromToken(arg0, arg1, arg2, arg3, 
 }
 
 // SignatureAlgorithms mocks base method.
-func (m *MockStorage) SignatureAlgorithms(arg0 context.Context) ([]jose.SignatureAlgorithm, error) {
+func (m *MockStorage) SignatureAlgorithms(arg0 context.Context) ([]string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SignatureAlgorithms", arg0)
-	ret0, _ := ret[0].([]jose.SignatureAlgorithm)
+	ret0, _ := ret[0].([]string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

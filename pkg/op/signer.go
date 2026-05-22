@@ -1,36 +1,37 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2026 RoidMC Studios
+
 package op
 
 import (
 	"errors"
 
-	jose "github.com/go-jose/go-jose/v4"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 )
 
 var ErrSignerCreationFailed = errors.New("signer creation failed")
 
+// SigningKey represents a key used for signing JWT tokens
 type SigningKey interface {
-	SignatureAlgorithm() jose.SignatureAlgorithm
+	SignatureAlgorithm() string
 	Key() any
 	ID() string
 }
 
-func SignerFromKey(key SigningKey) (jose.Signer, error) {
-	signer, err := jose.NewSigner(jose.SigningKey{
-		Algorithm: key.SignatureAlgorithm(),
-		Key: &jose.JSONWebKey{
-			Key:   key.Key(),
-			KeyID: key.ID(),
-		},
-	}, (&jose.SignerOptions{}).WithType("JWT"))
+// SignerFromKey creates a crypto.Signer from the signing key
+func SignerFromKey(key SigningKey) (*crypto.Signer, error) {
+	signer, err := crypto.NewSigner(key.SignatureAlgorithm(), key.Key(), key.ID())
 	if err != nil {
-		return nil, ErrSignerCreationFailed // TODO: log / wrap error?
+		return nil, ErrSignerCreationFailed
 	}
 	return signer, nil
 }
 
+// Key represents a key that is published in the JWKS endpoint
 type Key interface {
 	ID() string
-	Algorithm() jose.SignatureAlgorithm
+	Algorithm() string
 	Use() string
 	Key() any
 }

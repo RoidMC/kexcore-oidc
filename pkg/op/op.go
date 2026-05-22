@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -8,7 +13,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-jose/go-jose/v4"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/roidmc/kexcore-oidc/v1/internal/otel"
 	"github.com/rs/cors"
 	"github.com/zitadel/schema"
@@ -169,6 +175,7 @@ type Config struct {
 	SupportedUILocales                []language.Tag
 	SupportedClaims                   []string
 	SupportedScopes                   []string
+	SupportedSignAlgorithms           []string
 	DeviceAuthorization               DeviceAuthorizationConfig
 	BackChannelLogoutSupported        bool
 	BackChannelLogoutSessionSupported bool
@@ -374,7 +381,7 @@ func (o *Provider) AuthMethodPrivateKeyJWTSupported() bool {
 }
 
 func (o *Provider) TokenEndpointSigningAlgorithmsSupported() []string {
-	return []string{"RS256"}
+	return supportedSignAlgorithms(o.config.SupportedSignAlgorithms)
 }
 
 func (o *Provider) GrantTypeRefreshTokenSupported() bool {
@@ -400,7 +407,7 @@ func (o *Provider) IntrospectionAuthMethodPrivateKeyJWTSupported() bool {
 }
 
 func (o *Provider) IntrospectionEndpointSigningAlgorithmsSupported() []string {
-	return []string{"RS256"}
+	return supportedSignAlgorithms(o.config.SupportedSignAlgorithms)
 }
 
 func (o *Provider) GrantTypeClientCredentialsSupported() bool {
@@ -413,7 +420,7 @@ func (o *Provider) RevocationAuthMethodPrivateKeyJWTSupported() bool {
 }
 
 func (o *Provider) RevocationEndpointSigningAlgorithmsSupported() []string {
-	return []string{"RS256"}
+	return supportedSignAlgorithms(o.config.SupportedSignAlgorithms)
 }
 
 func (o *Provider) RequestObjectSupported() bool {
@@ -421,7 +428,14 @@ func (o *Provider) RequestObjectSupported() bool {
 }
 
 func (o *Provider) RequestObjectSigningAlgorithmsSupported() []string {
-	return []string{"RS256"}
+	return supportedSignAlgorithms(o.config.SupportedSignAlgorithms)
+}
+
+func supportedSignAlgorithms(algs []string) []string {
+	if len(algs) == 0 {
+		return []string{"RS256", "SM2"}
+	}
+	return algs
 }
 
 func (o *Provider) SupportedUILocales() []language.Tag {
@@ -497,17 +511,52 @@ type OpenIDKeySet struct {
 
 // VerifySignature implements the oidc.KeySet interface
 // providing an implementation for the keys stored in the OP Storage interface
-func (o *OpenIDKeySet) VerifySignature(ctx context.Context, jws *jose.JSONWebSignature) ([]byte, error) {
+func (o *OpenIDKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]byte, error) {
 	keySet, err := o.Storage.KeySet(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching keys: %w", err)
 	}
-	keyID, alg := oidc.GetKeyIDAndAlg(jws)
-	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, jsonWebKeySet(keySet).Keys...)
+
+	// Parse to get kid and alg from header
+	jwsMsg, err := jws.Parse(rawToken)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing token: %w", err)
+	}
+
+	keyID, alg := oidc.GetKeyIDAndAlg(jwsMsg)
+
+	// Convert []Key to []jwk.Key
+	var jwkKeys []jwk.Key
+	for _, k := range keySet {
+		jk, err := jwk.Import[jwk.Key](k.Key())
+		if err != nil {
+			continue
+		}
+		if id := k.ID(); id != "" {
+			_ = jk.Set(jwk.KeyIDKey, id)
+		}
+		if use := k.Use(); use != "" {
+			_ = jk.Set(jwk.KeyUsageKey, use)
+		}
+		jwkKeys = append(jwkKeys, jk)
+	}
+
+	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, jwkKeys...)
 	if err != nil {
 		return nil, fmt.Errorf("invalid signature: %w", err)
 	}
-	return jws.Verify(&key)
+
+	sig := jwsMsg.Signatures()[0]
+	sigAlg, ok := sig.ProtectedHeaders().Algorithm()
+	if !ok {
+		return nil, fmt.Errorf("missing algorithm in token header")
+	}
+	payload, err := jws.Verify(rawToken, jws.WithKey(sigAlg, key))
+	if err != nil {
+		return nil, err
+	}
+
+	return payload, nil
 }
 
 type Option func(o *Provider) error
