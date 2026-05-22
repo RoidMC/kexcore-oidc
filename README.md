@@ -1,4 +1,4 @@
-# OpenID Connect SDK (client and server) for Go (Fork from zitadel/oidc)
+# KexCore OpenID Connect SDK (client and server) for Go
 
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
 [![Release](https://github.com/zitadel/oidc/workflows/Release/badge.svg)](https://github.com/zitadel/oidc/actions)
@@ -14,7 +14,7 @@
 
 This project is an easy-to-use client (RP) and server (OP) implementation for the `OIDC` (OpenID Connect) standard written for `Go`.
 
-The RP is certified for the [basic](https://www.certification.openid.net/plan-detail.html?public=true&plan=uoprP0OO8Z4Qo) and [config](https://www.certification.openid.net/plan-detail.html?public=true&plan=AYSdLbzmWbu9X) profile.
+The RP is certified for the [oidf-basic] and [oidf-config] profile.
 
 Whenever possible we tried to reuse / extend existing packages like `OAuth2 for Go`.
 
@@ -202,3 +202,6 @@ AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or im
 language governing permissions and limitations under the License.
 
 [^1]: https://github.com/zitadel/oidc/issues/135#issuecomment-950563892
+
+[oidf-basic]: https://www.certification.openid.net/log-detail.html?log=GJw8Lct7VW2mcFK&public=true
+[oidf-config]: https://www.certification.openid.net/log-detail.html?log=3iE9O7fRSAhYzoC&public=true
