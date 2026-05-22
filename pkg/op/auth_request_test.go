@@ -130,7 +130,7 @@ func TestParseAuthorizeRequest(t *testing.T) {
 func TestValidateAuthRequest(t *testing.T) {
 	type args struct {
 		authRequest *oidc.AuthRequest
-		storage     op.Storage
+		client      op.Client
 		verifier    *op.IDTokenHintVerifier
 	}
 	tests := []struct {
@@ -140,28 +140,28 @@ func TestValidateAuthRequest(t *testing.T) {
 	}{
 		{
 			"scope missing fails",
-			args{&oidc.AuthRequest{}, mock.NewMockStorageExpectValidClientID(t), nil},
+			args{&oidc.AuthRequest{}, &mock.ConfClient{}, nil},
 			oidc.ErrInvalidRequest(),
 		},
 		{
 			"response_type missing fails",
-			args{&oidc.AuthRequest{Scopes: []string{"openid"}}, mock.NewMockStorageExpectValidClientID(t), nil},
+			args{&oidc.AuthRequest{Scopes: []string{"openid"}}, &mock.ConfClient{}, nil},
 			oidc.ErrInvalidRequest(),
 		},
 		{
 			"client_id missing fails",
-			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode}, mock.NewMockStorageExpectValidClientID(t), nil},
+			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode}, &mock.ConfClient{}, nil},
 			oidc.ErrInvalidRequest(),
 		},
 		{
 			"redirect_uri missing fails",
-			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode, ClientID: "client_id"}, mock.NewMockStorageExpectValidClientID(t), nil},
+			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode, ClientID: "client_id"}, &mock.ConfClient{}, nil},
 			oidc.ErrInvalidRequest(),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := op.ValidateAuthRequest(context.TODO(), tt.args.authRequest, tt.args.storage, tt.args.verifier)
+			_, err := op.ValidateAuthRequestClient(context.TODO(), tt.args.authRequest, tt.args.client, tt.args.verifier)
 			if tt.wantErr == nil && err != nil {
 				t.Errorf("ValidateAuthRequest() unexpected error = %v", err)
 			}

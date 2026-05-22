@@ -66,7 +66,7 @@ func init() {
 func newTestProvider(config *op.Config) op.OpenIDProvider {
 	storage := storage.NewStorage(storage.NewUserStore(testIssuer))
 	keySet := &op.OpenIDKeySet{storage}
-	provider, err := op.NewOpenIDProvider(testIssuer, config, storage,
+	provider, err := op.NewProvider(config, storage, op.StaticIssuer(testIssuer),
 		op.WithAllowInsecure(),
 		op.WithAccessTokenKeySet(keySet),
 		op.WithIDTokenHintKeySet(keySet),
@@ -445,8 +445,9 @@ func TestWithCustomEndpoints(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, err := op.NewOpenIDProvider(testIssuer, testConfig,
+			provider, err := op.NewProvider(testConfig,
 				storage.NewStorage(storage.NewUserStore(testIssuer)),
+				op.StaticIssuer(testIssuer),
 				op.WithCustomEndpoints(tt.args.auth, tt.args.token, tt.args.userInfo, tt.args.revocation, tt.args.endSession, tt.args.keys),
 			)
 			require.ErrorIs(t, err, tt.wantErr)

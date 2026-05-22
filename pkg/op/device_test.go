@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op_test
 
 import (
@@ -22,60 +27,34 @@ import (
 )
 
 func Test_deviceAuthorizationHandler(t *testing.T) {
-	type conf struct {
-		UserFormURL  string
-		UserFormPath string
+	conf := gu.PtrCopy(testConfig)
+	conf.DeviceAuthorization.UserFormPath = "/device"
+	provider := newTestProvider(conf)
+
+	req := &oidc.DeviceAuthorizationRequest{
+		Scopes:   []string{"foo", "bar"},
+		ClientID: "device",
 	}
-	tests := []struct {
-		name string
-		conf conf
-	}{
-		{
-			name: "UserFormURL",
-			conf: conf{
-				UserFormURL: "https://localhost:9998/device",
-			},
-		},
-		{
-			name: "UserFormPath",
-			conf: conf{
-				UserFormPath: "/device",
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			conf := gu.PtrCopy(testConfig)
-			conf.DeviceAuthorization.UserFormURL = tt.conf.UserFormURL
-			conf.DeviceAuthorization.UserFormPath = tt.conf.UserFormPath
-			provider := newTestProvider(conf)
+	values := make(url.Values)
+	testProvider.Encoder().Encode(req, values)
+	body := strings.NewReader(values.Encode())
 
-			req := &oidc.DeviceAuthorizationRequest{
-				Scopes:   []string{"foo", "bar"},
-				ClientID: "device",
-			}
-			values := make(url.Values)
-			testProvider.Encoder().Encode(req, values)
-			body := strings.NewReader(values.Encode())
+	r := httptest.NewRequest(http.MethodPost, "/", body)
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r = r.WithContext(op.ContextWithIssuer(r.Context(), testIssuer))
 
-			r := httptest.NewRequest(http.MethodPost, "/", body)
-			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			r = r.WithContext(op.ContextWithIssuer(r.Context(), testIssuer))
+	w := httptest.NewRecorder()
 
-			w := httptest.NewRecorder()
+	runWithRandReader(mr.New(mr.NewSource(1)), func() {
+		op.DeviceAuthorizationHandler(provider)(w, r)
+	})
 
-			runWithRandReader(mr.New(mr.NewSource(1)), func() {
-				op.DeviceAuthorizationHandler(provider)(w, r)
-			})
+	result := w.Result()
 
-			result := w.Result()
+	assert.Less(t, result.StatusCode, 300)
 
-			assert.Less(t, result.StatusCode, 300)
-
-			got, _ := io.ReadAll(result.Body)
-			assert.JSONEq(t, `{"device_code":"Uv38ByGCZU8WP18PmmIdcg", "expires_in":300, "interval":5, "user_code":"JKRV-FRGK", "verification_uri":"https://localhost:9998/device", "verification_uri_complete":"https://localhost:9998/device?user_code=JKRV-FRGK"}`, string(got))
-		})
-	}
+	got, _ := io.ReadAll(result.Body)
+	assert.JSONEq(t, `{"device_code":"Uv38ByGCZU8WP18PmmIdcg", "expires_in":300, "interval":5, "user_code":"JKRV-FRGK", "verification_uri":"https://localhost:9998/device", "verification_uri_complete":"https://localhost:9998/device?user_code=JKRV-FRGK"}`, string(got))
 }
 
 func TestParseDeviceCodeRequest(t *testing.T) {

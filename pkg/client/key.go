@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package client
 
 import (
@@ -10,8 +15,6 @@ const (
 	applicationKey    = "application"
 )
 
-// Deprecated: use [github.com/zitadel/zitadel-go/v3/pkg/client.KeyFile] instead.
-// The type will be removed in the next major release.
 type KeyFile struct {
 	Type   string `json:"type"` // serviceaccount or application
 	KeyID  string `json:"keyId"`
@@ -25,8 +28,6 @@ type KeyFile struct {
 	ClientID string `json:"clientId"`
 }
 
-// Deprecated: use [github.com/zitadel/zitadel-go/v3/pkg/client.ConfigFromKeyFile] instead.
-// The type will be removed in the next major release.
 func ConfigFromKeyFile(path string) (*KeyFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -35,8 +36,6 @@ func ConfigFromKeyFile(path string) (*KeyFile, error) {
 	return ConfigFromKeyFileData(data)
 }
 
-// Deprecated: use [github.com/zitadel/zitadel-go/v3/pkg/client.ConfigFromKeyFileData] instead.
-// The type will be removed in the next major release.
 func ConfigFromKeyFileData(data []byte) (*KeyFile, error) {
 	var f KeyFile
 	if err := json.Unmarshal(data, &f); err != nil {

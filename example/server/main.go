@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package main
 
 import (
@@ -12,8 +17,11 @@ import (
 )
 
 func getUserStore(cfg *config.Config) (storage.UserStore, error) {
+	if cfg.Issuer == "" {
+		cfg.Issuer = fmt.Sprintf("http://localhost:%s/", cfg.Port)
+	}
 	if cfg.UsersFile == "" {
-		return storage.NewUserStore(fmt.Sprintf("http://localhost:%s/", cfg.Port)), nil
+		return storage.NewUserStore(cfg.Issuer), nil
 	}
 	return storage.StoreFromFile(cfg.UsersFile)
 }
@@ -27,13 +35,22 @@ func main() {
 		}),
 	)
 
-	//which gives us the issuer: http://localhost:9998/
-	issuer := fmt.Sprintf("http://localhost:%s/", cfg.Port)
+	issuer := cfg.Issuer
+	if issuer == "" {
+		issuer = fmt.Sprintf("http://localhost:%s/", cfg.Port)
+	}
 
 	storage.RegisterClients(
 		storage.NativeClient("native", cfg.RedirectURI...),
 		storage.WebClient("web", "secret", cfg.RedirectURI...),
 		storage.WebClient("api", "secret", cfg.RedirectURI...),
+		// OIDF Conformance Suite 测试客户端
+		storage.WebClient("Test Client 1", "test-secret-1",
+			"https://www.certification.openid.net/test/a/kexcore-test/callback",
+		),
+		storage.WebClient("Test Client 2", "test-secret-2",
+			"https://www.certification.openid.net/test/a/kexcore-test/callback",
+		),
 	)
 
 	// the OpenIDProvider interface needs a Storage interface handling various checks and state manipulations

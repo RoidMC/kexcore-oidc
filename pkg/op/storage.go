@@ -134,9 +134,6 @@ type OPStorage interface {
 	// handle the current request.
 	GetClientByClientID(ctx context.Context, clientID string) (Client, error)
 	AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string) error
-	// SetUserinfoFromScopes is deprecated and should have an empty implementation for now.
-	// Implement SetUserinfoFromRequest instead.
-	SetUserinfoFromScopes(ctx context.Context, userinfo *oidc.UserInfo, userID, clientID string, scopes []string) error
 	SetUserinfoFromToken(ctx context.Context, userinfo *oidc.UserInfo, tokenID, subject, origin string) error
 	SetIntrospectionFromToken(ctx context.Context, userinfo *oidc.IntrospectionResponse, tokenID, subject, clientID string) error
 	GetPrivateClaimsFromScopes(ctx context.Context, userID, clientID string, scopes []string) (map[string]any, error)
@@ -163,7 +160,7 @@ type CanGetPrivateClaimsFromRequest interface {
 	GetPrivateClaimsFromRequest(ctx context.Context, request TokenRequest, restrictedScopes []string) (map[string]any, error)
 }
 
-// Storage is a required parameter for NewOpenIDProvider(). In addition to the
+// Storage is a required parameter for NewProvider(). In addition to the
 // embedded interfaces below, if the passed Storage implements ClientCredentialsStorage
 // then the grant type "client_credentials" will be supported. In that case, the access
 // token returned by CreateAccessToken should be a JWT.
