@@ -18,10 +18,6 @@ The RP is certified for the [oidf-basic] and [oidf-config] profile.
 
 Whenever possible we tried to reuse / extend existing packages like `OAuth2 for Go`.
 
-> [!NOTE]
-> We currently have limited availability for feature reviews: 
-https://github.com/zitadel/oidc/discussions/785
-
 ## Basic Overview
 
 The most important packages of the library:
@@ -44,7 +40,7 @@ The most important packages of the library:
 
 ### Semver
 
-This package uses [semver](https://semver.org/) for [releases](https://github.com/zitadel/oidc/releases). Major releases ship breaking changes. Starting with the `v2` to `v3` increment we provide an [upgrade guide](UPGRADING.md) to ease migration to a newer version.
+This package uses [semver](https://semver.org/) for [releases](https://github.com/roidmc/kexcore-oidc/releases). Major releases ship breaking changes. Starting with the `v2` to `v3` increment we provide an [upgrade guide](UPGRADING.md) to ease migration to a newer version.
 
 ## How To Use It
 
@@ -148,8 +144,8 @@ Here is json equivalent for one of the default users
 
 ## Contributors
 
-<a href="https://github.com/zitadel/oidc/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=zitadel/oidc" alt="Screen with contributors' avatars from contrib.rocks" />
+<a href="https://github.com/roidmc/kexcore-oidc/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=roidmc/kexcore-oidc" alt="Screen with contributors' avatars from contrib.rocks" />
 </a>
 
 Made with [contrib.rocks](https://contrib.rocks).
@@ -168,9 +164,8 @@ Versions that also build are marked with :warning:.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| <1.25   | :x:                |
-| 1.25    | :white_check_mark: |
-| 1.26    | :white_check_mark: |
+| <1.26.3    | :x: |
+| 1.26.3    | :white_check_mark: |
 
 ## Why another library
 
