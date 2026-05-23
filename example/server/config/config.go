@@ -16,7 +16,7 @@ const (
 
 	// DefaultSigningAlgorithms is the default set of JWS signing algorithms.
 	// RS256 is always included for OIDC spec compliance.
-	DefaultSigningAlgorithms = "RS256,RS384,RS512,EdDSA,SGD_SM3_SM2"
+	DefaultSigningAlgorithms = "RS256,RS384,RS512,EdDSA,SGD_SM3_SM2,SGD_SM3_SM9"
 )
 
 type Config struct {

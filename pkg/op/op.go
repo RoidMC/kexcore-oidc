@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/emmansun/gmsm/sm9"
 	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
@@ -488,6 +489,17 @@ func (o *OpenIDKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]
 
 	keyID, alg := oidc.GetKeyIDAndAlg(jwsMsg)
 
+	// SM9 keys cannot be imported into jwx (identity-based cryptography).
+	// Find the matching key directly from the storage keySet.
+	if crypto.IsSM9Algorithm(alg) {
+		for _, k := range keySet {
+			if (keyID == "" || k.ID() == keyID) && crypto.IsSM9Algorithm(k.Algorithm()) {
+				return verifySM9Signature(jwsMsg, k)
+			}
+		}
+		return nil, fmt.Errorf("no matching SM9 key found for kid=%q", keyID)
+	}
+
 	// Convert []Key to []jwk.Key
 	var jwkKeys []jwk.Key
 	for _, k := range keySet {
@@ -535,12 +547,11 @@ func verifySM2Signature(jwsMsg *jws.Message, key jwk.Key) ([]byte, error) {
 		return nil, fmt.Errorf("error decoding SM2 signature: %w", err)
 	}
 
-	signingInput, err := crypto.BuildSM2SigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
+	signingInput, err := crypto.BuildSigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
 	if err != nil {
 		return nil, err
 	}
 
-	// Extract the ECDSA public key from the JWK
 	raw, err := jwk.Export[any](key)
 	if err != nil {
 		return nil, fmt.Errorf("error extracting public key: %w", err)
@@ -551,6 +562,42 @@ func verifySM2Signature(jwsMsg *jws.Message, key jwk.Key) ([]byte, error) {
 	}
 
 	if err := crypto.VerifySM2JWSSignature(signingInput, sigBytes, pubKey); err != nil {
+		return nil, err
+	}
+	return jwsMsg.Payload(), nil
+}
+
+// verifySM9Signature verifies an SM9 JWS signature using SM3 hash.
+// SM9 is identity-based: verification requires the master public key + uid.
+// The uid must be present in the JWS protected header as a custom "uid" parameter.
+func verifySM9Signature(jwsMsg *jws.Message, key Key) ([]byte, error) {
+	sig := jwsMsg.Signatures()[0]
+	sigBytes, err := base64.RawURLEncoding.DecodeString(string(sig.Signature()))
+	if err != nil {
+		return nil, fmt.Errorf("error decoding SM9 signature: %w", err)
+	}
+
+	signingInput, err := crypto.BuildSigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
+	if err != nil {
+		return nil, err
+	}
+
+	raw := key.Key()
+	masterPubKey, ok := raw.(*sm9.SignMasterPublicKey)
+	if !ok {
+		return nil, fmt.Errorf("expected *sm9.SignMasterPublicKey, got %T", raw)
+	}
+
+	uidVal, ok := sig.ProtectedHeaders().Field("uid")
+	if !ok {
+		return nil, fmt.Errorf("SM9 signature missing required 'uid' header parameter")
+	}
+	uid, ok := uidVal.(string)
+	if !ok {
+		return nil, fmt.Errorf("SM9 'uid' header parameter must be a string, got %T", uidVal)
+	}
+
+	if err := crypto.VerifySM9JWSSignature(signingInput, sigBytes, masterPubKey, []byte(uid)); err != nil {
 		return nil, err
 	}
 	return jwsMsg.Payload(), nil

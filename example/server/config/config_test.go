@@ -17,7 +17,10 @@ func TestFromEnvVars(t *testing.T) {
 		{
 			name: "no vars, no default values",
 			env:  map[string]string{},
-			want: &Config{},
+			want: &Config{
+				SigningAlgorithms: []string{"RS256", "RS384", "RS512", "EdDSA", "SGD_SM3_SM2", "SGD_SM3_SM9"},
+				CryptoMethod:      "aes",
+			},
 		},
 		{
 			name: "no vars, only defaults",
@@ -28,9 +31,11 @@ func TestFromEnvVars(t *testing.T) {
 				RedirectURI: []string{"re", "direct", "uris"},
 			},
 			want: &Config{
-				Port:        "6666",
-				UsersFile:   "/default/user/path",
-				RedirectURI: []string{"re", "direct", "uris"},
+				Port:              "6666",
+				UsersFile:         "/default/user/path",
+				RedirectURI:       []string{"re", "direct", "uris"},
+				SigningAlgorithms: []string{"RS256", "RS384", "RS512", "EdDSA", "SGD_SM3_SM2", "SGD_SM3_SM9"},
+				CryptoMethod:      "aes",
 			},
 		},
 		{
@@ -46,9 +51,11 @@ func TestFromEnvVars(t *testing.T) {
 				RedirectURI: []string{"re", "direct", "uris"},
 			},
 			want: &Config{
-				Port:        "1234",
-				UsersFile:   "/path/to/users",
-				RedirectURI: []string{"http://redirect/redirect"},
+				Port:              "1234",
+				UsersFile:         "/path/to/users",
+				RedirectURI:       []string{"http://redirect/redirect"},
+				SigningAlgorithms: []string{"RS256", "RS384", "RS512", "EdDSA", "SGD_SM3_SM2", "SGD_SM3_SM9"},
+				CryptoMethod:      "aes",
 			},
 		},
 		{
@@ -60,6 +67,8 @@ func TestFromEnvVars(t *testing.T) {
 				RedirectURI: []string{
 					"http://host_1", "http://host_2", "http://host_3",
 				},
+				SigningAlgorithms: []string{"RS256", "RS384", "RS512", "EdDSA", "SGD_SM3_SM2", "SGD_SM3_SM9"},
+				CryptoMethod:      "aes",
 			},
 		},
 	} {

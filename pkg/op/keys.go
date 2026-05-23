@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/emmansun/gmsm/sm9"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
@@ -57,6 +58,15 @@ func jsonWebKeySet(keys []Key) jwksResponse {
 			continue
 		}
 
+		// SM9 keys require manual JWK construction (identity-based cryptography).
+		if crypto.IsSM9Algorithm(key.Algorithm()) {
+			jwkMap := buildSM9JWKMap(key)
+			if jwkMap != nil {
+				resp.Keys = append(resp.Keys, jwkMap)
+			}
+			continue
+		}
+
 		k, err := jwk.Import[jwk.Key](key.Key())
 		if err != nil {
 			continue
@@ -96,6 +106,29 @@ func buildSM2JWKMap(key Key) map[string]interface{} {
 
 	// Marshal and unmarshal to get a map[string]interface{}
 	raw, err := json.Marshal(sm2jwk)
+	if err != nil {
+		return nil
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	return m
+}
+
+// buildSM9JWKMap constructs a JWK map for an SM9 signing master public key.
+func buildSM9JWKMap(key Key) map[string]interface{} {
+	masterPubKey, ok := key.Key().(*sm9.SignMasterPublicKey)
+	if !ok {
+		return nil
+	}
+
+	sm9jwk, err := crypto.NewSM9SignJWK(masterPubKey, key.ID(), key.Use())
+	if err != nil {
+		return nil
+	}
+
+	raw, err := json.Marshal(sm9jwk)
 	if err != nil {
 		return nil
 	}

@@ -19,6 +19,7 @@ import (
 const (
 	// GM/T 0125.1-2022 algorithm identifiers
 	SGD_SM3_SM2  = "SGD_SM3_SM2"  // SM2+SM3 digital signature
+	SGD_SM3_SM9  = "SGD_SM3_SM9"  // SM9+SM3 digital signature (identity-based)
 	SGD_SM3_HMAC = "SGD_SM3_HMAC" // SM3 keyed-HMAC
 	SGD_SM2_3    = "SGD_SM2_3"    // SM2 public key encryption (JWE key wrapping)
 	SGD_SM9_3    = "SGD_SM9_3"    // SM9 encryption (JWE key wrapping)
@@ -27,6 +28,23 @@ const (
 )
 
 var ErrUnsupportedAlgorithm = errors.New("unsupported signing algorithm")
+
+func init() {
+	// Register GM/T custom algorithms with jwx so that jws.Parse and jwe.Parse
+	// can recognize SGD_SM3_SM2, SGD_SM3_SM9, SGD_SM9_3, SGD_SM4_GCM, etc.
+	jwa.RegisterSignatureAlgorithm(
+		jwa.NewSignatureAlgorithm(SGD_SM3_SM2),
+		jwa.NewSignatureAlgorithm(SGD_SM3_SM9),
+	)
+	jwa.RegisterKeyEncryptionAlgorithm(
+		jwa.NewKeyEncryptionAlgorithm(SGD_SM2_3),
+		jwa.NewKeyEncryptionAlgorithm(SGD_SM9_3),
+	)
+	jwa.RegisterContentEncryptionAlgorithm(
+		jwa.NewContentEncryptionAlgorithm(SGD_SM4_GCM),
+		jwa.NewContentEncryptionAlgorithm(SGD_SM4_CCM),
+	)
+}
 
 func GetHashAlgorithm(sigAlgorithm string) (hash.Hash, error) {
 	switch sigAlgorithm {
@@ -44,7 +62,7 @@ func GetHashAlgorithm(sigAlgorithm string) (hash.Hash, error) {
 	case jwa.EdDSA().String():
 		return sha512.New(), nil
 
-	case SGD_SM3_SM2:
+	case SGD_SM3_SM2, SGD_SM3_SM9:
 		return sm3.New(), nil
 
 	default:

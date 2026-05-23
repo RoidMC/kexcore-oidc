@@ -297,7 +297,7 @@ func TestKeysFromRemote(t *testing.T) {
 		jwksURL:    server.URL + "/jwks",
 	}
 
-	keys, err := set.keysFromRemote(context.Background())
+	keys, _, err := set.keysFromRemote(context.Background())
 	require.NoError(t, err)
 	assert.NotNil(t, keys)
 	assert.Equal(t, 1, keys.Len())
@@ -314,7 +314,7 @@ func TestKeysFromRemoteError(t *testing.T) {
 		jwksURL:    server.URL + "/jwks",
 	}
 
-	_, err := set.keysFromRemote(context.Background())
+	_, _, err := set.keysFromRemote(context.Background())
 	assert.Error(t, err)
 }
 
@@ -331,7 +331,7 @@ func TestKeysFromRemoteContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := set.keysFromRemote(ctx)
+	_, _, err := set.keysFromRemote(ctx)
 	assert.Error(t, err)
 }
 
@@ -362,7 +362,7 @@ func TestKeysFromRemoteConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			keys, err := set.keysFromRemote(context.Background())
+			keys, _, err := set.keysFromRemote(context.Background())
 			assert.NoError(t, err)
 			assert.NotNil(t, keys)
 		}()

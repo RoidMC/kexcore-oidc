@@ -2,6 +2,7 @@ package op
 
 import (
 	"crypto/rand"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -157,6 +158,118 @@ func TestCompositeCrypto(t *testing.T) {
 
 		assert.Equal(t, value, decrypted)
 	}
+}
+
+func TestSm4GCMCrypto_Ok(t *testing.T) {
+	testCases := []struct {
+		name  string
+		keyId string
+		value string
+	}{
+		{
+			name:  "with key id",
+			keyId: "sm4-key-1",
+			value: "Hello SM4-GCM JWE world",
+		},
+		{
+			name:  "without key id",
+			keyId: "",
+			value: "Hello world",
+		},
+		{
+			name:  "empty string",
+			keyId: "sm4-key-1",
+			value: "",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cr := NewSM4GCMCrypto(NewSm4Key(), tc.keyId)
+
+			encrypted, err := cr.Encrypt(tc.value)
+			require.NoError(t, err)
+
+			// Verify JWE compact format: 5 parts, part[1] is empty (dir mode)
+			parts := strings.Split(encrypted, ".")
+			assert.Equal(t, 5, len(parts), "JWE should have 5 parts")
+			assert.Empty(t, parts[1], "encrypted key should be empty for dir mode")
+
+			decrypted, err := cr.Decrypt(encrypted)
+			require.NoError(t, err)
+			assert.Equal(t, tc.value, decrypted)
+		})
+	}
+}
+
+func TestSm4GCMCrypto_Decrypt_InvalidInput(t *testing.T) {
+	cr := NewSM4GCMCrypto(NewSm4Key(), "test-key")
+
+	_, err := cr.Decrypt("not-valid-jwe")
+	require.Error(t, err)
+}
+
+func TestSm4GCMCrypto_Decrypt_WrongKey(t *testing.T) {
+	cr := NewSM4GCMCrypto(NewSm4Key(), "test-key")
+	encrypted, err := cr.Encrypt("test")
+	require.NoError(t, err)
+
+	otherCr := NewSM4GCMCrypto(NewSm4Key(), "test-key")
+	_, err = otherCr.Decrypt(encrypted)
+	require.Error(t, err)
+}
+
+func TestSm4GCMCrypto_Decrypt_WrongAlg(t *testing.T) {
+	cr := NewSM4GCMCrypto(NewSm4Key(), "test-key")
+	// Craft a JWE with alg=dir but forged header
+	jwe := "eyJhbGciOiJkaXIiLCJlbmMiOiJTR0RfU000X0dDTSJ9..iv.cipher.tag"
+	_, err := cr.Decrypt(jwe)
+	require.Error(t, err)
+}
+
+func TestCompositeCrypto_WithSM4GCM(t *testing.T) {
+	cr := NewCompositeCrypto(
+		NewSM4GCMCrypto(NewSm4Key(), "sm4-key"),
+		[]Decrypter{NewSM4GCMCrypto(NewSm4Key(), "sm4-key")},
+	)
+	encrypted, err := cr.Encrypt("hello")
+	require.NoError(t, err)
+
+	// Decrypt should fail because CompositeCrypto uses a DIFFERENT key
+	_, err = cr.Decrypt(encrypted)
+	require.Error(t, err)
+}
+
+func TestCompositeCrypto_WithSM4GCM_SameKey(t *testing.T) {
+	key := NewSm4Key()
+	sm4Cr := NewSM4GCMCrypto(key, "sm4-key")
+	cr := NewCompositeCrypto(sm4Cr, []Decrypter{sm4Cr})
+
+	const value = "My SM4-GCM JWE secret"
+	encrypted, err := cr.Encrypt(value)
+	require.NoError(t, err)
+
+	decrypted, err := cr.Decrypt(encrypted)
+	require.NoError(t, err)
+	assert.Equal(t, value, decrypted)
+}
+
+func TestCompositeCrypto_Mixed(t *testing.T) {
+	sm4Key := NewSm4Key()
+	aesKey := NewBsKey("This_Key_Is_32_Bytes_Or_256_Bits")
+
+	sm4Cr := NewSM4GCMCrypto(sm4Key, "sm4-key")
+	aesCr := NewAESCrypto(aesKey)
+
+	// Encrypt with SM4-GCM JWE, can decrypt with both SM4 and AES
+	cr := NewCompositeCrypto(sm4Cr, []Decrypter{sm4Cr, aesCr})
+
+	const value = "Mixed crypto test"
+	encrypted, err := cr.Encrypt(value)
+	require.NoError(t, err)
+
+	decrypted, err := cr.Decrypt(encrypted)
+	require.NoError(t, err)
+	assert.Equal(t, value, decrypted)
 }
 
 func NewBsKey(key string) [32]byte {

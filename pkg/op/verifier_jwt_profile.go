@@ -152,6 +152,9 @@ func (k *jwtProfileKeySet) VerifySignature(ctx context.Context, rawToken []byte)
 		return verifySM2SignatureFromKey(jwsMsg, key)
 	}
 
+	// TODO: SM9 JWT Profile verification requires interface changes
+	// (JWTProfileKeyStorage returns jwk.Key which cannot represent SM9 master public keys).
+
 	payload, err = jws.Verify(rawToken, jws.WithKey(sigAlg, key))
 	if err != nil {
 		return nil, err
@@ -168,7 +171,7 @@ func verifySM2SignatureFromKey(jwsMsg *jws.Message, key jwk.Key) ([]byte, error)
 		return nil, fmt.Errorf("error decoding SM2 signature: %w", err)
 	}
 
-	signingInput, err := crypto.BuildSM2SigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
+	signingInput, err := crypto.BuildSigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
 	if err != nil {
 		return nil, err
 	}

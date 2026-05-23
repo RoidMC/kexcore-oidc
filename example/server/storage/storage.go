@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/emmansun/gmsm/sm2"
+	"github.com/emmansun/gmsm/sm9"
 	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
@@ -62,12 +63,15 @@ type Storage struct {
 }
 
 type signingKey struct {
-	id        string
-	algorithm string
-	rsaKey    *rsa.PrivateKey
-	ecKey     *ecdsa.PrivateKey
-	edKey     ed25519.PrivateKey
-	sm2Key    interface{} // *sm2.PrivateKey from github.com/emmansun/gmsm/sm2
+	id           string
+	algorithm    string
+	rsaKey       *rsa.PrivateKey
+	ecKey        *ecdsa.PrivateKey
+	edKey        ed25519.PrivateKey
+	sm2Key       interface{} // *sm2.PrivateKey
+	sm9MasterPub *sm9.SignMasterPublicKey
+	sm9UserKey   *sm9.SignPrivateKey
+	sm9UID       []byte
 }
 
 func (s *signingKey) SignatureAlgorithm() string {
@@ -83,6 +87,9 @@ func (s *signingKey) Key() any {
 	}
 	if s.edKey != nil {
 		return s.edKey
+	}
+	if s.sm9UserKey != nil {
+		return s.sm9UserKey
 	}
 	return s.sm2Key
 }
@@ -117,7 +124,9 @@ func (s *publicKey) Key() any {
 	if s.edKey != nil {
 		return s.edKey.Public()
 	}
-	// SM2 私钥的 Public() 方法返回 *ecdsa.PublicKey
+	if s.sm9MasterPub != nil {
+		return s.sm9MasterPub
+	}
 	return s.sm2Key.(*sm2.PrivateKey).Public()
 }
 
@@ -220,6 +229,23 @@ func NewStorageWithClientsAndAlgorithms(userStore UserStore, clients map[string]
 				id:        uuid.NewString(),
 				algorithm: "SGD_SM3_SM2",
 				sm2Key:    sm2Key,
+			})
+		case "SGD_SM3_SM9":
+			masterKey, err := crypto.SM9GenerateSignMasterKey()
+			if err != nil {
+				continue
+			}
+			uid := []byte("kexcore-op")
+			userKey, err := crypto.SM9GenerateSignUserKey(masterKey, uid)
+			if err != nil {
+				continue
+			}
+			signingKeys = append(signingKeys, signingKey{
+				id:           uuid.NewString(),
+				algorithm:    "SGD_SM3_SM9",
+				sm9MasterPub: masterKey.PublicKey(),
+				sm9UserKey:   userKey,
+				sm9UID:       uid,
 			})
 		default:
 			// Unknown algorithm, skip

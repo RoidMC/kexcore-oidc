@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/emmansun/gmsm/sm9"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 
@@ -57,14 +58,17 @@ type remoteKeySet struct {
 
 	// A set of cached keys.
 	cachedKeys jwk.Set
+	// GM/T keys (SM2, SM9) parsed from JWKS that jwx cannot handle.
+	cachedGMKeys []crypto.JWKSKey
 }
 
 // inflight is used to wait on some in-flight request from multiple goroutines.
 type inflight struct {
 	doneCh chan struct{}
 
-	keys jwk.Set
-	err  error
+	keys   jwk.Set
+	gmKeys []crypto.JWKSKey
+	err    error
 }
 
 func newInflight() *inflight {
@@ -80,15 +84,16 @@ func (i *inflight) wait() <-chan struct{} {
 // done can only be called by a single goroutine. It records the result of the
 // inflight request and signals other goroutines that the result is safe to
 // inspect.
-func (i *inflight) done(keys jwk.Set, err error) {
+func (i *inflight) done(keys jwk.Set, gmKeys []crypto.JWKSKey, err error) {
 	i.keys = keys
+	i.gmKeys = gmKeys
 	i.err = err
 	close(i.doneCh)
 }
 
 // result cannot be called until the wait() channel has returned a value.
-func (i *inflight) result() (jwk.Set, error) {
-	return i.keys, i.err
+func (i *inflight) result() (jwk.Set, []crypto.JWKSKey, error) {
+	return i.keys, i.gmKeys, i.err
 }
 
 func (r *remoteKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]byte, error) {
@@ -125,11 +130,36 @@ func (r *remoteKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]
 // otherwise it will return no error (so remote keys will be loaded)
 func (r *remoteKeySet) verifySignatureCached(rawToken []byte, jwsMsg *jws.Message, keyID, alg string) ([]byte, error) {
 	keys := r.keysFromCache()
+	gmKeys := r.gmKeysFromCache()
+
+	if (keys == nil || keys.Len() == 0) && len(gmKeys) == 0 {
+		return nil, nil
+	}
+
+	// SM2/SM9: use custom JWKS parser
+	if crypto.IsSM2Algorithm(alg) || crypto.IsSM9Algorithm(alg) {
+		if len(gmKeys) == 0 {
+			return nil, nil
+		}
+		gmKey := crypto.FindJWKSKey(gmKeys, keyID, alg)
+		if gmKey == nil {
+			return nil, nil
+		}
+		payload, err := verifyGMSignature(jwsMsg, gmKey)
+		if err != nil {
+			if keyID != "" && gmKey.Kid != keyID {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("%s signature verification failed: %w", alg, err)
+		}
+		return payload, nil
+	}
+
+	// Standard keys: use jwx
 	if keys == nil || keys.Len() == 0 {
 		return nil, nil
 	}
 
-	// Convert jwk.Set to []jwk.Key
 	var jwkKeys []jwk.Key
 	for _, key := range keys.All() {
 		jwkKeys = append(jwkKeys, key)
@@ -137,27 +167,13 @@ func (r *remoteKeySet) verifySignatureCached(rawToken []byte, jwsMsg *jws.Messag
 
 	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, jwkKeys...)
 	if err != nil {
-		// no key / multiple found, try with remote keys
-		return nil, nil //nolint:nilerr
+		return nil, nil
 	}
 
 	sig := jwsMsg.Signatures()[0]
 	sigAlg, ok := sig.ProtectedHeaders().Algorithm()
 	if !ok {
 		return nil, nil
-	}
-
-	// SM2 signatures use custom verification since jwx does not support SM2.
-	if crypto.IsSM2Algorithm(alg) {
-		payload, err := verifySM2Signature(jwsMsg, key)
-		if err != nil {
-			jwkKid, _ := key.KeyID()
-			if !r.exactMatch(jwkKid, keyID) {
-				return nil, nil
-			}
-			return nil, fmt.Errorf("SM2 signature verification failed: %w", err)
-		}
-		return payload, nil
 	}
 
 	payload, err := jws.Verify(rawToken, jws.WithKey(sigAlg, key))
@@ -167,7 +183,6 @@ func (r *remoteKeySet) verifySignatureCached(rawToken []byte, jwsMsg *jws.Messag
 
 	jwkKid, _ := key.KeyID()
 	if !r.exactMatch(jwkKid, keyID) {
-		// no exact key match, try getting better match with remote keys
 		return nil, nil
 	}
 	return nil, fmt.Errorf("signature verification failed: %w", err)
@@ -184,12 +199,21 @@ func (r *remoteKeySet) verifySignatureRemote(ctx context.Context, rawToken []byt
 	ctx, span := client.Tracer.Start(ctx, "verifySignatureRemote")
 	defer span.End()
 
-	keys, err := r.keysFromRemote(ctx)
+	keys, gmKeys, err := r.keysFromRemote(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("unable to fetch key for signature validation: %w", err)
 	}
 
-	// Convert jwk.Set to []jwk.Key
+	// SM2/SM9: use custom JWKS parser
+	if crypto.IsSM2Algorithm(alg) || crypto.IsSM9Algorithm(alg) {
+		gmKey := crypto.FindJWKSKey(gmKeys, keyID, alg)
+		if gmKey == nil {
+			return nil, fmt.Errorf("no matching %s key found for kid=%q", alg, keyID)
+		}
+		return verifyGMSignature(jwsMsg, gmKey)
+	}
+
+	// Standard keys: use jwx
 	var jwkKeys []jwk.Key
 	for _, key := range keys.All() {
 		jwkKeys = append(jwkKeys, key)
@@ -206,11 +230,6 @@ func (r *remoteKeySet) verifySignatureRemote(ctx context.Context, rawToken []byt
 		return nil, fmt.Errorf("missing algorithm in token header")
 	}
 
-	// SM2 signatures use custom verification since jwx does not support SM2.
-	if crypto.IsSM2Algorithm(alg) {
-		return verifySM2Signature(jwsMsg, key)
-	}
-
 	payload, err := jws.Verify(rawToken, jws.WithKey(sigAlg, key))
 	if err != nil {
 		return nil, fmt.Errorf("signature verification failed: %w", err)
@@ -224,9 +243,15 @@ func (r *remoteKeySet) keysFromCache() jwk.Set {
 	return r.cachedKeys
 }
 
+func (r *remoteKeySet) gmKeysFromCache() []crypto.JWKSKey {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.cachedGMKeys
+}
+
 // keysFromRemote syncs the key set from the remote set, records the values in the
 // cache, and returns the key set.
-func (r *remoteKeySet) keysFromRemote(ctx context.Context) (jwk.Set, error) {
+func (r *remoteKeySet) keysFromRemote(ctx context.Context) (jwk.Set, []crypto.JWKSKey, error) {
 	ctx, span := client.Tracer.Start(ctx, "keysFromRemote")
 	defer span.End()
 
@@ -246,9 +271,10 @@ func (r *remoteKeySet) keysFromRemote(ctx context.Context) (jwk.Set, error) {
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	case <-inflight.wait():
-		return inflight.result()
+		keys, gmKeys, err := inflight.result()
+		return keys, gmKeys, err
 	}
 }
 
@@ -257,9 +283,9 @@ func (r *remoteKeySet) updateKeys(ctx context.Context) {
 	defer span.End()
 
 	// Sync keys and finish inflight when that's done.
-	keys, err := r.fetchRemoteKeys(ctx)
+	keys, gmKeys, err := r.fetchRemoteKeys(ctx)
 
-	r.inflight.done(keys, err)
+	r.inflight.done(keys, gmKeys, err)
 
 	// Lock to update the keys and indicate that there is no longer an
 	// inflight request.
@@ -268,64 +294,87 @@ func (r *remoteKeySet) updateKeys(ctx context.Context) {
 
 	if err == nil {
 		r.cachedKeys = keys
+		r.cachedGMKeys = gmKeys
 	}
 
 	// Free inflight so a different request can run.
 	r.inflight = nil
 }
 
-func (r *remoteKeySet) fetchRemoteKeys(ctx context.Context) (jwk.Set, error) {
+func (r *remoteKeySet) fetchRemoteKeys(ctx context.Context) (jwk.Set, []crypto.JWKSKey, error) {
 	ctx, span := client.Tracer.Start(ctx, "fetchRemoteKeys")
 	defer span.End()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", r.jwksURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("oidc: can't create request: %v", err)
+		return nil, nil, fmt.Errorf("oidc: can't create request: %v", err)
 	}
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("oidc: failed to get keys: %v", err)
+		return nil, nil, fmt.Errorf("oidc: failed to get keys: %v", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("oidc: failed to read response: %v", err)
+		return nil, nil, fmt.Errorf("oidc: failed to read response: %v", err)
 	}
 
 	keyset, err := jwk.Parse(body)
 	if err != nil {
-		return nil, fmt.Errorf("oidc: failed to parse keys: %v", err)
+		return nil, nil, fmt.Errorf("oidc: failed to parse keys: %v", err)
 	}
-	return keyset, nil
+
+	// Parse GM/T keys (SM2, SM9) that jwx cannot handle.
+	gmKeys, _ := crypto.ParseJWKSBytes(body)
+
+	return keyset, gmKeys, nil
 }
 
-// verifySM2Signature verifies an SM2 JWS signature using SM3 hash.
-func verifySM2Signature(jwsMsg *jws.Message, key jwk.Key) ([]byte, error) {
+// verifyGMSignature verifies an SM2 or SM9 JWS signature.
+func verifyGMSignature(jwsMsg *jws.Message, gmKey *crypto.JWKSKey) ([]byte, error) {
 	sig := jwsMsg.Signatures()[0]
 	sigBytes, err := base64.RawURLEncoding.DecodeString(string(sig.Signature()))
 	if err != nil {
-		return nil, fmt.Errorf("error decoding SM2 signature: %w", err)
+		return nil, fmt.Errorf("error decoding signature: %w", err)
 	}
 
-	signingInput, err := crypto.BuildSM2SigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
+	signingInput, err := crypto.BuildSigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
 	if err != nil {
 		return nil, err
 	}
 
-	// Extract the ECDSA public key from the JWK
-	raw, err := jwk.Export[any](key)
-	if err != nil {
-		return nil, fmt.Errorf("error extracting public key: %w", err)
-	}
-	pubKey, ok := raw.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("expected *ecdsa.PublicKey, got %T", raw)
+	switch {
+	case crypto.IsSM2Algorithm(gmKey.Alg):
+		pubKey, ok := gmKey.Key.(*ecdsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("expected *ecdsa.PublicKey for SM2, got %T", gmKey.Key)
+		}
+		if err := crypto.VerifySM2JWSSignature(signingInput, sigBytes, pubKey); err != nil {
+			return nil, err
+		}
+
+	case crypto.IsSM9Algorithm(gmKey.Alg):
+		masterPubKey, ok := gmKey.Key.(*sm9.SignMasterPublicKey)
+		if !ok {
+			return nil, fmt.Errorf("expected *sm9.SignMasterPublicKey for SM9, got %T", gmKey.Key)
+		}
+		uidVal, ok := sig.ProtectedHeaders().Field("uid")
+		if !ok {
+			return nil, fmt.Errorf("SM9 signature missing required 'uid' header parameter")
+		}
+		uid, ok := uidVal.(string)
+		if !ok {
+			return nil, fmt.Errorf("SM9 'uid' header parameter must be a string, got %T", uidVal)
+		}
+		if err := crypto.VerifySM9JWSSignature(signingInput, sigBytes, masterPubKey, []byte(uid)); err != nil {
+			return nil, err
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported GM algorithm: %s", gmKey.Alg)
 	}
 
-	if err := crypto.VerifySM2JWSSignature(signingInput, sigBytes, pubKey); err != nil {
-		return nil, err
-	}
 	return jwsMsg.Payload(), nil
 }
