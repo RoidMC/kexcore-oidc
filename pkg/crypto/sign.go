@@ -25,7 +25,7 @@ type Signer struct {
 }
 
 // NewSigner creates a Signer for the given algorithm and key.
-// The algorithm must be a valid JWA signature algorithm string (e.g. "RS256", "ES384", "EdDSA", "SM2").
+// The algorithm must be a valid JWA signature algorithm string (e.g. "RS256", "ES384", "EdDSA", "SGD_SM3_SM2").
 func NewSigner(algorithm string, key interface{}, keyID string) (*Signer, error) {
 	s := &Signer{
 		algorithm: algorithm,
@@ -33,7 +33,7 @@ func NewSigner(algorithm string, key interface{}, keyID string) (*Signer, error)
 		keyID:     keyID,
 	}
 
-	if algorithm == SM2 {
+	if isSM2SignAlgorithm(algorithm) {
 		sm2Key, ok := key.(*gmsm.PrivateKey)
 		if !ok {
 			return nil, errors.New("signer: SM2 algorithm requires *sm2.PrivateKey")
@@ -76,7 +76,7 @@ func (s *Signer) Sign(payload []byte) (string, error) {
 }
 
 func (s *Signer) signSM2(payload []byte) (string, error) {
-	h, err := GetHashAlgorithm(SM2)
+	h, err := GetHashAlgorithm(s.algorithm)
 	if err != nil {
 		return "", err
 	}
@@ -89,7 +89,7 @@ func (s *Signer) signSM2(payload []byte) (string, error) {
 	}
 
 	headerJSON, err := json.Marshal(map[string]interface{}{
-		"alg": SM2,
+		"alg": s.algorithm,
 		"typ": "JWT",
 	})
 	if err != nil {
@@ -118,4 +118,10 @@ func SignPayload(payload []byte, signer *Signer) (string, error) {
 		return "", errors.New("missing signer")
 	}
 	return signer.Sign(payload)
+}
+
+// isSM2SignAlgorithm returns true if the algorithm identifier is the
+// GM/T 0125.1 SGD_SM3_SM2 digital signature algorithm.
+func isSM2SignAlgorithm(alg string) bool {
+	return alg == SGD_SM3_SM2
 }

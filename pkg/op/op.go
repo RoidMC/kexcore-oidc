@@ -388,7 +388,7 @@ func (o *Provider) RequestObjectSigningAlgorithmsSupported() []string {
 
 func supportedSignAlgorithms(algs []string) []string {
 	if len(algs) == 0 {
-		return []string{"RS256", "SM2"}
+		return []string{"RS256", "SGD_SM3_SM2"}
 	}
 	return algs
 }

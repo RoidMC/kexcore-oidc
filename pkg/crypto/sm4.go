@@ -12,6 +12,8 @@ import (
 
 	"github.com/emmansun/gmsm/padding"
 	"github.com/emmansun/gmsm/sm4"
+
+	gmcipher "github.com/emmansun/gmsm/cipher"
 )
 
 var (
@@ -24,6 +26,7 @@ var (
 const (
 	SM4BlockSize    = sm4.BlockSize
 	SM4GCMNonceSize = 12
+	SM4CCMNonceSize = 12
 )
 
 var sm4PKCS7 = padding.NewPKCS7Padding(uint(SM4BlockSize))
@@ -278,4 +281,94 @@ func SM4KeyToHex(key []byte) string {
 
 func SM4KeyFromHex(hexKey string) ([]byte, error) {
 	return hex.DecodeString(hexKey)
+}
+
+// SM4EncryptCCM encrypts plaintext using SM4 in CCM mode.
+// The nonce is randomly generated and prepended to the ciphertext.
+// Returns: nonce || ciphertext (with auth tag)
+func SM4EncryptCCM(key, plaintext, additionalData []byte) ([]byte, error) {
+	block, err := SM4NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	ccm, err := gmcipher.NewCCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, SM4CCMNonceSize)
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := ccm.Seal(nil, nonce, plaintext, additionalData)
+
+	result := make([]byte, len(nonce)+len(ciphertext))
+	copy(result[:SM4CCMNonceSize], nonce)
+	copy(result[SM4CCMNonceSize:], ciphertext)
+
+	return result, nil
+}
+
+// SM4DecryptCCM decrypts ciphertext using SM4 in CCM mode.
+// Expects: nonce || ciphertext format.
+func SM4DecryptCCM(key, ciphertext, additionalData []byte) ([]byte, error) {
+	block, err := SM4NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	ccm, err := gmcipher.NewCCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ciphertext) < SM4CCMNonceSize {
+		return nil, errors.New("kexcore/crypto: sm4 ccm ciphertext too short")
+	}
+
+	nonce := ciphertext[:SM4CCMNonceSize]
+	ciphertext = ciphertext[SM4CCMNonceSize:]
+
+	return ccm.Open(nil, nonce, ciphertext, additionalData)
+}
+
+// SM4EncryptCCMWithNonce encrypts plaintext using SM4 in CCM mode with provided nonce.
+// WARNING: Never reuse a nonce with the same key. Use SM4EncryptCCM for automatic nonce generation.
+func SM4EncryptCCMWithNonce(key, nonce, plaintext, additionalData []byte) ([]byte, error) {
+	block, err := SM4NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(nonce) != SM4CCMNonceSize {
+		return nil, errors.New("kexcore/crypto: sm4 invalid nonce size for CCM, must be 12 bytes")
+	}
+
+	ccm, err := gmcipher.NewCCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	return ccm.Seal(nil, nonce, plaintext, additionalData), nil
+}
+
+// SM4DecryptCCMWithNonce decrypts ciphertext using SM4 in CCM mode with provided nonce.
+func SM4DecryptCCMWithNonce(key, nonce, ciphertext, additionalData []byte) ([]byte, error) {
+	block, err := SM4NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(nonce) != SM4CCMNonceSize {
+		return nil, errors.New("kexcore/crypto: sm4 invalid nonce size for CCM, must be 12 bytes")
+	}
+
+	ccm, err := gmcipher.NewCCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	return ccm.Open(nil, nonce, ciphertext, additionalData)
 }

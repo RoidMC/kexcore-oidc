@@ -280,3 +280,104 @@ func TestSM4ShortCiphertext(t *testing.T) {
 		t.Error("expected error for short GCM ciphertext")
 	}
 }
+
+// --- SM4-CCM tests ---
+
+func TestSM4CCM(t *testing.T) {
+	key, _ := crypto.SM4GenerateKey()
+	plaintext := []byte("hello world, this is a test for CCM mode")
+	additionalData := []byte("additional authenticated data")
+
+	ciphertext, err := crypto.SM4EncryptCCM(key, plaintext, additionalData)
+	if err != nil {
+		t.Fatalf("SM4EncryptCCM failed: %v", err)
+	}
+
+	if len(ciphertext) <= crypto.SM4CCMNonceSize {
+		t.Error("ciphertext should contain nonce prepended")
+	}
+
+	decrypted, err := crypto.SM4DecryptCCM(key, ciphertext, additionalData)
+	if err != nil {
+		t.Fatalf("SM4DecryptCCM failed: %v", err)
+	}
+
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Errorf("decrypted text doesn't match plaintext")
+	}
+}
+
+func TestSM4CCMWithNonce(t *testing.T) {
+	key, _ := crypto.SM4GenerateKey()
+	nonce := make([]byte, crypto.SM4CCMNonceSize)
+	plaintext := []byte("test with provided nonce")
+	additionalData := []byte("aad")
+
+	ciphertext, err := crypto.SM4EncryptCCMWithNonce(key, nonce, plaintext, additionalData)
+	if err != nil {
+		t.Fatalf("SM4EncryptCCMWithNonce failed: %v", err)
+	}
+
+	decrypted, err := crypto.SM4DecryptCCMWithNonce(key, nonce, ciphertext, additionalData)
+	if err != nil {
+		t.Fatalf("SM4DecryptCCMWithNonce failed: %v", err)
+	}
+
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Errorf("decrypted text doesn't match plaintext")
+	}
+}
+
+func TestSM4CCMTamperedCiphertext(t *testing.T) {
+	key, _ := crypto.SM4GenerateKey()
+	plaintext := []byte("test message for CCM tamper detection")
+
+	ciphertext, err := crypto.SM4EncryptCCM(key, plaintext, nil)
+	if err != nil {
+		t.Fatalf("SM4EncryptCCM failed: %v", err)
+	}
+
+	ciphertext[len(ciphertext)-1] ^= 0xFF
+
+	_, err = crypto.SM4DecryptCCM(key, ciphertext, nil)
+	if err == nil {
+		t.Error("expected error for tampered ciphertext")
+	}
+}
+
+func TestSM4CCMWrongAdditionalData(t *testing.T) {
+	key, _ := crypto.SM4GenerateKey()
+	plaintext := []byte("test message")
+	additionalData := []byte("correct aad")
+
+	ciphertext, err := crypto.SM4EncryptCCM(key, plaintext, additionalData)
+	if err != nil {
+		t.Fatalf("SM4EncryptCCM failed: %v", err)
+	}
+
+	_, err = crypto.SM4DecryptCCM(key, ciphertext, []byte("wrong aad"))
+	if err == nil {
+		t.Error("expected error for wrong additional data")
+	}
+}
+
+func TestSM4CCMInvalidNonceSize(t *testing.T) {
+	key, _ := crypto.SM4GenerateKey()
+	invalidNonce := make([]byte, 15)
+	plaintext := []byte("test")
+
+	_, err := crypto.SM4EncryptCCMWithNonce(key, invalidNonce, plaintext, nil)
+	if err == nil {
+		t.Error("expected error for invalid nonce size")
+	}
+}
+
+func TestSM4CCMShortCiphertext(t *testing.T) {
+	key, _ := crypto.SM4GenerateKey()
+
+	shortCiphertext := make([]byte, crypto.SM4CCMNonceSize-1)
+	_, err := crypto.SM4DecryptCCM(key, shortCiphertext, nil)
+	if err == nil {
+		t.Error("expected error for short CCM ciphertext")
+	}
+}

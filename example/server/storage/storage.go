@@ -16,9 +16,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/emmansun/gmsm/sm2"
 	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
@@ -50,7 +52,7 @@ type Storage struct {
 	userStore     UserStore
 	services      map[string]Service
 	refreshTokens map[string]*RefreshToken
-	signingKey    signingKey
+	signingKeys   []signingKey
 	deviceCodes   map[string]deviceAuthorizationEntry
 	userCodes     map[string]string
 	serviceUsers  map[string]*Client
@@ -59,7 +61,9 @@ type Storage struct {
 type signingKey struct {
 	id        string
 	algorithm string
-	key       *rsa.PrivateKey
+	key       interface{} // *rsa.PrivateKey or *sm2.PrivateKey
+	rsaKey    *rsa.PrivateKey
+	sm2Key    interface{} // *sm2.PrivateKey from github.com/emmansun/gmsm/sm2
 }
 
 func (s *signingKey) SignatureAlgorithm() string {
@@ -67,7 +71,10 @@ func (s *signingKey) SignatureAlgorithm() string {
 }
 
 func (s *signingKey) Key() any {
-	return s.key
+	if s.rsaKey != nil {
+		return s.rsaKey
+	}
+	return s.sm2Key
 }
 
 func (s *signingKey) ID() string {
@@ -91,7 +98,11 @@ func (s *publicKey) Use() string {
 }
 
 func (s *publicKey) Key() any {
-	return &s.key.PublicKey
+	if s.rsaKey != nil {
+		return &s.rsaKey.PublicKey
+	}
+	// SM2 私钥的 Public() 方法返回 *ecdsa.PublicKey
+	return s.sm2Key.(*sm2.PrivateKey).Public()
 }
 
 func NewStorage(userStore UserStore) *Storage {
@@ -99,7 +110,8 @@ func NewStorage(userStore UserStore) *Storage {
 }
 
 func NewStorageWithClients(userStore UserStore, clients map[string]*Client) *Storage {
-	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	sm2Key, _ := crypto.SM2GenerateKey()
 	return &Storage{
 		authRequests:  make(map[string]*AuthRequest),
 		codes:         make(map[string]string),
@@ -114,10 +126,17 @@ func NewStorageWithClients(userStore UserStore, clients map[string]*Client) *Sto
 				},
 			},
 		},
-		signingKey: signingKey{
-			id:        uuid.NewString(),
-			algorithm: "RS256",
-			key:       key,
+		signingKeys: []signingKey{
+			{
+				id:        uuid.NewString(),
+				algorithm: "RS256",
+				rsaKey:    rsaKey,
+			},
+			{
+				id:        uuid.NewString(),
+				algorithm: "SGD_SM3_SM2",
+				sm2Key:    sm2Key,
+			},
 		},
 		deviceCodes: make(map[string]deviceAuthorizationEntry),
 		userCodes:   make(map[string]string),
@@ -406,26 +425,32 @@ func (s *Storage) RevokeToken(ctx context.Context, tokenIDOrToken string, userID
 // SigningKey implements the op.Storage interface
 // it will be called when creating the OpenID Provider
 func (s *Storage) SigningKey(ctx context.Context) (op.SigningKey, error) {
-	// in this example the signing key is a static rsa.PrivateKey and the algorithm used is RS256
-	// you would obviously have a more complex implementation and store / retrieve the key from your database as well
-	return &s.signingKey, nil
+	// return the first signing key (typically RS256 for compatibility)
+	if len(s.signingKeys) == 0 {
+		return nil, errors.New("no signing key available")
+	}
+	return &s.signingKeys[0], nil
 }
 
 // SignatureAlgorithms implements the op.Storage interface
-// it will be called to get the sign
+// it will be called to get the supported signature algorithms
 func (s *Storage) SignatureAlgorithms(context.Context) ([]string, error) {
-	return []string{s.signingKey.algorithm}, nil
+	algs := make([]string, 0, len(s.signingKeys))
+	for _, sk := range s.signingKeys {
+		algs = append(algs, sk.algorithm)
+	}
+	return algs, nil
 }
 
 // KeySet implements the op.Storage interface
 // it will be called to get the current (public) keys, among others for the keys_endpoint or for validating access_tokens on the userinfo_endpoint, ...
 func (s *Storage) KeySet(ctx context.Context) ([]op.Key, error) {
-	// as mentioned above, this example only has a single signing key without key rotation,
-	// so it will directly use its public key
-	//
-	// when using key rotation you typically would store the public keys alongside the private keys in your database
-	// and give both of them an expiration date, with the public key having a longer lifetime
-	return []op.Key{&publicKey{s.signingKey}}, nil
+	// return all public keys for JWKS
+	keys := make([]op.Key, 0, len(s.signingKeys))
+	for _, sk := range s.signingKeys {
+		keys = append(keys, &publicKey{sk})
+	}
+	return keys, nil
 }
 
 // GetClientByClientID implements the op.Storage interface

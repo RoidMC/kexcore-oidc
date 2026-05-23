@@ -179,3 +179,90 @@ func TestSM3LongInput(t *testing.T) {
 		t.Errorf("expected hash length 32, got %d", len(hash))
 	}
 }
+
+// --- SM3-HMAC tests ---
+
+func TestSM3HMAC(t *testing.T) {
+	key := []byte("test-hmac-key")
+	data := []byte("test message for SM3-HMAC")
+
+	mac := crypto.SM3HMAC(key, data)
+	if len(mac) != 32 {
+		t.Errorf("expected HMAC length 32, got %d", len(mac))
+	}
+}
+
+func TestSM3HMACHex(t *testing.T) {
+	key := []byte("test-hmac-key")
+	data := []byte("test message")
+
+	macHex := crypto.SM3HMACHex(key, data)
+	if len(macHex) != 64 {
+		t.Errorf("expected hex HMAC length 64, got %d", len(macHex))
+	}
+
+	_, err := hex.DecodeString(macHex)
+	if err != nil {
+		t.Errorf("HMAC hex is not valid hex: %v", err)
+	}
+}
+
+func TestSM3HMACConsistency(t *testing.T) {
+	key := []byte("test-hmac-key")
+	data := []byte("test message")
+
+	mac1 := crypto.SM3HMAC(key, data)
+	mac2 := crypto.SM3HMAC(key, data)
+
+	if string(mac1) != string(mac2) {
+		t.Error("same key and data should produce same HMAC")
+	}
+}
+
+func TestSM3HMACVerify(t *testing.T) {
+	key := []byte("test-hmac-key")
+	data := []byte("test message")
+
+	mac := crypto.SM3HMAC(key, data)
+
+	if !crypto.SM3HMACVerify(key, data, mac) {
+		t.Error("HMAC verification should succeed with correct key and data")
+	}
+
+	if crypto.SM3HMACVerify([]byte("wrong-key"), data, mac) {
+		t.Error("HMAC verification should fail with wrong key")
+	}
+
+	if crypto.SM3HMACVerify(key, []byte("wrong-data"), mac) {
+		t.Error("HMAC verification should fail with wrong data")
+	}
+
+	tamperedMAC := make([]byte, len(mac))
+	copy(tamperedMAC, mac)
+	tamperedMAC[0] ^= 0xff
+	if crypto.SM3HMACVerify(key, data, tamperedMAC) {
+		t.Error("HMAC verification should fail with tampered MAC")
+	}
+}
+
+func TestSM3HMACDifferentKeys(t *testing.T) {
+	data := []byte("same data")
+	key1 := []byte("key-1")
+	key2 := []byte("key-2")
+
+	mac1 := crypto.SM3HMAC(key1, data)
+	mac2 := crypto.SM3HMAC(key2, data)
+
+	if string(mac1) == string(mac2) {
+		t.Error("different keys should produce different HMACs")
+	}
+}
+
+func TestSM3HMACEmptyInput(t *testing.T) {
+	key := []byte("test-hmac-key")
+
+	mac := crypto.SM3HMAC(key, []byte{})
+	if len(mac) != 32 {
+		t.Errorf("expected HMAC length 32 for empty input, got %d", len(mac))
+	}
+}
