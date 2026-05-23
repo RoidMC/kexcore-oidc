@@ -17,7 +17,13 @@ import (
 )
 
 const (
-	SM2 = "SM2"
+	// GM/T 0125.1-2022 algorithm identifiers
+	SGD_SM3_SM2  = "SGD_SM3_SM2"  // SM2+SM3 digital signature
+	SGD_SM3_HMAC = "SGD_SM3_HMAC" // SM3 keyed-HMAC
+	SGD_SM2_3    = "SGD_SM2_3"    // SM2 public key encryption (JWE key wrapping)
+	SGD_SM9_3    = "SGD_SM9_3"    // SM9 encryption (JWE key wrapping)
+	SGD_SM4_CCM  = "SGD_SM4_CCM"  // SM4 in CCM mode (JWE content encryption)
+	SGD_SM4_GCM  = "SGD_SM4_GCM"  // SM4 in GCM mode (JWE content encryption)
 )
 
 var ErrUnsupportedAlgorithm = errors.New("unsupported signing algorithm")
@@ -38,7 +44,7 @@ func GetHashAlgorithm(sigAlgorithm string) (hash.Hash, error) {
 	case jwa.EdDSA().String():
 		return sha512.New(), nil
 
-	case SM2:
+	case SGD_SM3_SM2:
 		return sm3.New(), nil
 
 	default:

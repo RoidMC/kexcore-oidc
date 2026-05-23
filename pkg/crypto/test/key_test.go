@@ -194,7 +194,7 @@ MC4CAQAwBQYDK2VwBCIEIHu6ZtDsjjauMasBxnS9Fg87UJwKfcT/oiq6S0ktbky8
 			},
 			want: want{
 				key:       &gmsm.PrivateKey{},
-				algorithm: zcrypto.SM2,
+				algorithm: zcrypto.SGD_SM3_SM2,
 				err:       nil,
 			},
 		},

@@ -31,7 +31,7 @@ func TestGetHashAlgorithm_KnownAlgorithms(t *testing.T) {
 		{"PS512", 64},
 		{"HS512", 64},
 		{"EdDSA", 64},
-		{crypto.SM2, 32}, // SM2-SM3 mode: SM3 produces 32-byte digest
+		{crypto.SGD_SM3_SM2, 32}, // GM/T 0125.1: SM2+SM3 digital signature
 	}
 
 	for _, tt := range tests {
@@ -50,30 +50,45 @@ func TestGetHashAlgorithm_Unsupported(t *testing.T) {
 }
 
 func TestHashString(t *testing.T) {
-	h, err := crypto.GetHashAlgorithm(crypto.SM2)
+	h, err := crypto.GetHashAlgorithm(crypto.SGD_SM3_SM2)
 	require.NoError(t, err)
 
 	// Hashing the same string twice should yield the same result.
 	s1 := crypto.HashString(h, "hello", false)
-	h, _ = crypto.GetHashAlgorithm(crypto.SM2)
+	h, _ = crypto.GetHashAlgorithm(crypto.SGD_SM3_SM2)
 	s2 := crypto.HashString(h, "hello", false)
 	assert.Equal(t, s1, s2)
 
 	// firstHalf should return half the digest length.
-	h, _ = crypto.GetHashAlgorithm(crypto.SM2)
+	h, _ = crypto.GetHashAlgorithm(crypto.SGD_SM3_SM2)
 	half := crypto.HashString(h, "hello", true)
 	full := crypto.HashString(h, "hello", false)
 	assert.Less(t, len(half), len(full))
 }
 
-func TestSM2SM3Binding(t *testing.T) {
-	// Verify that SM2 maps to SM3 (32-byte digest) as required by GM/T standards.
-	h, err := crypto.GetHashAlgorithm(crypto.SM2)
+func TestSGDSM3SM2Binding(t *testing.T) {
+	// Verify that SGD_SM3_SM2 maps to SM3 (32-byte digest) as required by GM/T standards.
+	h, err := crypto.GetHashAlgorithm(crypto.SGD_SM3_SM2)
 	require.NoError(t, err)
-	assert.Equal(t, 32, h.Size(), "SM2 must bind to SM3 which produces 256-bit (32-byte) digest")
+	assert.Equal(t, 32, h.Size(), "SGD_SM3_SM2 must bind to SM3 which produces 256-bit (32-byte) digest")
+}
 
-	// Ensure SM2 is our defined constant.
-	assert.Equal(t, "SM2", crypto.SM2)
+func TestSGDSM3HMACNotInGetHashAlgorithm(t *testing.T) {
+	// SGD_SM3_HMAC is a message authentication algorithm, not a signing algorithm.
+	// It should NOT be supported by GetHashAlgorithm.
+	_, err := crypto.GetHashAlgorithm(crypto.SGD_SM3_HMAC)
+	require.Error(t, err, "SGD_SM3_HMAC should not be a valid signing algorithm")
+	assert.ErrorIs(t, err, crypto.ErrUnsupportedAlgorithm)
+}
+
+func TestGMConstants(t *testing.T) {
+	// Verify all GM/T 0125.1 algorithm identifier constants are defined.
+	assert.Equal(t, "SGD_SM3_SM2", crypto.SGD_SM3_SM2)
+	assert.Equal(t, "SGD_SM3_HMAC", crypto.SGD_SM3_HMAC)
+	assert.Equal(t, "SGD_SM2_3", crypto.SGD_SM2_3)
+	assert.Equal(t, "SGD_SM9_3", crypto.SGD_SM9_3)
+	assert.Equal(t, "SGD_SM4_CCM", crypto.SGD_SM4_CCM)
+	assert.Equal(t, "SGD_SM4_GCM", crypto.SGD_SM4_GCM)
 }
 
 func TestHashString_NilHash(t *testing.T) {

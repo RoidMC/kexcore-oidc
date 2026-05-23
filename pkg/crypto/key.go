@@ -72,7 +72,7 @@ func BytesToPrivateKey(b []byte) (crypto.PublicKey, string, error) {
 				if err != nil {
 					return nil, "", ErrUnsupportedFormat
 				}
-				return sm2Key, SM2, nil
+				return sm2Key, SGD_SM3_SM2, nil
 			}
 		}
 	}

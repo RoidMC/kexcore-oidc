@@ -90,7 +90,7 @@ func algToKeyType(key jwk.Key, alg string) bool {
 	if strings.HasPrefix(alg, "RS") || strings.HasPrefix(alg, "PS") {
 		return kty == jwa.RSA()
 	}
-	if strings.HasPrefix(alg, "ES") {
+	if strings.HasPrefix(alg, "ES") || alg == "SGD_SM3_SM2" {
 		return kty == jwa.EC()
 	}
 	if alg == "EdDSA" {

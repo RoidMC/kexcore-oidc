@@ -5,6 +5,7 @@
 package crypto
 
 import (
+	"crypto/hmac"
 	"encoding/hex"
 	"hash"
 
@@ -59,4 +60,22 @@ func (s *SM3) Size() int {
 
 func (s *SM3) BlockSize() int {
 	return s.h.BlockSize()
+}
+
+// SM3HMAC returns the SM3-based HMAC of data using the given key (SGD_SM3_HMAC).
+func SM3HMAC(key, data []byte) []byte {
+	h := hmac.New(sm3.New, key)
+	h.Write(data)
+	return h.Sum(nil)
+}
+
+// SM3HMACHex returns the SM3-based HMAC of data as a hex-encoded string.
+func SM3HMACHex(key, data []byte) string {
+	return hex.EncodeToString(SM3HMAC(key, data))
+}
+
+// SM3HMACVerify checks whether the given HMAC matches the SM3-HMAC of data.
+func SM3HMACVerify(key, data, mac []byte) bool {
+	expected := SM3HMAC(key, data)
+	return hmac.Equal(mac, expected)
 }
