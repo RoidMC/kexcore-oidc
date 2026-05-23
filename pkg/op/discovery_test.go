@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op_test
 
 import (
@@ -6,14 +11,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	jose "github.com/go-jose/go-jose/v4"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
-	"github.com/zitadel/oidc/v3/pkg/op/mock"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op/mock"
 )
 
 func TestDiscover(t *testing.T) {
@@ -212,7 +216,7 @@ func Test_SigAlgorithms(t *testing.T) {
 		{
 			"",
 			args{func() op.DiscoverStorage {
-				m.EXPECT().SignatureAlgorithms(gomock.Any()).Return([]jose.SignatureAlgorithm{jose.RS256}, nil)
+				m.EXPECT().SignatureAlgorithms(gomock.Any()).Return([]string{"RS256"}, nil)
 				return m
 			}()},
 			[]string{"RS256"},

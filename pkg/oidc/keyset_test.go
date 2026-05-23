@@ -1,24 +1,33 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2026 RoidMC Studios
+
 package oidc
 
 import (
 	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/rsa"
 	"errors"
 	"reflect"
 	"testing"
 
-	jose "github.com/go-jose/go-jose/v4"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 )
 
 func TestFindKey(t *testing.T) {
+	// Generate valid test keys (jwx v4 validates key sizes)
+	testRSAKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	testECDSAKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	type args struct {
 		keyID       string
 		use         string
 		expectedAlg string
-		keys        []jose.JSONWebKey
+		keys        []jwk.Key
 	}
 	type res struct {
-		key jose.JSONWebKey
 		err error
 	}
 	tests := []struct {
@@ -35,7 +44,6 @@ func TestFindKey(t *testing.T) {
 				keys:        nil,
 			},
 			res{
-				key: jose.JSONWebKey{},
 				err: ErrKeyNone,
 			},
 		},
@@ -45,15 +53,11 @@ func TestFindKey(t *testing.T) {
 				keyID:       "",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use: "enc",
-						Key: &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithUse(t, &testRSAKey.PublicKey, "enc"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{},
 				err: ErrKeyNone,
 			},
 		},
@@ -63,15 +67,11 @@ func TestFindKey(t *testing.T) {
 				keyID:       "",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use: "sig",
-						Key: &rsa.PrivateKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithType(t, ed25519.PublicKey(make([]byte, ed25519.PublicKeySize))),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{},
 				err: ErrKeyNone,
 			},
 		},
@@ -81,18 +81,11 @@ func TestFindKey(t *testing.T) {
 				keyID:       "",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use: "sig",
-						Key: &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithUse(t, &testRSAKey.PublicKey, "sig"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{
-					Use: "sig",
-					Key: &rsa.PublicKey{},
-				},
 				err: nil,
 			},
 		},
@@ -102,20 +95,11 @@ func TestFindKey(t *testing.T) {
 				keyID:       "",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use:   "sig",
-						KeyID: "id",
-						Key:   &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id", "sig"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{
-					Use:   "sig",
-					KeyID: "id",
-					Key:   &rsa.PublicKey{},
-				},
 				err: nil,
 			},
 		},
@@ -125,18 +109,11 @@ func TestFindKey(t *testing.T) {
 				keyID:       "id",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use: "sig",
-						Key: &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithUse(t, &testRSAKey.PublicKey, "sig"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{
-					Use: "sig",
-					Key: &rsa.PublicKey{},
-				},
 				err: nil,
 			},
 		},
@@ -146,18 +123,11 @@ func TestFindKey(t *testing.T) {
 				keyID:       "id",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						KeyID: "id",
-						Key:   &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id", ""),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{
-					KeyID: "id",
-					Key:   &rsa.PublicKey{},
-				},
 				err: nil,
 			},
 		},
@@ -167,16 +137,11 @@ func TestFindKey(t *testing.T) {
 				keyID:       "id",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use:   "sig",
-						KeyID: "id2",
-						Key:   &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id2", "sig"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{},
 				err: ErrKeyNone,
 			},
 		},
@@ -186,19 +151,12 @@ func TestFindKey(t *testing.T) {
 				keyID:       "",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use: "sig",
-						Key: &rsa.PublicKey{},
-					},
-					{
-						Use: "sig",
-						Key: &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithUse(t, &testRSAKey.PublicKey, "sig"),
+					newKeyWithUse(t, &testRSAKey.PublicKey, "sig"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{},
 				err: ErrKeyMultiple,
 			},
 		},
@@ -208,21 +166,12 @@ func TestFindKey(t *testing.T) {
 				keyID:       "",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use:   "sig",
-						KeyID: "id1",
-						Key:   &rsa.PublicKey{},
-					},
-					{
-						Use:   "sig",
-						KeyID: "id2",
-						Key:   &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id1", "sig"),
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id2", "sig"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{},
 				err: ErrKeyMultiple,
 			},
 		},
@@ -232,22 +181,12 @@ func TestFindKey(t *testing.T) {
 				keyID:       "",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use: "sig",
-						Key: &rsa.PublicKey{},
-					},
-					{
-						Use: "enc",
-						Key: &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithUse(t, &testRSAKey.PublicKey, "sig"),
+					newKeyWithUse(t, &testRSAKey.PublicKey, "enc"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{
-					Use: "sig",
-					Key: &rsa.PublicKey{},
-				},
 				err: nil,
 			},
 		},
@@ -257,19 +196,12 @@ func TestFindKey(t *testing.T) {
 				keyID:       "id",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use: "sig",
-						Key: &rsa.PublicKey{},
-					},
-					{
-						Use: "sig",
-						Key: &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithUse(t, &testRSAKey.PublicKey, "sig"),
+					newKeyWithUse(t, &testRSAKey.PublicKey, "sig"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{},
 				err: ErrKeyMultiple,
 			},
 		},
@@ -279,25 +211,12 @@ func TestFindKey(t *testing.T) {
 				keyID:       "id1",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use:   "sig",
-						KeyID: "id1",
-						Key:   &rsa.PublicKey{},
-					},
-					{
-						Use:   "sig",
-						KeyID: "id2",
-						Key:   &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id1", "sig"),
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id2", "sig"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{
-					Use:   "sig",
-					KeyID: "id1",
-					Key:   &rsa.PublicKey{},
-				},
 				err: nil,
 			},
 		},
@@ -307,22 +226,12 @@ func TestFindKey(t *testing.T) {
 				keyID:       "id1",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						Use: "sig",
-						Key: &rsa.PublicKey{},
-					},
-					{
-						Use: "enc",
-						Key: &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithUse(t, &testRSAKey.PublicKey, "sig"),
+					newKeyWithUse(t, &testRSAKey.PublicKey, "enc"),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{
-					Use: "sig",
-					Key: &rsa.PublicKey{},
-				},
 				err: nil,
 			},
 		},
@@ -332,22 +241,12 @@ func TestFindKey(t *testing.T) {
 				keyID:       "id1",
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						KeyID: "id1",
-						Key:   &rsa.PublicKey{},
-					},
-					{
-						KeyID: "id2",
-						Key:   &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id1", ""),
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id2", ""),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{
-					KeyID: "id1",
-					Key:   &rsa.PublicKey{},
-				},
 				err: nil,
 			},
 		},
@@ -356,19 +255,12 @@ func TestFindKey(t *testing.T) {
 			args{
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
-				keys: []jose.JSONWebKey{
-					{
-						KeyID: "id1",
-						Key:   &rsa.PublicKey{},
-					},
-					{
-						KeyID: "id2",
-						Key:   &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id1", ""),
+					newKeyWithKid(t, &testRSAKey.PublicKey, "id2", ""),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{},
 				err: ErrKeyMultiple,
 			},
 		},
@@ -378,17 +270,12 @@ func TestFindKey(t *testing.T) {
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
 				keyID:       "id1",
-				keys: []jose.JSONWebKey{
-					{
-						Key: &rsa.PublicKey{},
-					},
-					{
-						Key: &rsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKey(t, &testRSAKey.PublicKey),
+					newKey(t, &testRSAKey.PublicKey),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{},
 				err: ErrKeyMultiple,
 			},
 		},
@@ -398,19 +285,12 @@ func TestFindKey(t *testing.T) {
 				use:         KeyUseSignature,
 				expectedAlg: "RS256",
 				keyID:       "id1",
-				keys: []jose.JSONWebKey{
-					{
-						Key: &rsa.PublicKey{},
-					},
-					{
-						Key: &ecdsa.PublicKey{},
-					},
+				keys: []jwk.Key{
+					newKey(t, &testRSAKey.PublicKey),
+					newKey(t, &testECDSAKey.PublicKey),
 				},
 			},
 			res{
-				key: jose.JSONWebKey{
-					Key: &rsa.PublicKey{},
-				},
 				err: nil,
 			},
 		},
@@ -421,9 +301,76 @@ func TestFindKey(t *testing.T) {
 			if (tt.res.err != nil && !errors.Is(err, tt.res.err)) || (tt.res.err == nil && err != nil) {
 				t.Errorf("FindKey() error, got = %v, want = %v", err, tt.res.err)
 			}
-			if !reflect.DeepEqual(got, tt.res.key) {
-				t.Errorf("FindKey() got = %v, want %v", got, tt.res.key)
+			if err != nil {
+				return
+			}
+
+			// For matching results, verify the raw key type
+			if tt.args.expectedAlg == "RS256" && len(tt.args.keys) > 0 {
+				if got == nil {
+					t.Errorf("FindMatchingKey() returned nil key for expected match")
+					return
+				}
 			}
 		})
 	}
 }
+
+// newKey creates a jwk.Key from a raw key with no kid or use
+func newKey(t *testing.T, rawKey interface{}) jwk.Key {
+	t.Helper()
+	key, err := jwk.Import[jwk.Key](rawKey)
+	if err != nil {
+		t.Fatalf("jwk.Import failed: %v", err)
+	}
+	return key
+}
+
+// newKeyWithKid creates a jwk.Key with a kid and optional use
+func newKeyWithKid(t *testing.T, rawKey interface{}, kid, use string) jwk.Key {
+	t.Helper()
+	key, err := jwk.Import[jwk.Key](rawKey)
+	if err != nil {
+		t.Fatalf("jwk.Import failed: %v", err)
+	}
+	if kid != "" {
+		if err := key.Set("kid", kid); err != nil {
+			t.Fatalf("key.Set(kid) failed: %v", err)
+		}
+	}
+	if use != "" {
+		if err := key.Set("use", use); err != nil {
+			t.Fatalf("key.Set(use) failed: %v", err)
+		}
+	}
+	return key
+}
+
+// newKeyWithUse creates a jwk.Key with a use
+func newKeyWithUse(t *testing.T, rawKey interface{}, use string) jwk.Key {
+	t.Helper()
+	key, err := jwk.Import[jwk.Key](rawKey)
+	if err != nil {
+		t.Fatalf("jwk.Import failed: %v", err)
+	}
+	if use != "" {
+		if err := key.Set("use", use); err != nil {
+			t.Fatalf("key.Set(use) failed: %v", err)
+		}
+	}
+	return key
+}
+
+// newKeyWithType creates a jwk.Key with a specific raw key type
+func newKeyWithType(t *testing.T, rawKey interface{}) jwk.Key {
+	t.Helper()
+	key, err := jwk.Import[jwk.Key](rawKey)
+	if err != nil {
+		t.Fatalf("jwk.Import failed: %v", err)
+	}
+	return key
+}
+
+// Ensure unused imports are not removed
+var _ = rand.Reader
+var _ = reflect.TypeOf

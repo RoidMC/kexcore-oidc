@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package rp
 
 import (
@@ -5,11 +10,10 @@ import (
 	"testing"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
+	tu "github.com/roidmc/kexcore-oidc/v1/internal/testutil"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	tu "github.com/zitadel/oidc/v3/internal/testutil"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
 
 func TestVerifyTokens(t *testing.T) {
@@ -263,7 +267,7 @@ func TestVerifyAccessToken(t *testing.T) {
 	type args struct {
 		accessToken  string
 		atHash       string
-		sigAlgorithm jose.SignatureAlgorithm
+		sigAlgorithm string
 	}
 	tests := []struct {
 		name    string

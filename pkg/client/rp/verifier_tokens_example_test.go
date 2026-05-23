@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	tu "github.com/zitadel/oidc/v3/internal/testutil"
-	"github.com/zitadel/oidc/v3/pkg/client/rp"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	tu "github.com/roidmc/kexcore-oidc/v1/internal/testutil"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client/rp"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 // MyCustomClaims extends the TokenClaims base,

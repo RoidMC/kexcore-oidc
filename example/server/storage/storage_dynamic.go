@@ -1,13 +1,17 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package storage
 
 import (
 	"context"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
-
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
 
 type multiStorage struct {
@@ -158,7 +162,7 @@ func (s *multiStorage) SigningKey(ctx context.Context) (op.SigningKey, error) {
 
 // SignatureAlgorithms implements the op.Storage interface
 // it will be called to get the sign
-func (s *multiStorage) SignatureAlgorithms(ctx context.Context) ([]jose.SignatureAlgorithm, error) {
+func (s *multiStorage) SignatureAlgorithms(ctx context.Context) ([]string, error) {
 	storage, err := s.storageFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -196,18 +200,7 @@ func (s *multiStorage) AuthorizeClientIDSecret(ctx context.Context, clientID, cl
 	return storage.AuthorizeClientIDSecret(ctx, clientID, clientSecret)
 }
 
-// SetUserinfoFromScopes implements the op.Storage interface.
-// Provide an empty implementation and use SetUserinfoFromRequest instead.
-func (s *multiStorage) SetUserinfoFromScopes(ctx context.Context, userinfo *oidc.UserInfo, userID, clientID string, scopes []string) error {
-	storage, err := s.storageFromContext(ctx)
-	if err != nil {
-		return err
-	}
-	return storage.SetUserinfoFromScopes(ctx, userinfo, userID, clientID, scopes)
-}
-
-// SetUserinfoFromRequests implements the op.CanSetUserinfoFromRequest interface.  In the
-// next major release, it will be required for op.Storage.
+// SetUserinfoFromRequests implements the op.CanSetUserinfoFromRequest interface.
 // It will be called for the creation of an id_token, so we'll just pass it to the private function without any further check
 func (s *multiStorage) SetUserinfoFromRequest(ctx context.Context, userinfo *oidc.UserInfo, token op.IDTokenRequest, scopes []string) error {
 	storage, err := s.storageFromContext(ctx)
@@ -249,7 +242,7 @@ func (s *multiStorage) GetPrivateClaimsFromScopes(ctx context.Context, userID, c
 
 // GetKeyByIDAndClientID implements the op.Storage interface
 // it will be called to validate the signatures of a JWT (JWT Profile Grant and Authentication)
-func (s *multiStorage) GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (*jose.JSONWebKey, error) {
+func (s *multiStorage) GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (jwk.Key, error) {
 	storage, err := s.storageFromContext(ctx)
 	if err != nil {
 		return nil, err

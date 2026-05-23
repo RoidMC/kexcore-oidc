@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -5,8 +10,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/zitadel/oidc/v3/pkg/crypto"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 type TokenCreator interface {
@@ -240,10 +245,6 @@ func CreateIDToken(ctx context.Context, issuer string, request IDTokenRequest, v
 		claims.SetUserInfo(userInfo)
 	} else if len(scopes) > 0 {
 		userInfo := new(oidc.UserInfo)
-		err := storage.SetUserinfoFromScopes(ctx, userInfo, request.GetSubject(), request.GetClientID(), scopes)
-		if err != nil {
-			return "", err
-		}
 		if fromRequest, ok := storage.(CanSetUserinfoFromRequest); ok {
 			err := fromRequest.SetUserinfoFromRequest(ctx, userInfo, request, scopes)
 			if err != nil {

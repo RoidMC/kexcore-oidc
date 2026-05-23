@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package oidc
 
 import (
@@ -9,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
 	"github.com/muhlemmer/gu"
 	"github.com/zitadel/schema"
 	"golang.org/x/text/language"
@@ -324,4 +328,4 @@ func (r *RequestObject) GetIssuer() string {
 	return r.Issuer
 }
 
-func (*RequestObject) SetSignatureAlgorithm(algorithm jose.SignatureAlgorithm) {}
+func (*RequestObject) SetSignatureAlgorithm(algorithm string) {}

@@ -1,10 +1,17 @@
-package http
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel 
+// Modifications Copyright 2026 RoidMC Studios
+
+package http_test
 
 import (
 	"bytes"
+	stdhttp "net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/roidmc/kexcore-oidc/v1/pkg/http"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -80,7 +87,7 @@ func TestConcatenateJSON(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ConcatenateJSON(tt.args.first, tt.args.second)
+			got, err := http.ConcatenateJSON(tt.args.first, tt.args.second)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ConcatenateJSON() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -90,6 +97,18 @@ func TestConcatenateJSON(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConcatenateJSON_DoesNotModifyInput(t *testing.T) {
+	first := []byte(`{"some": "thing"}`)
+	second := []byte(`{"another": "thing"}`)
+	firstCopy := make([]byte, len(first))
+	copy(firstCopy, first)
+
+	_, err := http.ConcatenateJSON(first, second)
+	assert.NoError(t, err)
+	// Verify that the original slice was not modified
+	assert.Equal(t, firstCopy, first, "ConcatenateJSON should not modify the input slice")
 }
 
 func TestMarshalJSONWithStatus(t *testing.T) {
@@ -143,11 +162,36 @@ func TestMarshalJSONWithStatus(t *testing.T) {
 `,
 			},
 		},
+		{
+			"custom status code",
+			args{
+				struct {
+					Error string `json:"error"`
+				}{"not found"},
+				stdhttp.StatusNotFound,
+			},
+			res{
+				stdhttp.StatusNotFound,
+				`{"error":"not found"}
+`,
+			},
+		},
+		{
+			"nil pointer",
+			args{
+				(*struct{ Foo string })(nil),
+				stdhttp.StatusOK,
+			},
+			res{
+				stdhttp.StatusOK,
+				"",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			MarshalJSONWithStatus(w, tt.args.i, tt.args.status)
+			http.MarshalJSONWithStatus(w, tt.args.i, tt.args.status)
 			assert.Equal(t, tt.res.statusCode, w.Result().StatusCode)
 			assert.Equal(t, "application/json", w.Header().Get("content-type"))
 			assert.Equal(t, tt.res.body, w.Body.String())

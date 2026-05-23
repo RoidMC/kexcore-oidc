@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package main
 
 import (
@@ -13,7 +18,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 
-	"github.com/zitadel/oidc/v3/pkg/client/profile"
+	oidcclient "github.com/roidmc/kexcore-oidc/v1/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client/profile"
 )
 
 var client = http.DefaultClient
@@ -25,7 +31,11 @@ func main() {
 	scopes := strings.Split(os.Getenv("SCOPES"), " ")
 
 	if keyPath != "" {
-		ts, err := profile.NewJWTProfileTokenSourceFromKeyFile(context.TODO(), issuer, keyPath, scopes)
+		keyData, err := oidcclient.ConfigFromKeyFile(keyPath)
+		if err != nil {
+			logrus.Fatalf("error reading key file %s", err.Error())
+		}
+		ts, err := profile.NewJWTProfileTokenSource(context.TODO(), issuer, keyData.UserID, keyData.KeyID, []byte(keyData.Key), scopes)
 		if err != nil {
 			logrus.Fatalf("error creating token source %s", err.Error())
 		}
@@ -76,7 +86,12 @@ func main() {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			ts, err := profile.NewJWTProfileTokenSourceFromKeyFileData(context.TODO(), issuer, key, scopes)
+			keyData, err := oidcclient.ConfigFromKeyFileData(key)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			ts, err := profile.NewJWTProfileTokenSource(context.TODO(), issuer, keyData.UserID, keyData.KeyID, []byte(keyData.Key), scopes)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

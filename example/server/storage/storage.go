@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package storage
 
 import (
@@ -11,18 +16,18 @@ import (
 	"sync"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
 	"github.com/google/uuid"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
 
 // serviceKey1 is a public key which will be used for the JWT Profile Authorization Grant
 // the corresponding private key is in the service-key1.pem (for demonstration purposes)
 var serviceKey1 = &rsa.PublicKey{
 	N: func() *big.Int {
-		n, _ := new(big.Int).SetString("00f6d44fb5f34ac2033a75e73cb65ff24e6181edc58845e75a560ac21378284977bb055b1a75b714874e2a2641806205681c09abec76efd52cf40984edcf4c8ca09717355d11ac338f280d3e4c905b00543bdb8ee5a417496cb50cb0e29afc5a0d0471fd5a2fa625bd5281f61e6b02067d4fe7a5349eeae6d6a4300bcd86eef331", 16)
+		n, _ := new(big.Int).SetString("d541a75bde2fdfe85cb0aaae8bdc5c7315a7e77ce205f24a4c11052d201f99dca27ad9c48b8c2bfb797a678d755dd27345b31e4638126db30763dc88edc6c2b94453c9d94c1c9f7700c64d68ad4b3f395f9b2fb1d12bec5adcc9b01babf9248e8da37f35dbc689be4fdcc64b59e290fb86365f610b77b4c779cd0ac25e7113f37dd93f3e30c44abc516d6aaa56e96099185c7db5b26817b44a57611795f80ee7a27e336db5a64ebda6b2c294d90c63f0edcd79e130ccfa4da95d0e46daeffc5b77a35f03ee0c099d2e01d940418a6ce3de4182d1000508bb1cba0a33e3a0edd7dea28efed071946f2ee632df79f5fb0aa1e1f5ea0fb08ce0072519ad85aec8c3", 16)
 		return n
 	}(),
 	E: 65537,
@@ -53,11 +58,11 @@ type Storage struct {
 
 type signingKey struct {
 	id        string
-	algorithm jose.SignatureAlgorithm
+	algorithm string
 	key       *rsa.PrivateKey
 }
 
-func (s *signingKey) SignatureAlgorithm() jose.SignatureAlgorithm {
+func (s *signingKey) SignatureAlgorithm() string {
 	return s.algorithm
 }
 
@@ -77,7 +82,7 @@ func (s *publicKey) ID() string {
 	return s.id
 }
 
-func (s *publicKey) Algorithm() jose.SignatureAlgorithm {
+func (s *publicKey) Algorithm() string {
 	return s.algorithm
 }
 
@@ -111,7 +116,7 @@ func NewStorageWithClients(userStore UserStore, clients map[string]*Client) *Sto
 		},
 		signingKey: signingKey{
 			id:        uuid.NewString(),
-			algorithm: jose.RS256,
+			algorithm: "RS256",
 			key:       key,
 		},
 		deviceCodes: make(map[string]deviceAuthorizationEntry),
@@ -408,8 +413,8 @@ func (s *Storage) SigningKey(ctx context.Context) (op.SigningKey, error) {
 
 // SignatureAlgorithms implements the op.Storage interface
 // it will be called to get the sign
-func (s *Storage) SignatureAlgorithms(context.Context) ([]jose.SignatureAlgorithm, error) {
-	return []jose.SignatureAlgorithm{s.signingKey.algorithm}, nil
+func (s *Storage) SignatureAlgorithms(context.Context) ([]string, error) {
+	return []string{s.signingKey.algorithm}, nil
 }
 
 // KeySet implements the op.Storage interface
@@ -452,14 +457,7 @@ func (s *Storage) AuthorizeClientIDSecret(ctx context.Context, clientID, clientS
 	return nil
 }
 
-// SetUserinfoFromScopes implements the op.Storage interface.
-// Provide an empty implementation and use SetUserinfoFromRequest instead.
-func (s *Storage) SetUserinfoFromScopes(ctx context.Context, userinfo *oidc.UserInfo, userID, clientID string, scopes []string) error {
-	return nil
-}
-
-// SetUserinfoFromRequests implements the op.CanSetUserinfoFromRequest interface.  In the
-// next major release, it will be required for op.Storage.
+// SetUserinfoFromRequests implements the op.CanSetUserinfoFromRequest interface.
 // It will be called for the creation of an id_token, so we'll just pass it to the private function without any further check
 func (s *Storage) SetUserinfoFromRequest(ctx context.Context, userinfo *oidc.UserInfo, token op.IDTokenRequest, scopes []string) error {
 	return s.setUserinfo(ctx, userinfo, token.GetSubject(), token.GetClientID(), scopes)
@@ -555,7 +553,7 @@ func (s *Storage) getPrivateClaimsFromScopes(ctx context.Context, userID, client
 
 // GetKeyByIDAndClientID implements the op.Storage interface
 // it will be called to validate the signatures of a JWT (JWT Profile Grant and Authentication)
-func (s *Storage) GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (*jose.JSONWebKey, error) {
+func (s *Storage) GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (jwk.Key, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	service, ok := s.services[clientID]
@@ -566,11 +564,13 @@ func (s *Storage) GetKeyByIDAndClientID(ctx context.Context, keyID, clientID str
 	if !ok {
 		return nil, fmt.Errorf("key not found")
 	}
-	return &jose.JSONWebKey{
-		KeyID: keyID,
-		Use:   "sig",
-		Key:   key,
-	}, nil
+	jwkKey, err := jwk.Import[jwk.Key](key)
+	if err != nil {
+		return nil, err
+	}
+	jwkKey.Set(jwk.KeyIDKey, keyID)
+	jwkKey.Set(jwk.KeyUsageKey, "sig")
+	return jwkKey, nil
 }
 
 // ValidateJWTProfileScopes implements the op.Storage interface

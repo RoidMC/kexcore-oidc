@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -13,17 +18,13 @@ import (
 	"strings"
 	"time"
 
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 type DeviceAuthorizationConfig struct {
 	Lifetime     time.Duration
 	PollInterval time.Duration
-
-	// UserFormURL is the complete URL where the user must go to authorize the device.
-	// Deprecated: use UserFormPath instead.
-	UserFormURL string
 
 	// UserFormPath is the path where the user must go to authorize the device.
 	// The hostname for the URL is taken from the request by IssuerFromContext.
@@ -104,18 +105,11 @@ func createDeviceAuthorization(ctx context.Context, req *oidc.DeviceAuthorizatio
 	}
 
 	var verification *url.URL
-	if config.UserFormURL != "" {
-		if verification, err = url.Parse(config.UserFormURL); err != nil {
-			err = oidc.ErrServerError().WithParent(err).WithDescription("invalid URL for device user form")
-			return nil, NewStatusError(err, http.StatusInternalServerError)
-		}
-	} else {
-		if verification, err = url.Parse(IssuerFromContext(ctx)); err != nil {
-			err = oidc.ErrServerError().WithParent(err).WithDescription("invalid URL for issuer")
-			return nil, NewStatusError(err, http.StatusInternalServerError)
-		}
-		verification.Path = config.UserFormPath
+	if verification, err = url.Parse(IssuerFromContext(ctx)); err != nil {
+		err = oidc.ErrServerError().WithParent(err).WithDescription("invalid URL for issuer")
+		return nil, NewStatusError(err, http.StatusInternalServerError)
 	}
+	verification.Path = config.UserFormPath
 
 	response := &oidc.DeviceAuthorizationResponse{
 		DeviceCode:      deviceCode,

@@ -1,11 +1,11 @@
-# OpenID Connect SDK (client and server) for Go
+# KexCore OpenID Connect SDK (client and server) for Go
 
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
 [![Release](https://github.com/zitadel/oidc/workflows/Release/badge.svg)](https://github.com/zitadel/oidc/actions)
-[![Go Reference](https://pkg.go.dev/badge/github.com/zitadel/oidc/v3.svg)](https://pkg.go.dev/github.com/zitadel/oidc/v3)
+[![Go Reference](https://pkg.go.dev/badge/github.com/roidmc/kexcore-oidc/v1.svg)](https://pkg.go.dev/github.com/roidmc/kexcore-oidc/v1)
 [![license](https://badgen.net/github/license/zitadel/oidc/)](https://github.com/zitadel/oidc/blob/master/LICENSE)
 [![release](https://badgen.net/github/release/zitadel/oidc/stable)](https://github.com/zitadel/oidc/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/zitadel/oidc/v3)](https://goreportcard.com/report/github.com/zitadel/oidc/v3)
+[![Go Report Card](https://goreportcard.com/badge/github.com/roidmc/kexcore-oidc/v1)](https://goreportcard.com/report/github.com/roidmc/kexcore-oidc/v1)
 [![codecov](https://codecov.io/gh/zitadel/oidc/branch/main/graph/badge.svg)](https://codecov.io/gh/zitadel/oidc)
 
 [![openid_certified](https://cloud.githubusercontent.com/assets/1454075/7611268/4d19de32-f97b-11e4-895b-31b2455a7ca6.png)](https://openid.net/certification/)
@@ -14,13 +14,9 @@
 
 This project is an easy-to-use client (RP) and server (OP) implementation for the `OIDC` (OpenID Connect) standard written for `Go`.
 
-The RP is certified for the [basic](https://www.certification.openid.net/plan-detail.html?public=true&plan=uoprP0OO8Z4Qo) and [config](https://www.certification.openid.net/plan-detail.html?public=true&plan=AYSdLbzmWbu9X) profile.
+The RP is certified for the [oidf-basic] and [oidf-config] profile.
 
 Whenever possible we tried to reuse / extend existing packages like `OAuth2 for Go`.
-
-> [!NOTE]
-> We currently have limited availability for feature reviews: 
-https://github.com/zitadel/oidc/discussions/785
 
 ## Basic Overview
 
@@ -44,7 +40,7 @@ The most important packages of the library:
 
 ### Semver
 
-This package uses [semver](https://semver.org/) for [releases](https://github.com/zitadel/oidc/releases). Major releases ship breaking changes. Starting with the `v2` to `v3` increment we provide an [upgrade guide](UPGRADING.md) to ease migration to a newer version.
+This package uses [semver](https://semver.org/) for [releases](https://github.com/roidmc/kexcore-oidc/releases). Major releases ship breaking changes. Starting with the `v2` to `v3` increment we provide an [upgrade guide](UPGRADING.md) to ease migration to a newer version.
 
 ## How To Use It
 
@@ -53,9 +49,9 @@ Check the `/example` folder where example code for different scenarios is locate
 ```bash
 # start oidc op server
 # oidc discovery http://localhost:9998/.well-known/openid-configuration
-go run github.com/zitadel/oidc/v3/example/server
+go run github.com/roidmc/kexcore-oidc/v1/example/server
 # start oidc web client (in a new terminal)
-CLIENT_ID=web CLIENT_SECRET=secret ISSUER=http://localhost:9998/ SCOPES="openid profile" PORT=9999 go run github.com/zitadel/oidc/v3/example/client/app
+CLIENT_ID=web CLIENT_SECRET=secret ISSUER=http://localhost:9998/ SCOPES="openid profile" PORT=9999 go run github.com/roidmc/kexcore-oidc/v1/example/client/app
 ```
 
 - open http://localhost:9999/login in your browser
@@ -66,13 +62,13 @@ CLIENT_ID=web CLIENT_SECRET=secret ISSUER=http://localhost:9998/ SCOPES="openid 
 for the dynamic issuer, just start it with:
 
 ```bash
-go run github.com/zitadel/oidc/v3/example/server/dynamic
+go run github.com/roidmc/kexcore-oidc/v1/example/server/dynamic
 ```
 
 the oidc web client above will still work, but if you add `oidc.local` (pointing to 127.0.0.1) in your hosts file you can also start it with:
 
 ```bash
-CLIENT_ID=web CLIENT_SECRET=secret ISSUER=http://oidc.local:9998/ SCOPES="openid profile" PORT=9999 go run github.com/zitadel/oidc/v3/example/client/app
+CLIENT_ID=web CLIENT_SECRET=secret ISSUER=http://oidc.local:9998/ SCOPES="openid profile" PORT=9999 go run github.com/roidmc/kexcore-oidc/v1/example/client/app
 ```
 
 > Note: Usernames are suffixed with the hostname (`test-user@localhost` or `test-user@oidc.local`)
@@ -148,8 +144,8 @@ Here is json equivalent for one of the default users
 
 ## Contributors
 
-<a href="https://github.com/zitadel/oidc/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=zitadel/oidc" alt="Screen with contributors' avatars from contrib.rocks" />
+<a href="https://github.com/roidmc/kexcore-oidc/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=roidmc/kexcore-oidc" alt="Screen with contributors' avatars from contrib.rocks" />
 </a>
 
 Made with [contrib.rocks](https://contrib.rocks).
@@ -168,9 +164,8 @@ Versions that also build are marked with :warning:.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| <1.25   | :x:                |
-| 1.25    | :white_check_mark: |
-| 1.26    | :white_check_mark: |
+| <1.26.3    | :x: |
+| 1.26.3    | :white_check_mark: |
 
 ## Why another library
 
@@ -202,3 +197,6 @@ AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or im
 language governing permissions and limitations under the License.
 
 [^1]: https://github.com/zitadel/oidc/issues/135#issuecomment-950563892
+
+[oidf-basic]: https://www.certification.openid.net/log-detail.html?log=GJw8Lct7VW2mcFK&public=true
+[oidf-config]: https://www.certification.openid.net/log-detail.html?log=3iE9O7fRSAhYzoC&public=true

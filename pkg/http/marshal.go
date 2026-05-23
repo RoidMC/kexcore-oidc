@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel 
+// Modifications Copyright 2026 RoidMC Studios
+
 package http
 
 import (
@@ -14,14 +19,17 @@ func MarshalJSON(w http.ResponseWriter, i any) {
 
 func MarshalJSONWithStatus(w http.ResponseWriter, i any, status int) {
 	w.Header().Set("content-type", "application/json")
-	w.WriteHeader(status)
 	if i == nil || (reflect.ValueOf(i).Kind() == reflect.Ptr && reflect.ValueOf(i).IsNil()) {
+		w.WriteHeader(status)
 		return
 	}
-	err := json.NewEncoder(w).Encode(i)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(i); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	w.WriteHeader(status)
+	buf.WriteTo(w)
 }
 
 func ConcatenateJSON(first, second []byte) ([]byte, error) {
@@ -39,7 +47,9 @@ func ConcatenateJSON(first, second []byte) ([]byte, error) {
 		return first, nil
 	}
 
-	first[len(first)-1] = ','
-	first = append(first, second[1:]...)
-	return first, nil
+	result := make([]byte, len(first)+len(second)-1)
+	copy(result, first[:len(first)-1])
+	result[len(first)-1] = ','
+	copy(result[len(first):], second[1:])
+	return result, nil
 }

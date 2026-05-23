@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -5,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 type JWTAuthorizationGrantExchanger interface {
@@ -91,13 +96,6 @@ func CreateJWTTokenResponse(ctx context.Context, tokenRequest TokenRequest, crea
 		ExpiresIn:   uint64(validity.Seconds()),
 		Scope:       tokenRequest.GetScopes(),
 	}, nil
-}
-
-// ParseJWTProfileRequest has been renamed to ParseJWTProfileGrantRequest
-//
-// deprecated: use ParseJWTProfileGrantRequest
-func ParseJWTProfileRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.JWTProfileGrantRequest, error) {
-	return ParseJWTProfileGrantRequest(r, decoder)
 }
 
 type jwtProfileClient struct {

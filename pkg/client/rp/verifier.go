@@ -1,13 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package rp
 
 import (
 	"context"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
-
-	"github.com/zitadel/oidc/v3/pkg/client"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 // VerifyTokens implement the Token Response Validation as defined in OIDC specification
@@ -94,7 +97,7 @@ type IDTokenVerifier oidc.Verifier
 
 // VerifyAccessToken validates the access token according to
 // https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowTokenValidation
-func VerifyAccessToken(accessToken, atHash string, sigAlgorithm jose.SignatureAlgorithm) error {
+func VerifyAccessToken(accessToken, atHash string, sigAlgorithm string) error {
 	if atHash == "" {
 		return nil
 	}

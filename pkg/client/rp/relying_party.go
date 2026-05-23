@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package rp
 
 import (
@@ -11,16 +16,15 @@ import (
 	"slices"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 
-	"github.com/zitadel/logging"
-
-	"github.com/zitadel/oidc/v3/pkg/client"
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 const (
@@ -61,7 +65,7 @@ type RelyingParty interface {
 	IsOAuth2Only() bool
 
 	// Signer is used if the relaying party uses the JWT Profile
-	Signer() jose.Signer
+	Signer() *crypto.Signer
 
 	// GetEndSessionEndpoint returns the endpoint to sign out on a IDP
 	GetEndSessionEndpoint() string
@@ -119,7 +123,7 @@ type relyingParty struct {
 	unauthorizedHandler func(http.ResponseWriter, *http.Request, string, string)
 	idTokenVerifier     *IDTokenVerifier
 	verifierOpts        []VerifierOption
-	signer              jose.Signer
+	signer              *crypto.Signer
 	logger              *slog.Logger
 }
 
@@ -147,7 +151,7 @@ func (rp *relyingParty) IsOAuth2Only() bool {
 	return rp.oauth2Only
 }
 
-func (rp *relyingParty) Signer() jose.Signer {
+func (rp *relyingParty) Signer() *crypto.Signer {
 	return rp.signer
 }
 
@@ -189,7 +193,7 @@ func (rp *relyingParty) UnauthorizedHandler() func(http.ResponseWriter, *http.Re
 }
 
 func (rp *relyingParty) Logger(ctx context.Context) (logger *slog.Logger, ok bool) {
-	logger, ok = logging.FromContext(ctx)
+	logger, ok = logctx.FromContext(ctx)
 	if ok {
 		return logger, ok
 	}
@@ -369,13 +373,6 @@ func WithVerifierOpts(opts ...VerifierOption) Option {
 	}
 }
 
-// WithClientKey specifies the path to the key.json to be used for the JWT Profile Client Authentication on the token endpoint
-//
-// Deprecated: use WithJWTProfile(SignerFromKeyPath(path)), resp. WithJWTProfile(SignerFromKeyAndKeyID(key, keyID) instead.
-func WithClientKey(path string) Option {
-	return WithJWTProfile(SignerFromKeyPath(path))
-}
-
 // WithJWTProfile creates a signer used for the JWT Profile Client Authentication on the token endpoint
 // When creating the signer, be sure to include the KeyID in the SigningKey.
 // See client.NewSignerFromPrivateKeyByte for an example.
@@ -408,34 +405,10 @@ func WithSigningAlgsFromDiscovery() Option {
 	}
 }
 
-type SignerFromKey func() (jose.Signer, error)
-
-// Deprecated: use [SignerFromKeyAndKeyID] instead.
-// The function will be removed in the next major release.
-func SignerFromKeyPath(path string) SignerFromKey {
-	return func() (jose.Signer, error) {
-		config, err := client.ConfigFromKeyFile(path)
-		if err != nil {
-			return nil, err
-		}
-		return client.NewSignerFromPrivateKeyByte([]byte(config.Key), config.KeyID)
-	}
-}
-
-// Deprecated: use [SignerFromKeyAndKeyID] instead.
-// The function will be removed in the next major release.
-func SignerFromKeyFile(fileData []byte) SignerFromKey {
-	return func() (jose.Signer, error) {
-		config, err := client.ConfigFromKeyFileData(fileData)
-		if err != nil {
-			return nil, err
-		}
-		return client.NewSignerFromPrivateKeyByte([]byte(config.Key), config.KeyID)
-	}
-}
+type SignerFromKey func() (*crypto.Signer, error)
 
 func SignerFromKeyAndKeyID(key []byte, keyID string) SignerFromKey {
-	return func() (jose.Signer, error) {
+	return func() (*crypto.Signer, error) {
 		return client.NewSignerFromPrivateKeyByte(key, keyID)
 	}
 }

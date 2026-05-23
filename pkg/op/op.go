@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -8,14 +13,15 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-jose/go-jose/v4"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/roidmc/kexcore-oidc/v1/internal/otel"
 	"github.com/rs/cors"
-	"github.com/zitadel/oidc/v3/internal/otel"
 	"github.com/zitadel/schema"
 	"golang.org/x/text/language"
 
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 const (
@@ -110,9 +116,6 @@ type OpenIDProvider interface {
 	DefaultLogoutRedirectURI() string
 	Probes() []ProbesFn
 	Logger() *slog.Logger
-
-	// Deprecated: Provider now implements http.Handler directly.
-	HttpHandler() http.Handler
 }
 
 type HttpInterceptor func(http.Handler) http.Handler
@@ -169,6 +172,7 @@ type Config struct {
 	SupportedUILocales                []language.Tag
 	SupportedClaims                   []string
 	SupportedScopes                   []string
+	SupportedSignAlgorithms           []string
 	DeviceAuthorization               DeviceAuthorizationConfig
 	BackChannelLogoutSupported        bool
 	BackChannelLogoutSessionSupported bool
@@ -185,48 +189,6 @@ type Endpoints struct {
 	CheckSessionIframe  *Endpoint
 	JwksURI             *Endpoint
 	DeviceAuthorization *Endpoint
-}
-
-// NewOpenIDProvider creates a provider. The provider provides (with HttpHandler())
-// a http.Router that handles a suite of endpoints (some paths can be overridden):
-//
-//	/healthz
-//	/ready
-//	/.well-known/openid-configuration
-//	/oauth/token
-//	/oauth/introspect
-//	/callback
-//	/authorize
-//	/userinfo
-//	/revoke
-//	/end_session
-//	/keys
-//	/device_authorization
-//
-// This does not include login. Login is handled with a redirect that includes the
-// request ID. The redirect for logins is specified per-client by Client.LoginURL().
-// Successful logins should mark the request as authorized and redirect back to
-// op.AuthCallbackURL(provider) which is probably /callback. On the redirect back
-// to the AuthCallbackURL, the request id should be passed as the "id" parameter.
-//
-// Deprecated: use [NewProvider] with an issuer function direct.
-func NewOpenIDProvider(issuer string, config *Config, storage Storage, opOpts ...Option) (*Provider, error) {
-	return NewProvider(config, storage, StaticIssuer(issuer), opOpts...)
-}
-
-// NewForwardedOpenIDProvider tries to establish the issuer from the request Host.
-//
-// Deprecated: use [NewProvider] with an issuer function direct.
-func NewDynamicOpenIDProvider(path string, config *Config, storage Storage, opOpts ...Option) (*Provider, error) {
-	return NewProvider(config, storage, IssuerFromHost(path), opOpts...)
-}
-
-// NewForwardedOpenIDProvider tries to establish the Issuer from a Forwarded request header, if it is set.
-// See [IssuerFromForwardedOrHost] for details.
-//
-// Deprecated: use [NewProvider] with an issuer function direct.
-func NewForwardedOpenIDProvider(path string, config *Config, storage Storage, opOpts ...Option) (*Provider, error) {
-	return NewProvider(config, storage, IssuerFromForwardedOrHost(path), opOpts...)
 }
 
 // NewProvider creates a provider with a router on it's embedded http.Handler.
@@ -374,7 +336,7 @@ func (o *Provider) AuthMethodPrivateKeyJWTSupported() bool {
 }
 
 func (o *Provider) TokenEndpointSigningAlgorithmsSupported() []string {
-	return []string{"RS256"}
+	return supportedSignAlgorithms(o.config.SupportedSignAlgorithms)
 }
 
 func (o *Provider) GrantTypeRefreshTokenSupported() bool {
@@ -400,7 +362,7 @@ func (o *Provider) IntrospectionAuthMethodPrivateKeyJWTSupported() bool {
 }
 
 func (o *Provider) IntrospectionEndpointSigningAlgorithmsSupported() []string {
-	return []string{"RS256"}
+	return supportedSignAlgorithms(o.config.SupportedSignAlgorithms)
 }
 
 func (o *Provider) GrantTypeClientCredentialsSupported() bool {
@@ -413,7 +375,7 @@ func (o *Provider) RevocationAuthMethodPrivateKeyJWTSupported() bool {
 }
 
 func (o *Provider) RevocationEndpointSigningAlgorithmsSupported() []string {
-	return []string{"RS256"}
+	return supportedSignAlgorithms(o.config.SupportedSignAlgorithms)
 }
 
 func (o *Provider) RequestObjectSupported() bool {
@@ -421,7 +383,14 @@ func (o *Provider) RequestObjectSupported() bool {
 }
 
 func (o *Provider) RequestObjectSigningAlgorithmsSupported() []string {
-	return []string{"RS256"}
+	return supportedSignAlgorithms(o.config.SupportedSignAlgorithms)
+}
+
+func supportedSignAlgorithms(algs []string) []string {
+	if len(algs) == 0 {
+		return []string{"RS256", "SM2"}
+	}
+	return algs
 }
 
 func (o *Provider) SupportedUILocales() []language.Tag {
@@ -486,28 +455,58 @@ func (o *Provider) Logger() *slog.Logger {
 	return o.logger
 }
 
-// Deprecated: Provider now implements http.Handler directly.
-func (o *Provider) HttpHandler() http.Handler {
-	return o
-}
-
 type OpenIDKeySet struct {
 	Storage
 }
 
 // VerifySignature implements the oidc.KeySet interface
 // providing an implementation for the keys stored in the OP Storage interface
-func (o *OpenIDKeySet) VerifySignature(ctx context.Context, jws *jose.JSONWebSignature) ([]byte, error) {
+func (o *OpenIDKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]byte, error) {
 	keySet, err := o.Storage.KeySet(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching keys: %w", err)
 	}
-	keyID, alg := oidc.GetKeyIDAndAlg(jws)
-	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, jsonWebKeySet(keySet).Keys...)
+
+	// Parse to get kid and alg from header
+	jwsMsg, err := jws.Parse(rawToken)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing token: %w", err)
+	}
+
+	keyID, alg := oidc.GetKeyIDAndAlg(jwsMsg)
+
+	// Convert []Key to []jwk.Key
+	var jwkKeys []jwk.Key
+	for _, k := range keySet {
+		jk, err := jwk.Import[jwk.Key](k.Key())
+		if err != nil {
+			continue
+		}
+		if id := k.ID(); id != "" {
+			_ = jk.Set(jwk.KeyIDKey, id)
+		}
+		if use := k.Use(); use != "" {
+			_ = jk.Set(jwk.KeyUsageKey, use)
+		}
+		jwkKeys = append(jwkKeys, jk)
+	}
+
+	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, jwkKeys...)
 	if err != nil {
 		return nil, fmt.Errorf("invalid signature: %w", err)
 	}
-	return jws.Verify(&key)
+
+	sig := jwsMsg.Signatures()[0]
+	sigAlg, ok := sig.ProtectedHeaders().Algorithm()
+	if !ok {
+		return nil, fmt.Errorf("missing algorithm in token header")
+	}
+	payload, err := jws.Verify(rawToken, jws.WithKey(sigAlg, key))
+	if err != nil {
+		return nil, err
+	}
+
+	return payload, nil
 }
 
 type Option func(o *Provider) error

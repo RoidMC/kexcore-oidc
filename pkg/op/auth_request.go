@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -16,8 +21,8 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 type AuthRequest interface {
@@ -225,20 +230,6 @@ func CopyRequestObjectToAuthRequest(authReq *oidc.AuthRequest, requestObject *oi
 		authReq.CodeChallengeMethod = requestObject.CodeChallengeMethod
 	}
 	authReq.RequestParam = ""
-}
-
-// ValidateAuthRequest validates the authorize parameters and returns the userID of the id_token_hint if passed.
-//
-// Deprecated: Use [ValidateAuthRequestClient] to prevent querying for the Client twice.
-func ValidateAuthRequest(ctx context.Context, authReq *oidc.AuthRequest, storage Storage, verifier *IDTokenHintVerifier) (sub string, err error) {
-	ctx, span := Tracer.Start(ctx, "ValidateAuthRequest")
-	defer span.End()
-
-	client, err := storage.GetClientByClientID(ctx, authReq.ClientID)
-	if err != nil {
-		return "", oidc.ErrInvalidRequestRedirectURI().WithDescription("unable to retrieve client by id").WithParent(err)
-	}
-	return ValidateAuthRequestClient(ctx, authReq, client, verifier)
 }
 
 // ValidateAuthRequestClient validates the Auth request against the passed client.

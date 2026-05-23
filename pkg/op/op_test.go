@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op_test
 
 import (
@@ -12,11 +17,11 @@ import (
 	"time"
 
 	"github.com/muhlemmer/gu"
+	"github.com/roidmc/kexcore-oidc/v1/example/server/storage"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/oidc/v3/example/server/storage"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
 	"golang.org/x/text/language"
 )
 
@@ -61,7 +66,7 @@ func init() {
 func newTestProvider(config *op.Config) op.OpenIDProvider {
 	storage := storage.NewStorage(storage.NewUserStore(testIssuer))
 	keySet := &op.OpenIDKeySet{storage}
-	provider, err := op.NewOpenIDProvider(testIssuer, config, storage,
+	provider, err := op.NewProvider(config, storage, op.StaticIssuer(testIssuer),
 		op.WithAllowInsecure(),
 		op.WithAccessTokenKeySet(keySet),
 		op.WithIDTokenHintKeySet(keySet),
@@ -155,7 +160,7 @@ func TestRoutes(t *testing.T) {
 			method:   http.MethodGet,
 			path:     oidc.DiscoveryEndpoint,
 			wantCode: http.StatusOK,
-			json:     `{"issuer":"https://localhost:9998/","authorization_endpoint":"https://localhost:9998/authorize","token_endpoint":"https://localhost:9998/oauth/token","introspection_endpoint":"https://localhost:9998/oauth/introspect","userinfo_endpoint":"https://localhost:9998/userinfo","revocation_endpoint":"https://localhost:9998/revoke","end_session_endpoint":"https://localhost:9998/end_session","device_authorization_endpoint":"https://localhost:9998/device_authorization","jwks_uri":"https://localhost:9998/keys","scopes_supported":["openid","profile","email","phone","address","offline_access"],"response_types_supported":["code","id_token","id_token token"],"grant_types_supported":["authorization_code","implicit","refresh_token","client_credentials","urn:ietf:params:oauth:grant-type:token-exchange","urn:ietf:params:oauth:grant-type:jwt-bearer","urn:ietf:params:oauth:grant-type:device_code"],"subject_types_supported":["public"],"id_token_signing_alg_values_supported":["RS256"],"request_object_signing_alg_values_supported":["RS256"],"token_endpoint_auth_methods_supported":["none","client_secret_basic","client_secret_post","private_key_jwt"],"token_endpoint_auth_signing_alg_values_supported":["RS256"],"revocation_endpoint_auth_methods_supported":["none","client_secret_basic","client_secret_post","private_key_jwt"],"revocation_endpoint_auth_signing_alg_values_supported":["RS256"],"introspection_endpoint_auth_methods_supported":["client_secret_basic","private_key_jwt"],"introspection_endpoint_auth_signing_alg_values_supported":["RS256"],"claims_supported":["sub","aud","exp","iat","iss","auth_time","nonce","acr","amr","c_hash","at_hash","act","scopes","client_id","azp","preferred_username","name","family_name","given_name","locale","email","email_verified","phone_number","phone_number_verified"],"code_challenge_methods_supported":["S256"],"ui_locales_supported":["en"],"request_parameter_supported":true,"request_uri_parameter_supported":false}`,
+			json:     `{"issuer":"https://localhost:9998/","authorization_endpoint":"https://localhost:9998/authorize","token_endpoint":"https://localhost:9998/oauth/token","introspection_endpoint":"https://localhost:9998/oauth/introspect","userinfo_endpoint":"https://localhost:9998/userinfo","revocation_endpoint":"https://localhost:9998/revoke","end_session_endpoint":"https://localhost:9998/end_session","device_authorization_endpoint":"https://localhost:9998/device_authorization","jwks_uri":"https://localhost:9998/keys","scopes_supported":["openid","profile","email","phone","address","offline_access"],"response_types_supported":["code","id_token","id_token token"],"grant_types_supported":["authorization_code","implicit","refresh_token","client_credentials","urn:ietf:params:oauth:grant-type:token-exchange","urn:ietf:params:oauth:grant-type:jwt-bearer","urn:ietf:params:oauth:grant-type:device_code"],"subject_types_supported":["public"],"id_token_signing_alg_values_supported":["RS256"],"request_object_signing_alg_values_supported":["RS256","SM2"],"token_endpoint_auth_methods_supported":["none","client_secret_basic","client_secret_post","private_key_jwt"],"token_endpoint_auth_signing_alg_values_supported":["RS256","SM2"],"revocation_endpoint_auth_methods_supported":["none","client_secret_basic","client_secret_post","private_key_jwt"],"revocation_endpoint_auth_signing_alg_values_supported":["RS256","SM2"],"introspection_endpoint_auth_methods_supported":["client_secret_basic","private_key_jwt"],"introspection_endpoint_auth_signing_alg_values_supported":["RS256","SM2"],"claims_supported":["sub","aud","exp","iat","iss","auth_time","nonce","acr","amr","c_hash","at_hash","act","scopes","client_id","azp","preferred_username","name","family_name","given_name","locale","email","email_verified","phone_number","phone_number_verified"],"code_challenge_methods_supported":["S256"],"ui_locales_supported":["en"],"request_parameter_supported":true,"request_uri_parameter_supported":false}`,
 		},
 		{
 			name:   "authorization",
@@ -221,7 +226,7 @@ func TestRoutes(t *testing.T) {
 			wantCode: http.StatusOK,
 			contains: []string{
 				`{"access_token":"`,
-				`","issued_token_type":"urn:ietf:params:oauth:token-type:refresh_token","token_type":"Bearer","expires_in":299,"scope":"openid offline_access","refresh_token":"`,
+				`","issued_token_type":"urn:ietf:params:oauth:token-type:refresh_token","token_type":"Bearer","expires_in":300,"scope":"openid offline_access","refresh_token":"`,
 			},
 		},
 		{
@@ -234,7 +239,7 @@ func TestRoutes(t *testing.T) {
 				"scope":      oidc.SpaceDelimitedArray{oidc.ScopeOpenID, oidc.ScopeOfflineAccess}.String(),
 			},
 			wantCode: http.StatusOK,
-			contains: []string{`{"access_token":"`, `","token_type":"Bearer","expires_in":299,"scope":"openid offline_access"}`},
+			contains: []string{`{"access_token":"`, `","token_type":"Bearer","expires_in":300,"scope":"openid offline_access"}`},
 		},
 		{
 			// This call will fail. A successful test is already
@@ -308,7 +313,7 @@ func TestRoutes(t *testing.T) {
 			contains: []string{
 				`{"access_token":"`,
 				`","token_type":"Bearer","refresh_token":"`,
-				`","expires_in":299,"id_token":"`,
+				`","expires_in":300,"id_token":"`,
 			},
 		},
 		{
@@ -339,8 +344,8 @@ func TestRoutes(t *testing.T) {
 			path:     testProvider.KeysEndpoint().Relative(),
 			wantCode: http.StatusOK,
 			contains: []string{
-				`{"keys":[{"use":"sig","kty":"RSA","kid":"`,
-				`","alg":"RS256","n":"`, `","e":"AQAB"}]}`,
+				`{"keys":[{"alg":"RS256","e":"AQAB","kid":"`,
+				`","kty":"RSA","n":"`, `","use":"sig"}]}`,
 			},
 		},
 		{
@@ -440,8 +445,9 @@ func TestWithCustomEndpoints(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, err := op.NewOpenIDProvider(testIssuer, testConfig,
+			provider, err := op.NewProvider(testConfig,
 				storage.NewStorage(storage.NewUserStore(testIssuer)),
+				op.StaticIssuer(testIssuer),
 				op.WithCustomEndpoints(tt.args.auth, tt.args.token, tt.args.userInfo, tt.args.revocation, tt.args.endSession, tt.args.keys),
 			)
 			require.ErrorIs(t, err, tt.wantErr)

@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package config
 
 import (
@@ -14,6 +19,7 @@ type Config struct {
 	Port        string
 	RedirectURI []string
 	UsersFile   string
+	Issuer      string
 }
 
 // FromEnvVars loads configuration parameters from environment variables.
@@ -35,6 +41,9 @@ func FromEnvVars(defaults *Config) *Config {
 	}
 	if value, ok := os.LookupEnv("REDIRECT_URI"); ok {
 		cfg.RedirectURI = strings.Split(value, ",")
+	}
+	if value, ok := os.LookupEnv("ISSUER"); ok {
+		cfg.Issuer = value
 	}
 	return cfg
 }

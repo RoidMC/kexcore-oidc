@@ -1,22 +1,26 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package rp
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 
-	jose "github.com/go-jose/go-jose/v4"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 
-	"github.com/zitadel/oidc/v3/pkg/client"
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
-func NewRemoteKeySet(client *http.Client, jwksURL string, opts ...func(*remoteKeySet)) oidc.KeySet {
-	keyset := &remoteKeySet{httpClient: client, jwksURL: jwksURL}
+func NewRemoteKeySet(httpClient *http.Client, jwksURL string, opts ...func(*remoteKeySet)) oidc.KeySet {
+	keyset := &remoteKeySet{httpClient: httpClient, jwksURL: jwksURL}
 	for _, opt := range opts {
 		opt(keyset)
 	}
@@ -48,15 +52,15 @@ type remoteKeySet struct {
 	// multiple goroutines to wait for its result.
 	inflight *inflight
 
-	// A set of cached keys and their expiry.
-	cachedKeys []jose.JSONWebKey
+	// A set of cached keys.
+	cachedKeys jwk.Set
 }
 
 // inflight is used to wait on some in-flight request from multiple goroutines.
 type inflight struct {
 	doneCh chan struct{}
 
-	keys []jose.JSONWebKey
+	keys jwk.Set
 	err  error
 }
 
@@ -73,36 +77,41 @@ func (i *inflight) wait() <-chan struct{} {
 // done can only be called by a single goroutine. It records the result of the
 // inflight request and signals other goroutines that the result is safe to
 // inspect.
-func (i *inflight) done(keys []jose.JSONWebKey, err error) {
+func (i *inflight) done(keys jwk.Set, err error) {
 	i.keys = keys
 	i.err = err
 	close(i.doneCh)
 }
 
 // result cannot be called until the wait() channel has returned a value.
-func (i *inflight) result() ([]jose.JSONWebKey, error) {
+func (i *inflight) result() (jwk.Set, error) {
 	return i.keys, i.err
 }
 
-func (r *remoteKeySet) VerifySignature(ctx context.Context, jws *jose.JSONWebSignature) ([]byte, error) {
+func (r *remoteKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]byte, error) {
 	ctx, span := client.Tracer.Start(ctx, "VerifySignature")
 	defer span.End()
 
-	keyID, alg := oidc.GetKeyIDAndAlg(jws)
+	jwsMsg, err := jws.Parse(rawToken)
+	if err != nil {
+		return nil, fmt.Errorf("oidc: error parsing JWS: %w", err)
+	}
+
+	keyID, alg := oidc.GetKeyIDAndAlg(jwsMsg)
 	if alg == "" {
 		alg = r.defaultAlg
 	}
-	payload, err := r.verifySignatureCached(jws, keyID, alg)
+	payload, err := r.verifySignatureCached(rawToken, jwsMsg, keyID, alg)
 	if payload != nil {
 		return payload, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return r.verifySignatureRemote(ctx, jws, keyID, alg)
+	return r.verifySignatureRemote(ctx, rawToken, jwsMsg, keyID, alg)
 }
 
-// verifySignatureCached checks for a matching key in the cached key list
+// verifySignatureCached checks for a matching key in the cached key set.
 //
 // if there is only one possible, it tries to verify the signature and will return the payload if successful
 //
@@ -111,21 +120,37 @@ func (r *remoteKeySet) VerifySignature(ctx context.Context, jws *jose.JSONWebSig
 // - or both (JWT and JWK) kid are equal
 //
 // otherwise it will return no error (so remote keys will be loaded)
-func (r *remoteKeySet) verifySignatureCached(jws *jose.JSONWebSignature, keyID, alg string) ([]byte, error) {
+func (r *remoteKeySet) verifySignatureCached(rawToken []byte, jwsMsg *jws.Message, keyID, alg string) ([]byte, error) {
 	keys := r.keysFromCache()
-	if len(keys) == 0 {
+	if keys == nil || keys.Len() == 0 {
 		return nil, nil
 	}
-	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, keys...)
+
+	// Convert jwk.Set to []jwk.Key
+	var jwkKeys []jwk.Key
+	for _, key := range keys.All() {
+		jwkKeys = append(jwkKeys, key)
+	}
+
+	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, jwkKeys...)
 	if err != nil {
 		// no key / multiple found, try with remote keys
 		return nil, nil //nolint:nilerr
 	}
-	payload, err := jws.Verify(&key)
+
+	sig := jwsMsg.Signatures()[0]
+	sigAlg, ok := sig.ProtectedHeaders().Algorithm()
+	if !ok {
+		return nil, nil
+	}
+
+	payload, err := jws.Verify(rawToken, jws.WithKey(sigAlg, key))
 	if payload != nil {
 		return payload, nil
 	}
-	if !r.exactMatch(key.KeyID, keyID) {
+
+	jwkKid, _ := key.KeyID()
+	if !r.exactMatch(jwkKid, keyID) {
 		// no exact key match, try getting better match with remote keys
 		return nil, nil
 	}
@@ -139,7 +164,7 @@ func (r *remoteKeySet) exactMatch(jwkID, jwsID string) bool {
 	return jwkID == jwsID
 }
 
-func (r *remoteKeySet) verifySignatureRemote(ctx context.Context, jws *jose.JSONWebSignature, keyID, alg string) ([]byte, error) {
+func (r *remoteKeySet) verifySignatureRemote(ctx context.Context, rawToken []byte, jwsMsg *jws.Message, keyID, alg string) ([]byte, error) {
 	ctx, span := client.Tracer.Start(ctx, "verifySignatureRemote")
 	defer span.End()
 
@@ -147,18 +172,32 @@ func (r *remoteKeySet) verifySignatureRemote(ctx context.Context, jws *jose.JSON
 	if err != nil {
 		return nil, fmt.Errorf("unable to fetch key for signature validation: %w", err)
 	}
-	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, keys...)
+
+	// Convert jwk.Set to []jwk.Key
+	var jwkKeys []jwk.Key
+	for _, key := range keys.All() {
+		jwkKeys = append(jwkKeys, key)
+	}
+
+	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, jwkKeys...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to validate signature: %w", err)
 	}
-	payload, err := jws.Verify(&key)
+
+	sig := jwsMsg.Signatures()[0]
+	sigAlg, ok := sig.ProtectedHeaders().Algorithm()
+	if !ok {
+		return nil, fmt.Errorf("missing algorithm in token header")
+	}
+
+	payload, err := jws.Verify(rawToken, jws.WithKey(sigAlg, key))
 	if err != nil {
 		return nil, fmt.Errorf("signature verification failed: %w", err)
 	}
 	return payload, nil
 }
 
-func (r *remoteKeySet) keysFromCache() (keys []jose.JSONWebKey) {
+func (r *remoteKeySet) keysFromCache() jwk.Set {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.cachedKeys
@@ -166,7 +205,7 @@ func (r *remoteKeySet) keysFromCache() (keys []jose.JSONWebKey) {
 
 // keysFromRemote syncs the key set from the remote set, records the values in the
 // cache, and returns the key set.
-func (r *remoteKeySet) keysFromRemote(ctx context.Context) ([]jose.JSONWebKey, error) {
+func (r *remoteKeySet) keysFromRemote(ctx context.Context) (jwk.Set, error) {
 	ctx, span := client.Tracer.Start(ctx, "keysFromRemote")
 	defer span.End()
 
@@ -214,7 +253,7 @@ func (r *remoteKeySet) updateKeys(ctx context.Context) {
 	r.inflight = nil
 }
 
-func (r *remoteKeySet) fetchRemoteKeys(ctx context.Context) ([]jose.JSONWebKey, error) {
+func (r *remoteKeySet) fetchRemoteKeys(ctx context.Context) (jwk.Set, error) {
 	ctx, span := client.Tracer.Start(ctx, "fetchRemoteKeys")
 	defer span.End()
 
@@ -223,39 +262,20 @@ func (r *remoteKeySet) fetchRemoteKeys(ctx context.Context) ([]jose.JSONWebKey, 
 		return nil, fmt.Errorf("oidc: can't create request: %v", err)
 	}
 
-	keySet := new(jsonWebKeySet)
-	if err = httphelper.HttpRequest(r.httpClient, req, keySet); err != nil {
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
 		return nil, fmt.Errorf("oidc: failed to get keys: %v", err)
 	}
-	return keySet.Keys, nil
-}
+	defer resp.Body.Close()
 
-// jsonWebKeySet is an alias for jose.JSONWebKeySet which ignores unknown key types (kty)
-type jsonWebKeySet jose.JSONWebKeySet
-
-// UnmarshalJSON overrides the default jose.JSONWebKeySet method to ignore any error
-// which might occur because of unknown key types (kty)
-func (k *jsonWebKeySet) UnmarshalJSON(data []byte) (err error) {
-	var raw rawJSONWebKeySet
-	err = json.Unmarshal(data, &raw)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("oidc: failed to unmarshall key set: %w", err)
+		return nil, fmt.Errorf("oidc: failed to read response: %v", err)
 	}
-	for i, key := range raw.Keys {
-		webKey := new(jose.JSONWebKey)
-		if err = webKey.UnmarshalJSON(key); err != nil {
-			if errors.Is(err, jose.ErrUnsupportedKeyType) {
-				continue
-			}
 
-			return fmt.Errorf("oidc: failed to unmarshal key %d from set: %w", i, err)
-		}
-
-		k.Keys = append(k.Keys, *webKey)
+	keyset, err := jwk.Parse(body)
+	if err != nil {
+		return nil, fmt.Errorf("oidc: failed to parse keys: %v", err)
 	}
-	return nil
-}
-
-type rawJSONWebKeySet struct {
-	Keys []json.RawMessage `json:"keys"`
+	return keyset, nil
 }

@@ -1,11 +1,69 @@
 package op
 
 import (
+	"crypto/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAesCrypto_Ok(t *testing.T) {
+	key := NewBsKey("This_Key_Is_32_Bytes_Or_256_Bits")
+	cr := NewAESCrypto(key)
+	value := "Hello world, AES-CTR"
+
+	encrypted, err := cr.Encrypt(value)
+	require.NoError(t, err)
+
+	decrypted, err := cr.Decrypt(encrypted)
+	require.NoError(t, err)
+
+	assert.Equal(t, value, decrypted)
+}
+
+func TestAesCrypto_Decrypt_InvalidInput(t *testing.T) {
+	key := NewBsKey("This_Key_Is_32_Bytes_Or_256_Bits")
+	cr := NewAESCrypto(key)
+
+	_, err := cr.Decrypt("!!!not-valid-base64!!!")
+	require.Error(t, err)
+}
+
+func TestSm4Crypto_Ok(t *testing.T) {
+	key := NewSm4Key()
+	cr := NewSM4Crypto(key)
+	value := "Hello world, SM4-GCM"
+
+	encrypted, err := cr.Encrypt(value)
+	require.NoError(t, err)
+
+	decrypted, err := cr.Decrypt(encrypted)
+	require.NoError(t, err)
+
+	assert.Equal(t, value, decrypted)
+}
+
+func TestSm4Crypto_Decrypt_InvalidInput(t *testing.T) {
+	key := NewSm4Key()
+	cr := NewSM4Crypto(key)
+
+	_, err := cr.Decrypt("!!!not-valid-base64!!!")
+	require.Error(t, err)
+}
+
+func TestSm4Crypto_Decrypt_WrongKey(t *testing.T) {
+	key := NewSm4Key()
+	cr := NewSM4Crypto(key)
+
+	encrypted, err := cr.Encrypt("test")
+	require.NoError(t, err)
+
+	otherKey := NewSm4Key()
+	otherCr := NewSM4Crypto(otherKey)
+	_, err = otherCr.Decrypt(encrypted)
+	require.Error(t, err)
+}
 
 func TestAes256GCMCrypto_Ok(t *testing.T) {
 	testCases := []struct {
@@ -104,5 +162,11 @@ func TestCompositeCrypto(t *testing.T) {
 func NewBsKey(key string) [32]byte {
 	bs := [32]byte{}
 	copy(bs[:], key)
+	return bs
+}
+
+func NewSm4Key() [16]byte {
+	bs := [16]byte{}
+	rand.Read(bs[:])
 	return bs
 }

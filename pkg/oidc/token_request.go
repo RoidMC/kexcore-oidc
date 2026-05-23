@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package oidc
 
 import (
@@ -7,8 +12,6 @@ import (
 	"net/url"
 	"slices"
 	"time"
-
-	jose "github.com/go-jose/go-jose/v4"
 )
 
 const (
@@ -213,7 +216,7 @@ func (j *JWTTokenRequest) GetAuthorizedParty() string {
 }
 
 // SetSignatureAlgorithm implements the Claims interface
-func (j *JWTTokenRequest) SetSignatureAlgorithm(_ jose.SignatureAlgorithm) {}
+func (j *JWTTokenRequest) SetSignatureAlgorithm(_ string) {}
 
 // GetSubject implements the TokenRequest interface
 func (j *JWTTokenRequest) GetSubject() string {

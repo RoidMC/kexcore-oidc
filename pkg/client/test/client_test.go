@@ -1,13 +1,19 @@
-package client
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
+package client_test
 
 import (
 	"context"
 	"net/http"
 	"testing"
 
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
 
 func TestDiscover(t *testing.T) {
@@ -45,7 +51,7 @@ func TestDiscover(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Discover(context.Background(), tt.args.issuer, http.DefaultClient, tt.args.wellKnownUrl...)
+			got, err := client.Discover(context.Background(), tt.args.issuer, http.DefaultClient, tt.args.wellKnownUrl...)
 			require.ErrorIs(t, err, tt.wantErr)
 			if tt.wantFields == nil {
 				return

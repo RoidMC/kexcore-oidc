@@ -1,17 +1,79 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2026 RoidMC Studios
+
 package crypto_test
 
 import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509/pkix"
+	"encoding/asn1"
+	"encoding/pem"
 	"testing"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/assert"
 
-	zcrypto "github.com/zitadel/oidc/v3/pkg/crypto"
+	gmsm "github.com/emmansun/gmsm/sm2"
+
+	zcrypto "github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 )
+
+var oidSM2 = asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 301}
+
+type pkcs8Key struct {
+	Version    int
+	Algo       pkix.AlgorithmIdentifier
+	PrivateKey []byte
+}
+
+type ecPrivateKey struct {
+	Version       int
+	PrivateKey    []byte
+	NamedCurveOID asn1.ObjectIdentifier `asn1:"optional,explicit,tag:0"`
+	PublicKey     asn1.BitString        `asn1:"optional,explicit,tag:1"`
+}
+
+func sm2PrivateKeyToPEM(sm2Key *gmsm.PrivateKey) ([]byte, error) {
+	ecdhKey, err := sm2Key.ECDH()
+	if err != nil {
+		return nil, err
+	}
+	privBytes := ecdhKey.Bytes()
+
+	pubKey := sm2Key.PublicKey
+	pubBytes := make([]byte, 1+2*32)
+	pubBytes[0] = 4
+	pubKey.X.FillBytes(pubBytes[1 : 1+32])
+	pubKey.Y.FillBytes(pubBytes[1+32 : 1+2*32])
+
+	inner, err := asn1.Marshal(ecPrivateKey{
+		Version:       1,
+		PrivateKey:    privBytes,
+		NamedCurveOID: oidSM2,
+		PublicKey:     asn1.BitString{Bytes: pubBytes, BitLength: 8 * len(pubBytes)},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	outer, err := asn1.Marshal(pkcs8Key{
+		Version: 0,
+		Algo: pkix.AlgorithmIdentifier{
+			Algorithm:  oidSM2,
+			Parameters: asn1.NullRawValue,
+		},
+		PrivateKey: inner,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: outer}), nil
+}
 
 func TestBytesToPrivateKey(t *testing.T) {
 	type args struct {
@@ -19,7 +81,7 @@ func TestBytesToPrivateKey(t *testing.T) {
 	}
 	type want struct {
 		key       crypto.Signer
-		algorithm jose.SignatureAlgorithm
+		algorithm string
 		err       error
 	}
 	tests := []struct {
@@ -51,7 +113,7 @@ v/Ow5T0q5gIJAiEAyS4RaI9YG8EWx/2w0T67ZUVAw8eOMB6BIUg0Xcu+3okCIBOs
 			},
 			want: want{
 				key:       &rsa.PrivateKey{},
-				algorithm: jose.RS256,
+				algorithm: "RS256",
 				err:       nil,
 			},
 		},
@@ -89,7 +151,7 @@ OFCrqT/emes3KytTPfa5NZtYeQ==
 			},
 			want: want{
 				key:       &rsa.PrivateKey{},
-				algorithm: jose.RS256,
+				algorithm: "RS256",
 				err:       nil,
 			},
 		},
@@ -104,7 +166,7 @@ G4TAeuBpyzqJ7x/6NjCxoQzJzZHtNjIfjVATI59XFZWF59GhtSZbShAr
 			},
 			want: want{
 				key:       &ecdsa.PrivateKey{},
-				algorithm: jose.ES256,
+				algorithm: "ES256",
 				err:       nil,
 			},
 		},
@@ -117,18 +179,36 @@ MC4CAQAwBQYDK2VwBCIEIHu6ZtDsjjauMasBxnS9Fg87UJwKfcT/oiq6S0ktbky8
 			},
 			want: want{
 				key:       ed25519.PrivateKey{},
-				algorithm: jose.EdDSA,
+				algorithm: "EdDSA",
+				err:       nil,
+			},
+		},
+		{
+			name: "PKCS#8 SM2",
+			args: args{
+				key: func() []byte {
+					sm2Key, _ := gmsm.GenerateKey(rand.Reader)
+					pem, _ := sm2PrivateKeyToPEM(sm2Key)
+					return pem
+				}(),
+			},
+			want: want{
+				key:       &gmsm.PrivateKey{},
+				algorithm: zcrypto.SM2,
 				err:       nil,
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			key, algorithm, err := zcrypto.BytesToPrivateKey(tt.args.key)
-			assert.IsType(t, tt.want.key, key)
-			assert.Equal(t, tt.want.algorithm, algorithm)
-			assert.ErrorIs(t, tt.want.err, err)
+			gotKey, gotAlgorithm, err := zcrypto.BytesToPrivateKey(tt.args.key)
+			if tt.want.err != nil {
+				assert.ErrorIs(t, err, tt.want.err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.IsType(t, tt.want.key, gotKey)
+			assert.Equal(t, tt.want.algorithm, gotAlgorithm)
 		})
-
 	}
 }

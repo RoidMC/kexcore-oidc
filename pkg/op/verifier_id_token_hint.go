@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/zitadel/oidc/v3/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
 type IDTokenHintVerifier oidc.Verifier

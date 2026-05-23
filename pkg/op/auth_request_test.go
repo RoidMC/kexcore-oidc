@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op_test
 
 import (
@@ -9,17 +14,18 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/roidmc/kexcore-oidc/v1/example/server/storage"
+	tu "github.com/roidmc/kexcore-oidc/v1/internal/testutil"
+	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/oidc/v3/example/server/storage"
-	tu "github.com/zitadel/oidc/v3/internal/testutil"
-	httphelper "github.com/zitadel/oidc/v3/pkg/http"
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
-	"github.com/zitadel/oidc/v3/pkg/op/mock"
 	"github.com/zitadel/schema"
 )
 
@@ -124,7 +130,7 @@ func TestParseAuthorizeRequest(t *testing.T) {
 func TestValidateAuthRequest(t *testing.T) {
 	type args struct {
 		authRequest *oidc.AuthRequest
-		storage     op.Storage
+		client      op.Client
 		verifier    *op.IDTokenHintVerifier
 	}
 	tests := []struct {
@@ -134,28 +140,28 @@ func TestValidateAuthRequest(t *testing.T) {
 	}{
 		{
 			"scope missing fails",
-			args{&oidc.AuthRequest{}, mock.NewMockStorageExpectValidClientID(t), nil},
+			args{&oidc.AuthRequest{}, &mock.ConfClient{}, nil},
 			oidc.ErrInvalidRequest(),
 		},
 		{
 			"response_type missing fails",
-			args{&oidc.AuthRequest{Scopes: []string{"openid"}}, mock.NewMockStorageExpectValidClientID(t), nil},
+			args{&oidc.AuthRequest{Scopes: []string{"openid"}}, &mock.ConfClient{}, nil},
 			oidc.ErrInvalidRequest(),
 		},
 		{
 			"client_id missing fails",
-			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode}, mock.NewMockStorageExpectValidClientID(t), nil},
+			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode}, &mock.ConfClient{}, nil},
 			oidc.ErrInvalidRequest(),
 		},
 		{
 			"redirect_uri missing fails",
-			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode, ClientID: "client_id"}, mock.NewMockStorageExpectValidClientID(t), nil},
+			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode, ClientID: "client_id"}, &mock.ConfClient{}, nil},
 			oidc.ErrInvalidRequest(),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := op.ValidateAuthRequest(context.TODO(), tt.args.authRequest, tt.args.storage, tt.args.verifier)
+			_, err := op.ValidateAuthRequestClient(context.TODO(), tt.args.authRequest, tt.args.client, tt.args.verifier)
 			if tt.wantErr == nil && err != nil {
 				t.Errorf("ValidateAuthRequest() unexpected error = %v", err)
 			}
@@ -1192,7 +1198,7 @@ func TestAuthResponseCode(t *testing.T) {
 			assert.Equal(t, tt.res.wantCacheControlHeader, resp.Header.Get("Cache-Control"))
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			assert.Equal(t, tt.res.wantBody, string(body))
+			assert.Equal(t, tt.res.wantBody, strings.ReplaceAll(string(body), "\r\n", "\n"))
 		})
 	}
 }

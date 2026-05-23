@@ -4,12 +4,11 @@ import (
 	"context"
 	"testing"
 
-	jose "github.com/go-jose/go-jose/v4"
 	"github.com/golang/mock/gomock"
 	"github.com/zitadel/schema"
 
-	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"github.com/zitadel/oidc/v3/pkg/op"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
 
 func NewAuthorizer(t *testing.T) op.Authorizer {
@@ -65,10 +64,10 @@ func (v *Verifier) VerifyIDToken(ctx context.Context, idToken string) (*oidc.IDT
 }
 
 type Sig struct {
-	signer jose.Signer
+	signer string
 }
 
-func (s *Sig) Signer() jose.Signer {
+func (s *Sig) Signer() string {
 	return s.signer
 }
 
@@ -76,8 +75,8 @@ func (s *Sig) Health(ctx context.Context) error {
 	return nil
 }
 
-func (s *Sig) SignatureAlgorithm() jose.SignatureAlgorithm {
-	return jose.HS256
+func (s *Sig) SignatureAlgorithm() string {
+	return "HS256"
 }
 
 func ExpectStorage(a op.Authorizer, t *testing.T) {

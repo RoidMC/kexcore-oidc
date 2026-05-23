@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package exampleop
 
 import (
@@ -9,10 +14,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/zitadel/logging"
 	"golang.org/x/text/language"
 
-	"github.com/zitadel/oidc/v3/pkg/op"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
 )
 
 const (
@@ -38,9 +43,9 @@ func SetupServer(issuer string, storage Storage, logger *slog.Logger, wrapServer
 	keyId := "key1"
 
 	router := chi.NewRouter()
-	router.Use(logging.Middleware(
-		logging.WithLogger(logger),
-		logging.WithIDFunc(func() slog.Attr {
+	router.Use(logctx.Middleware(
+		logctx.WithLogger(logger),
+		logctx.WithIDFunc(func() slog.Attr {
 			return slog.Int64("id", counter.Add(1))
 		}),
 	))
@@ -135,7 +140,7 @@ func newOP(
 			UserCode:     op.UserCodeBase20,
 		},
 	}
-	handler, err := op.NewOpenIDProvider(issuer, config, storage,
+	handler, err := op.NewProvider(config, storage, op.StaticIssuer(issuer),
 		append([]op.Option{
 			//we must explicitly allow the use of the http issuer
 			op.WithAllowInsecure(),
