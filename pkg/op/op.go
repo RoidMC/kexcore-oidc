@@ -7,6 +7,8 @@ package op
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -20,6 +22,7 @@ import (
 	"github.com/zitadel/schema"
 	"golang.org/x/text/language"
 
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
@@ -248,6 +251,16 @@ func NewProvider(
 		}
 	}
 
+	// If SupportedSignAlgorithms is not explicitly configured, populate it
+	// from storage so that all discovery fields stay consistent with the
+	// actual signing keys (id_token_signing_alg, request_object_signing_alg, etc.).
+	if len(o.config.SupportedSignAlgorithms) == 0 {
+		algs, err := storage.SignatureAlgorithms(context.Background())
+		if err == nil && len(algs) > 0 {
+			o.config.SupportedSignAlgorithms = algs
+		}
+	}
+
 	o.issuer, err = issuer(o.insecure)
 	if err != nil {
 		return nil, err
@@ -388,7 +401,7 @@ func (o *Provider) RequestObjectSigningAlgorithmsSupported() []string {
 
 func supportedSignAlgorithms(algs []string) []string {
 	if len(algs) == 0 {
-		return []string{"RS256", "SGD_SM3_SM2"}
+		return []string{"RS256"}
 	}
 	return algs
 }
@@ -496,6 +509,11 @@ func (o *OpenIDKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]
 		return nil, fmt.Errorf("invalid signature: %w", err)
 	}
 
+	// SM2 signatures use custom verification since jwx does not support SM2.
+	if crypto.IsSM2Algorithm(alg) {
+		return verifySM2Signature(jwsMsg, key)
+	}
+
 	sig := jwsMsg.Signatures()[0]
 	sigAlg, ok := sig.ProtectedHeaders().Algorithm()
 	if !ok {
@@ -507,6 +525,35 @@ func (o *OpenIDKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]
 	}
 
 	return payload, nil
+}
+
+// verifySM2Signature verifies an SM2 JWS signature using SM3 hash.
+func verifySM2Signature(jwsMsg *jws.Message, key jwk.Key) ([]byte, error) {
+	sig := jwsMsg.Signatures()[0]
+	sigBytes, err := base64.RawURLEncoding.DecodeString(string(sig.Signature()))
+	if err != nil {
+		return nil, fmt.Errorf("error decoding SM2 signature: %w", err)
+	}
+
+	signingInput, err := crypto.BuildSM2SigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract the ECDSA public key from the JWK
+	raw, err := jwk.Export[any](key)
+	if err != nil {
+		return nil, fmt.Errorf("error extracting public key: %w", err)
+	}
+	pubKey, ok := raw.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("expected *ecdsa.PublicKey, got %T", raw)
+	}
+
+	if err := crypto.VerifySM2JWSSignature(signingInput, sigBytes, pubKey); err != nil {
+		return nil, err
+	}
+	return jwsMsg.Payload(), nil
 }
 
 type Option func(o *Provider) error

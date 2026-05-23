@@ -6,12 +6,15 @@ package op
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"encoding/base64"
 	"fmt"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
@@ -143,10 +146,44 @@ func (k *jwtProfileKeySet) VerifySignature(ctx context.Context, rawToken []byte)
 	if !ok {
 		return nil, fmt.Errorf("error fetching keys: missing algorithm in token header")
 	}
+
+	// SM2 signatures use custom verification since jwx does not support SM2.
+	if crypto.IsSM2Algorithm(sigAlg.String()) {
+		return verifySM2SignatureFromKey(jwsMsg, key)
+	}
+
 	payload, err = jws.Verify(rawToken, jws.WithKey(sigAlg, key))
 	if err != nil {
 		return nil, err
 	}
 
 	return payload, nil
+}
+
+// verifySM2SignatureFromKey verifies an SM2 JWS signature using a jwk.Key.
+func verifySM2SignatureFromKey(jwsMsg *jws.Message, key jwk.Key) ([]byte, error) {
+	sig := jwsMsg.Signatures()[0]
+	sigBytes, err := base64.RawURLEncoding.DecodeString(string(sig.Signature()))
+	if err != nil {
+		return nil, fmt.Errorf("error decoding SM2 signature: %w", err)
+	}
+
+	signingInput, err := crypto.BuildSM2SigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
+	if err != nil {
+		return nil, err
+	}
+
+	raw, err := jwk.Export[any](key)
+	if err != nil {
+		return nil, fmt.Errorf("error extracting public key: %w", err)
+	}
+	pubKey, ok := raw.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("expected *ecdsa.PublicKey, got %T", raw)
+	}
+
+	if err := crypto.VerifySM2JWSSignature(signingInput, sigBytes, pubKey); err != nil {
+		return nil, err
+	}
+	return jwsMsg.Payload(), nil
 }

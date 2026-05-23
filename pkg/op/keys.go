@@ -6,10 +6,13 @@ package op
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"encoding/json"
 	"net/http"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
 )
 
@@ -36,9 +39,24 @@ func Keys(w http.ResponseWriter, r *http.Request, k KeyProvider) {
 	httphelper.MarshalJSON(w, jsonWebKeySet(keySet))
 }
 
-func jsonWebKeySet(keys []Key) jwk.Set {
-	webKeys := jwk.NewSet()
+// jwksResponse is the JSON structure for a JWKS endpoint response.
+type jwksResponse struct {
+	Keys []map[string]interface{} `json:"keys"`
+}
+
+func jsonWebKeySet(keys []Key) jwksResponse {
+	resp := jwksResponse{Keys: make([]map[string]interface{}, 0, len(keys))}
 	for _, key := range keys {
+		// SM2 keys require manual JWK construction because jwx does not
+		// recognize the SM2 curve. Build the JWK per GM/T 0125.4-2022.
+		if crypto.IsSM2Algorithm(key.Algorithm()) {
+			jwkMap := buildSM2JWKMap(key)
+			if jwkMap != nil {
+				resp.Keys = append(resp.Keys, jwkMap)
+			}
+			continue
+		}
+
 		k, err := jwk.Import[jwk.Key](key.Key())
 		if err != nil {
 			continue
@@ -52,7 +70,38 @@ func jsonWebKeySet(keys []Key) jwk.Set {
 		if use := key.Use(); use != "" {
 			_ = k.Set(jwk.KeyUsageKey, use)
 		}
-		_ = webKeys.AddKey(k)
+
+		// Serialize the jwk.Key to JSON and back to map for uniform output
+		raw, err := json.Marshal(k)
+		if err != nil {
+			continue
+		}
+		var m map[string]interface{}
+		if err := json.Unmarshal(raw, &m); err != nil {
+			continue
+		}
+		resp.Keys = append(resp.Keys, m)
 	}
-	return webKeys
+	return resp
+}
+
+// buildSM2JWKMap constructs a JWK map for an SM2 public key per GM/T 0125.4-2022.
+func buildSM2JWKMap(key Key) map[string]interface{} {
+	pubKey, ok := key.Key().(*ecdsa.PublicKey)
+	if !ok {
+		return nil
+	}
+
+	sm2jwk := crypto.NewSM2JWK(pubKey, key.ID(), key.Use())
+
+	// Marshal and unmarshal to get a map[string]interface{}
+	raw, err := json.Marshal(sm2jwk)
+	if err != nil {
+		return nil
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	return m
 }

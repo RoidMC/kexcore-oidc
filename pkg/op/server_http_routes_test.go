@@ -287,7 +287,9 @@ func TestServerRoutes(t *testing.T) {
 			wantCode: http.StatusOK,
 			contains: []string{
 				`{"keys":[{"alg":"RS256","e":"AQAB","kid":"`,
-				`","kty":"RSA","n":"`, `","use":"sig"}]}`,
+				`","kty":"RSA","n":"`, `","use":"sig"}`,
+				`"alg":"SGD_SM3_SM2","crv":"SM2-P-256"`,
+				`"kty":"EC"`,
 			},
 		},
 		{

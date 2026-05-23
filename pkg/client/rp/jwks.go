@@ -7,6 +7,8 @@ package rp
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +18,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
 )
 
@@ -144,6 +147,19 @@ func (r *remoteKeySet) verifySignatureCached(rawToken []byte, jwsMsg *jws.Messag
 		return nil, nil
 	}
 
+	// SM2 signatures use custom verification since jwx does not support SM2.
+	if crypto.IsSM2Algorithm(alg) {
+		payload, err := verifySM2Signature(jwsMsg, key)
+		if err != nil {
+			jwkKid, _ := key.KeyID()
+			if !r.exactMatch(jwkKid, keyID) {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("SM2 signature verification failed: %w", err)
+		}
+		return payload, nil
+	}
+
 	payload, err := jws.Verify(rawToken, jws.WithKey(sigAlg, key))
 	if payload != nil {
 		return payload, nil
@@ -188,6 +204,11 @@ func (r *remoteKeySet) verifySignatureRemote(ctx context.Context, rawToken []byt
 	sigAlg, ok := sig.ProtectedHeaders().Algorithm()
 	if !ok {
 		return nil, fmt.Errorf("missing algorithm in token header")
+	}
+
+	// SM2 signatures use custom verification since jwx does not support SM2.
+	if crypto.IsSM2Algorithm(alg) {
+		return verifySM2Signature(jwsMsg, key)
 	}
 
 	payload, err := jws.Verify(rawToken, jws.WithKey(sigAlg, key))
@@ -278,4 +299,33 @@ func (r *remoteKeySet) fetchRemoteKeys(ctx context.Context) (jwk.Set, error) {
 		return nil, fmt.Errorf("oidc: failed to parse keys: %v", err)
 	}
 	return keyset, nil
+}
+
+// verifySM2Signature verifies an SM2 JWS signature using SM3 hash.
+func verifySM2Signature(jwsMsg *jws.Message, key jwk.Key) ([]byte, error) {
+	sig := jwsMsg.Signatures()[0]
+	sigBytes, err := base64.RawURLEncoding.DecodeString(string(sig.Signature()))
+	if err != nil {
+		return nil, fmt.Errorf("error decoding SM2 signature: %w", err)
+	}
+
+	signingInput, err := crypto.BuildSM2SigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract the ECDSA public key from the JWK
+	raw, err := jwk.Export[any](key)
+	if err != nil {
+		return nil, fmt.Errorf("error extracting public key: %w", err)
+	}
+	pubKey, ok := raw.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("expected *ecdsa.PublicKey, got %T", raw)
+	}
+
+	if err := crypto.VerifySM2JWSSignature(signingInput, sigBytes, pubKey); err != nil {
+		return nil, err
+	}
+	return jwsMsg.Payload(), nil
 }

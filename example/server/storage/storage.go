@@ -7,6 +7,9 @@ package storage
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
@@ -61,8 +64,9 @@ type Storage struct {
 type signingKey struct {
 	id        string
 	algorithm string
-	key       interface{} // *rsa.PrivateKey or *sm2.PrivateKey
 	rsaKey    *rsa.PrivateKey
+	ecKey     *ecdsa.PrivateKey
+	edKey     ed25519.PrivateKey
 	sm2Key    interface{} // *sm2.PrivateKey from github.com/emmansun/gmsm/sm2
 }
 
@@ -73,6 +77,12 @@ func (s *signingKey) SignatureAlgorithm() string {
 func (s *signingKey) Key() any {
 	if s.rsaKey != nil {
 		return s.rsaKey
+	}
+	if s.ecKey != nil {
+		return s.ecKey
+	}
+	if s.edKey != nil {
+		return s.edKey
 	}
 	return s.sm2Key
 }
@@ -101,6 +111,12 @@ func (s *publicKey) Key() any {
 	if s.rsaKey != nil {
 		return &s.rsaKey.PublicKey
 	}
+	if s.ecKey != nil {
+		return &s.ecKey.PublicKey
+	}
+	if s.edKey != nil {
+		return s.edKey.Public()
+	}
 	// SM2 私钥的 Public() 方法返回 *ecdsa.PublicKey
 	return s.sm2Key.(*sm2.PrivateKey).Public()
 }
@@ -109,9 +125,124 @@ func NewStorage(userStore UserStore) *Storage {
 	return NewStorageWithClients(userStore, clients)
 }
 
+// NewStorageWithAlgorithms creates a Storage with the specified signing algorithms.
+// Supported algorithms: RS256, SGD_SM3_SM2.
+// TODO: SM9 signing (SGD_SM3_SM9) is not yet integrated into the OIDC JWS flow.
+// TODO: JWE encryption (SGD_SM2_3, SGD_SM9_3) is not yet integrated into the OIDC token flow.
+func NewStorageWithAlgorithms(userStore UserStore, algorithms []string) *Storage {
+	return NewStorageWithClientsAndAlgorithms(userStore, clients, algorithms)
+}
+
 func NewStorageWithClients(userStore UserStore, clients map[string]*Client) *Storage {
-	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
-	sm2Key, _ := crypto.SM2GenerateKey()
+	return NewStorageWithClientsAndAlgorithms(userStore, clients, []string{"RS256", "SGD_SM3_SM2"})
+}
+
+func NewStorageWithClientsAndAlgorithms(userStore UserStore, clients map[string]*Client, algorithms []string) *Storage {
+	signingKeys := make([]signingKey, 0, len(algorithms))
+	for _, alg := range algorithms {
+		switch alg {
+		case "RS256":
+			rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+			if err != nil {
+				continue
+			}
+			signingKeys = append(signingKeys, signingKey{
+				id:        uuid.NewString(),
+				algorithm: "RS256",
+				rsaKey:    rsaKey,
+			})
+		case "RS384":
+			rsaKey, err := rsa.GenerateKey(rand.Reader, 3072)
+			if err != nil {
+				continue
+			}
+			signingKeys = append(signingKeys, signingKey{
+				id:        uuid.NewString(),
+				algorithm: "RS384",
+				rsaKey:    rsaKey,
+			})
+		case "RS512":
+			rsaKey, err := rsa.GenerateKey(rand.Reader, 4096)
+			if err != nil {
+				continue
+			}
+			signingKeys = append(signingKeys, signingKey{
+				id:        uuid.NewString(),
+				algorithm: "RS512",
+				rsaKey:    rsaKey,
+			})
+		case "ES256":
+			ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+			if err != nil {
+				continue
+			}
+			signingKeys = append(signingKeys, signingKey{
+				id:        uuid.NewString(),
+				algorithm: "ES256",
+				ecKey:     ecKey,
+			})
+		case "ES384":
+			ecKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+			if err != nil {
+				continue
+			}
+			signingKeys = append(signingKeys, signingKey{
+				id:        uuid.NewString(),
+				algorithm: "ES384",
+				ecKey:     ecKey,
+			})
+		case "ES512":
+			ecKey, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+			if err != nil {
+				continue
+			}
+			signingKeys = append(signingKeys, signingKey{
+				id:        uuid.NewString(),
+				algorithm: "ES512",
+				ecKey:     ecKey,
+			})
+		case "EdDSA":
+			_, priv, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				continue
+			}
+			signingKeys = append(signingKeys, signingKey{
+				id:        uuid.NewString(),
+				algorithm: "EdDSA",
+				edKey:     priv,
+			})
+		case "SGD_SM3_SM2":
+			sm2Key, err := crypto.SM2GenerateKey()
+			if err != nil {
+				continue
+			}
+			signingKeys = append(signingKeys, signingKey{
+				id:        uuid.NewString(),
+				algorithm: "SGD_SM3_SM2",
+				sm2Key:    sm2Key,
+			})
+		default:
+			// Unknown algorithm, skip
+		}
+	}
+
+	// Ensure at least RS256 is available for OIDC spec compliance
+	hasRS256 := false
+	for _, sk := range signingKeys {
+		if sk.algorithm == "RS256" {
+			hasRS256 = true
+			break
+		}
+	}
+	if !hasRS256 {
+		rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+		signingKeys = append(signingKeys, signingKey{
+			id:        uuid.NewString(),
+			algorithm: "RS256",
+			rsaKey:    rsaKey,
+		})
+	}
+
 	return &Storage{
 		authRequests:  make(map[string]*AuthRequest),
 		codes:         make(map[string]string),
@@ -126,18 +257,7 @@ func NewStorageWithClients(userStore UserStore, clients map[string]*Client) *Sto
 				},
 			},
 		},
-		signingKeys: []signingKey{
-			{
-				id:        uuid.NewString(),
-				algorithm: "RS256",
-				rsaKey:    rsaKey,
-			},
-			{
-				id:        uuid.NewString(),
-				algorithm: "SGD_SM3_SM2",
-				sm2Key:    sm2Key,
-			},
-		},
+		signingKeys: signingKeys,
 		deviceCodes: make(map[string]deviceAuthorizationEntry),
 		userCodes:   make(map[string]string),
 		serviceUsers: map[string]*Client{

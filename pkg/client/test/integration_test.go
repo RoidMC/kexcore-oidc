@@ -133,12 +133,12 @@ func TestRelyingPartySession(t *testing.T) {
 func testRelyingPartySession(t *testing.T, wrapServer bool, cookieSpec cookieSpec) {
 	t.Log("------- start example OP ------")
 	targetURL := "http://local-site"
-	exampleStorage := storage.NewStorage(storage.NewUserStore(targetURL))
+	exampleStorage := storage.NewStorageWithAlgorithms(storage.NewUserStore(targetURL), []string{"RS256"})
 	var dh deferredHandler
 	opServer := httptest.NewServer(&dh)
 	defer opServer.Close()
 	t.Logf("auth server at %s", opServer.URL)
-	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, wrapServer)
+	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, wrapServer, "aes")
 
 	seed := rand.New(rand.NewSource(int64(os.Getpid()) + time.Now().UnixNano()))
 	clientID := t.Name() + "-" + strconv.FormatInt(seed.Int63(), 25)
@@ -192,11 +192,11 @@ func TestRelyingPartyWithSigningAlgsFromDiscovery(t *testing.T) {
 	clientSecret := "secret"
 	client := storage.WebClient(clientID, clientSecret, targetURL)
 	storage.RegisterClients(client)
-	exampleStorage := storage.NewStorage(storage.NewUserStore(targetURL))
+	exampleStorage := storage.NewStorageWithAlgorithms(storage.NewUserStore(targetURL), []string{"RS256"})
 	var dh deferredHandler
 	opServer := httptest.NewServer(&dh)
 	defer opServer.Close()
-	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, true)
+	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, true, "aes")
 
 	t.Log("------- create RP ------")
 	provider, err := rp.NewRelyingPartyOIDC(
@@ -278,12 +278,12 @@ func TestResourceServerTokenExchange(t *testing.T) {
 func testResourceServerTokenExchange(t *testing.T, wrapServer bool) {
 	t.Log("------- start example OP ------")
 	targetURL := "http://local-site"
-	exampleStorage := storage.NewStorage(storage.NewUserStore(targetURL))
+	exampleStorage := storage.NewStorageWithAlgorithms(storage.NewUserStore(targetURL), []string{"RS256"})
 	var dh deferredHandler
 	opServer := httptest.NewServer(&dh)
 	defer opServer.Close()
 	t.Logf("auth server at %s", opServer.URL)
-	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, wrapServer)
+	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, wrapServer, "aes")
 
 	seed := rand.New(rand.NewSource(int64(os.Getpid()) + time.Now().UnixNano()))
 	clientID := t.Name() + "-" + strconv.FormatInt(seed.Int63(), 25)
@@ -486,12 +486,12 @@ func RunAuthorizationCodeFlow(t *testing.T, opServer *httptest.Server, clientID,
 
 func TestClientCredentials(t *testing.T) {
 	targetURL := "http://local-site"
-	exampleStorage := storage.NewStorage(storage.NewUserStore(targetURL))
+	exampleStorage := storage.NewStorageWithAlgorithms(storage.NewUserStore(targetURL), []string{"RS256"})
 	var dh deferredHandler
 	opServer := httptest.NewServer(&dh)
 	defer opServer.Close()
 	t.Logf("auth server at %s", opServer.URL)
-	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, true)
+	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, true, "aes")
 
 	provider, err := rp.NewRelyingPartyOIDC(
 		CTX,
@@ -522,12 +522,12 @@ func TestErrorFromPromptNone(t *testing.T) {
 
 	t.Log("------- start example OP ------")
 	targetURL := "http://local-site"
-	exampleStorage := storage.NewStorage(storage.NewUserStore(targetURL))
+	exampleStorage := storage.NewStorageWithAlgorithms(storage.NewUserStore(targetURL), []string{"RS256"})
 	var dh deferredHandler
 	opServer := httptest.NewServer(&dh)
 	defer opServer.Close()
 	t.Logf("auth server at %s", opServer.URL)
-	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, false, op.WithHttpInterceptors(
+	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, false, "aes", op.WithHttpInterceptors(
 		func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				t.Logf("request to %s", r.URL)

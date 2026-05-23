@@ -62,13 +62,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	stor := storage.NewStorage(store)
+	stor := storage.NewStorageWithAlgorithms(store, cfg.SigningAlgorithms)
 	router := exampleop.SetupServer(
 		issuer,
 		stor,
 		logger,
 		false,
-		//op.WithCrypto(newMyCrypto(sha256.Sum256([]byte("test")), logger)),
+		cfg.CryptoMethod,
+		//op.WithCrypto(newMyCrypto(sha256.Sum256([]byte("test")), cfg.CryptoMethod, logger)),
 	)
 
 	server := &http.Server{
