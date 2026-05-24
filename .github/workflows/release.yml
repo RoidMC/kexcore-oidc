@@ -31,7 +31,7 @@ jobs:
         run: go test -race -v -coverprofile=profile.cov -coverpkg=./pkg/... ./pkg/...
       - uses: codecov/codecov-action@v6.0.0
         with:
-          file: ./profile.cov
+          files: ./profile.cov
           name: codecov-go
   release:
     runs-on: ubuntu-24.04
