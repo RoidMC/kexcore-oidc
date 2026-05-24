@@ -1,12 +1,12 @@
 # KexCore OpenID Connect SDK (client and server) for Go
 
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
-[![Release](https://github.com/zitadel/oidc/workflows/Release/badge.svg)](https://github.com/zitadel/oidc/actions)
+[![Release](https://github.com/roidmc/kexcore-oidc/workflows/Release/badge.svg)](https://github.com/roidmc/kexcore-oidc/actions)
 [![Go Reference](https://pkg.go.dev/badge/github.com/roidmc/kexcore-oidc/v1.svg)](https://pkg.go.dev/github.com/roidmc/kexcore-oidc/v1)
-[![license](https://badgen.net/github/license/zitadel/oidc/)](https://github.com/zitadel/oidc/blob/master/LICENSE)
-[![release](https://badgen.net/github/release/zitadel/oidc/stable)](https://github.com/zitadel/oidc/releases)
+[![license](https://badgen.net/github/license/roidmc/kexcore-oidc/)](https://github.com/roidmc/kexcore-oidc/blob/master/LICENSE)
+[![release](https://badgen.net/github/release/roidmc/kexcore-oidc/stable)](https://github.com/roidmc/kexcore-oidc/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/roidmc/kexcore-oidc/v1)](https://goreportcard.com/report/github.com/roidmc/kexcore-oidc/v1)
-[![codecov](https://codecov.io/gh/zitadel/oidc/branch/main/graph/badge.svg)](https://codecov.io/gh/zitadel/oidc)
+[![codecov](https://codecov.io/gh/roidmc/kexcore-oidc/branch/main/graph/badge.svg)](https://codecov.io/gh/roidmc/kexcore-oidc)
 
 [![openid_certified](https://cloud.githubusercontent.com/assets/1454075/7611268/4d19de32-f97b-11e4-895b-31b2455a7ca6.png)](https://openid.net/certification/)
 
@@ -169,7 +169,7 @@ Versions that also build are marked with :warning:.
 
 ## Why another library
 
-As of 2020 there are not a lot of `OIDC` library's in `Go` which can handle server and client implementations. ZITADEL is strongly committed to the general field of IAM (Identity and Access Management) and as such, we need solid frameworks to implement services.
+Why based on zitadel/iodc? Because we have reviewed products such as Ory/Hydra, Ory/site, etc. and found them difficult to develop and use out of the box, we have chosen the zitadel based oidc SDK for hard fork development
 
 ### Goals
 
@@ -188,7 +188,7 @@ We did not choose `fosite` because it implements `OAuth 2.0` on its own and does
 ## License
 
 The full functionality of this library is and stays open source and free to use for everyone. Visit
-our [website](https://zitadel.com) and get in touch.
+our [website](https://www.roidmc.com) and get in touch.
 
 See the exact licensing terms [here](LICENSE)
 
@@ -196,6 +196,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
 language governing permissions and limitations under the License.
 
+<!--zitadel/oidc issue reference-->
 [^1]: https://github.com/zitadel/oidc/issues/135#issuecomment-950563892
 
 [oidf-basic]: https://www.certification.openid.net/log-detail.html?log=GJw8Lct7VW2mcFK&public=true
