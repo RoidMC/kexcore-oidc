@@ -14,11 +14,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        go: ['1.25', '1.26']
+        go: ['1.26.3']
     name: Go ${{ matrix.go }} test
     steps:
       - uses: actions/checkout@v6
