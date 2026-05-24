@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/op/mock"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
 )
 
 func TestDiscover(t *testing.T) {

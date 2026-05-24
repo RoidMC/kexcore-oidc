@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	tu "github.com/roidmc/kexcore-oidc/v1/internal/testutil"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
+	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

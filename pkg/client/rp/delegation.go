@@ -1,7 +1,7 @@
 package rp
 
 import (
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc/grants/tokenexchange"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc/grants/tokenexchange"
 )
 
 // DelegationTokenRequest is an implementation of TokenExchangeRequest

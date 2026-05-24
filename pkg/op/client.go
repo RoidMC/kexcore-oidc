@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"time"
 
-	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 //go:generate go get github.com/dmarkham/enumer

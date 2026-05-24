@@ -15,7 +15,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwe"
 	"github.com/lestrrat-go/jwx/v4/jwk"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 )
 
 type Encrypter interface {

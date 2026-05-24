@@ -12,9 +12,9 @@ import (
 	"net/url"
 
 	"github.com/go-chi/chi/v5"
-	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	"github.com/roidmc/kexcore-oidc/pkg/logctx"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/rs/cors"
 	"github.com/zitadel/schema"
 )

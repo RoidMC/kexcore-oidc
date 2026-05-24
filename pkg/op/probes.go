@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 )
 
 type ProbesFn func(context.Context) error

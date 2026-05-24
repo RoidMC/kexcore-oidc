@@ -18,9 +18,9 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/client"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 func NewRemoteKeySet(httpClient *http.Client, jwksURL string, opts ...func(*remoteKeySet)) oidc.KeySet {

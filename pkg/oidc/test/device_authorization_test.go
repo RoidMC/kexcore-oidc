@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 func TestDeviceAuthorizationResponse_UnmarshalJSON(t *testing.T) {

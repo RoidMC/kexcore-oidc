@@ -6,8 +6,8 @@ import (
 	"net/url"
 
 	"github.com/muhlemmer/gu"
-	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 // Server describes the interface that needs to be implemented to serve

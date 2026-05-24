@@ -7,7 +7,7 @@ package op
 import (
 	"errors"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 )
 
 var ErrSignerCreationFailed = errors.New("signer creation failed")

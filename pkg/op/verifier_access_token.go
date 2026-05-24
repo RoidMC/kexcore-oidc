@@ -3,7 +3,7 @@ package op
 import (
 	"context"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 type AccessTokenVerifier oidc.Verifier

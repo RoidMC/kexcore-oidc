@@ -19,7 +19,7 @@ import (
 
 	gmsm "github.com/emmansun/gmsm/sm2"
 
-	zcrypto "github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
+	zcrypto "github.com/roidmc/kexcore-oidc/pkg/crypto"
 )
 
 var oidSM2 = asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 301}

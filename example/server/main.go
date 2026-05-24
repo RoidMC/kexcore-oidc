@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/roidmc/kexcore-oidc/v1/example/server/config"
-	"github.com/roidmc/kexcore-oidc/v1/example/server/exampleop"
-	"github.com/roidmc/kexcore-oidc/v1/example/server/storage"
+	"github.com/roidmc/kexcore-oidc/example/server/config"
+	"github.com/roidmc/kexcore-oidc/example/server/exampleop"
+	"github.com/roidmc/kexcore-oidc/example/server/storage"
 )
 
 func getUserStore(cfg *config.Config) (storage.UserStore, error) {

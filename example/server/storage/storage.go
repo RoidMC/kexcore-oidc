@@ -24,9 +24,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
 // serviceKey1 is a public key which will be used for the JWT Profile Authorization Grant

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/client"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 func newDeviceClientCredentialsRequest(scopes []string, rp RelyingParty) (*oidc.ClientCredentialsRequest, error) {

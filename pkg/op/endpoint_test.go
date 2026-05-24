@@ -3,7 +3,7 @@ package op_test
 import (
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/stretchr/testify/require"
 )
 

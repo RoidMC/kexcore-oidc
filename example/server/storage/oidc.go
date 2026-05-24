@@ -6,8 +6,8 @@ import (
 
 	"golang.org/x/text/language"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
 const (

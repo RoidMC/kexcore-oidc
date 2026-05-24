@@ -13,9 +13,9 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/client"
-	kcrypto "github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/client"
+	kcrypto "github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 type TokenSource interface {

@@ -9,7 +9,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/logctx"
+	"github.com/roidmc/kexcore-oidc/pkg/logctx"
 )
 
 func logCtxWithRPData(ctx context.Context, rp RelyingParty, attrs ...any) context.Context {

@@ -14,7 +14,7 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 type AuthStorage interface {

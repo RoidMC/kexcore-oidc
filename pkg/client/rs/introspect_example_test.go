@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/client/rs"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/client/rs"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 type IntrospectionResponse struct {

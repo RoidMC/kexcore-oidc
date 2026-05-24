@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 )
 
 func TestSM2EncryptDecryptJWE_RoundTrip(t *testing.T) {

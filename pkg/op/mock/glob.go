@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	gomock "github.com/golang/mock/gomock"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
-	op "github.com/roidmc/kexcore-oidc/v1/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	op "github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
 func NewHasRedirectGlobs(t *testing.T) op.HasRedirectGlobs {

@@ -18,14 +18,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
-	"github.com/roidmc/kexcore-oidc/v1/internal/otel"
+	"github.com/roidmc/kexcore-oidc/internal/otel"
 	"github.com/rs/cors"
 	"github.com/zitadel/schema"
 	"golang.org/x/text/language"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
-	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 const (

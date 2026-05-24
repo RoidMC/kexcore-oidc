@@ -13,8 +13,8 @@ import (
 	"github.com/emmansun/gmsm/sm9"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
-	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 )
 
 type KeyProvider interface {

@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 type AuthRequest interface {

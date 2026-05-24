@@ -14,7 +14,7 @@ import (
 
 	"github.com/muhlemmer/gu"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 )
 
 const (

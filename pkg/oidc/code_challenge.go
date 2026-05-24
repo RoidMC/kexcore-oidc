@@ -3,7 +3,7 @@ package oidc
 import (
 	"crypto/sha256"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 )
 
 const (

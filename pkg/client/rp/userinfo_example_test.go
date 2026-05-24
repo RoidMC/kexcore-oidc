@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/client/rp"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 type UserInfo struct {

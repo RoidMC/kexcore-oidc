@@ -3,8 +3,8 @@ package main
 import (
 	"log/slog"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
 var _ op.Encrypter = &myCrypto{}

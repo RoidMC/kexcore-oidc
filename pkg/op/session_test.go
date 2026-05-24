@@ -6,8 +6,8 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/roidmc/kexcore-oidc/v1/pkg/op"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/op/mock"
+	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
 )
 
 func TestValidateEndSessionPostLogoutRedirectURI(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"net/url"
 
-	httphelper "github.com/roidmc/kexcore-oidc/v1/pkg/http"
-	"github.com/roidmc/kexcore-oidc/v1/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 // ClientCredentialsExchange handles the OAuth 2.0 client_credentials grant, including
