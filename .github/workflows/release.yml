@@ -36,7 +36,7 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     needs: [test]
-    if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/next' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (contains(github.event.head_commit.message, '[ci:release]') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/next')) }}
     env:
       GITHUB_TOKEN: ${{ secrets.KEX_GITHUB_TOKEN }}
     steps:
