@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	mr "math/rand"
 	"net/http"
@@ -54,7 +55,21 @@ func Test_deviceAuthorizationHandler(t *testing.T) {
 	assert.Less(t, result.StatusCode, 300)
 
 	got, _ := io.ReadAll(result.Body)
-	assert.JSONEq(t, `{"device_code":"Uv38ByGCZU8WP18PmmIdcg", "expires_in":300, "interval":5, "user_code":"JKRV-FRGK", "verification_uri":"https://localhost:9998/device", "verification_uri_complete":"https://localhost:9998/device?user_code=JKRV-FRGK"}`, string(got))
+	var resp struct {
+		DeviceCode              string `json:"device_code"`
+		ExpiresIn               uint64 `json:"expires_in"`
+		Interval                int    `json:"interval"`
+		UserCode                string `json:"user_code"`
+		VerificationURI         string `json:"verification_uri"`
+		VerificationURIComplete string `json:"verification_uri_complete"`
+	}
+	require.NoError(t, json.Unmarshal(got, &resp))
+	assert.Equal(t, "Uv38ByGCZU8WP18PmmIdcg", resp.DeviceCode)
+	assert.InDelta(t, uint64(300), resp.ExpiresIn, 2)
+	assert.Equal(t, 5, resp.Interval)
+	assert.Equal(t, "JKRV-FRGK", resp.UserCode)
+	assert.Equal(t, "https://localhost:9998/device", resp.VerificationURI)
+	assert.Equal(t, "https://localhost:9998/device?user_code=JKRV-FRGK", resp.VerificationURIComplete)
 }
 
 func TestParseDeviceCodeRequest(t *testing.T) {

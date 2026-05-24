@@ -8,6 +8,7 @@ package op_test
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -140,6 +141,7 @@ func TestRoutes(t *testing.T) {
 		headerContains map[string]string
 		json           string   // test for exact json output
 		contains       []string // when the body output is not constant, we just check for snippets to be present in the response
+		expiresIn      uint64   // if >0, checks expires_in is within ±2 of this value
 	}{
 		{
 			name:     "health",
@@ -226,8 +228,10 @@ func TestRoutes(t *testing.T) {
 			wantCode: http.StatusOK,
 			contains: []string{
 				`{"access_token":"`,
-				`","issued_token_type":"urn:ietf:params:oauth:token-type:refresh_token","token_type":"Bearer","expires_in":300,"scope":"openid offline_access","refresh_token":"`,
+				`"issued_token_type":"urn:ietf:params:oauth:token-type:refresh_token","token_type":"Bearer","expires_in":`,
+				`,"scope":"openid offline_access","refresh_token":"`,
 			},
+			expiresIn: 300,
 		},
 		{
 			name:      "Client credentials exchange",
@@ -238,8 +242,9 @@ func TestRoutes(t *testing.T) {
 				"grant_type": string(oidc.GrantTypeClientCredentials),
 				"scope":      oidc.SpaceDelimitedArray{oidc.ScopeOpenID, oidc.ScopeOfflineAccess}.String(),
 			},
-			wantCode: http.StatusOK,
-			contains: []string{`{"access_token":"`, `","token_type":"Bearer","expires_in":300,"scope":"openid offline_access"}`},
+			wantCode:  http.StatusOK,
+			contains:  []string{`{"access_token":"`, `"token_type":"Bearer","expires_in":`, `,"scope":"openid offline_access"}`},
+			expiresIn: 300,
 		},
 		{
 			// This call will fail. A successful test is already
@@ -312,9 +317,11 @@ func TestRoutes(t *testing.T) {
 			wantCode: http.StatusOK,
 			contains: []string{
 				`{"access_token":"`,
-				`","token_type":"Bearer","refresh_token":"`,
-				`","expires_in":300,"id_token":"`,
+				`"token_type":"Bearer","refresh_token":"`,
+				`"expires_in":`,
+				`,"id_token":"`,
 			},
+			expiresIn: 300,
 		},
 		{
 			name:      "revoke",
@@ -363,8 +370,10 @@ func TestRoutes(t *testing.T) {
 				`{"device_code":"`, `","user_code":"`,
 				`","verification_uri":"https://localhost:9998/device"`,
 				`"verification_uri_complete":"https://localhost:9998/device?user_code=`,
-				`","expires_in":300,"interval":5}`,
+				`"expires_in":`,
+				`,"interval":5}`,
 			},
+			expiresIn: 300,
 		},
 	}
 	for _, tt := range tests {
@@ -406,6 +415,13 @@ func TestRoutes(t *testing.T) {
 			}
 			for _, c := range tt.contains {
 				assert.Contains(t, respBodyString, c)
+			}
+			if tt.expiresIn > 0 {
+				var wrapper struct {
+					ExpiresIn uint64 `json:"expires_in"`
+				}
+				require.NoError(t, json.Unmarshal(respBody, &wrapper))
+				assert.InDelta(t, tt.expiresIn, wrapper.ExpiresIn, 2)
 			}
 			for k, v := range tt.headerContains {
 				assert.Contains(t, resp.Header.Get(k), v)
