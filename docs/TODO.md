@@ -59,6 +59,19 @@
     - `verifier.go` 移除本地 `aesGCMEncrypt`/`aesGCMDecrypt`/`sm4GCMEncrypt`/`sm4GCMDecrypt`/`sm4NewCipher`，改用 `crypto` 包函数
   - [x] Discovery 文档声明 `id_token_encryption_alg_values_supported` 和 `id_token_encryption_enc_values_supported`
 
+### ⚠️ 已知限制（TODO 待解决）
+- [x] **SM9 签名在 OIDC JWS flow 中集成**
+  - `crypto.Signer` 已扩展支持 SM9（`sm9Priv` 字段 + `signSM9` 方法），JWS header 中携带 `uid` 参数
+  - `op.SM9SigningKey` 接口 + `op.SignerFromKey` 自动通过类型断言设置 `uid`
+  - `example/server/storage` 的 `signingKey` 已实现 `SM9SigningKey` 接口
+  - `op.SM9JWTProfileKeyStorage` 接口 + `verifier_jwt_profile.go` 中 SM9 验证路径已实现
+  - `example/server/storage` 已实现 `SM9JWTProfileKeyStorage` 接口（`GetSM9MasterPublicKeyByIDAndClientID`）
+- [x] **JWE 加密（SGD_SM2_3 / SGD_SM9_3）在 OIDC token flow 中已集成**
+  - `pkg/op/token.go` 的 `EncryptToken` 已支持 SM2/SM9 加密（通过 `TokenEncryptionKeyProvider` / `SM2TokenEncryptionPublicKeyProvider` / `SM9TokenEncryptionPublicKeyProvider` 接口）
+  - example server 的 `myCrypto` 已实现 `SM2TokenEncryptionPublicKeyProvider` 和 `SM9TokenEncryptionPublicKeyProvider` 接口
+  - `Client` 已实现 `IDTokenEncryptionClient` 接口（`IDTokenEncryptionAlg` / `IDTokenEncryptionEnc`）
+  - 已注册 3 个 JWE 加密演示客户端：`web-dir-sm4`（dir+SM4）、`web-sm2`（SGD_SM2_3+SM4）、`web-sm9`（SGD_SM9_3+SM4）
+
 ---
 
 ## 🔙 Back-Channel Logout（OpenID Connect Back-Channel Logout 1.0）
@@ -99,7 +112,13 @@
 - [ ] 添加 `tls_client_auth` 授权方法
 - [ ] 在 Discovery 文档中声明 `mtls_endpoint_aliases`
 
-### 3. 密钥管理
+### 3. SM9 JWT Profile 验证（`verifier_jwt_profile.go`）
+- [x] **`SM9JWTProfileKeyStorage` 接口已新增，SM9 JWT Profile 验证路径已实现**
+  - 新增 `SM9JWTProfileKeyStorage` 接口（`GetSM9MasterPublicKeyByIDAndClientID`），通过接口断言与原 `JWTProfileKeyStorage` 兼容
+  - `verifier_jwt_profile.go` 中 SM9 签名验证：从 header 提取 `uid`，调用 `crypto.VerifySM9JWSSignature`
+  - `example/server/storage` 已实现 `SM9JWTProfileKeyStorage` 接口
+
+### 4. 密钥管理
 - [ ] 提供密钥轮换回调接口
 - [ ] 支持 KMS 密钥加载抽象（如 AWS KMS、Azure Key Vault）
 

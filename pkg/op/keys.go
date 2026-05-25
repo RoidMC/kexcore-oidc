@@ -58,7 +58,9 @@ func jsonWebKeySet(keys []Key) jwksResponse {
 			continue
 		}
 
-		// SM9 keys require manual JWK construction (identity-based cryptography).
+		// SM9 keys require manual JWK construction per GM/T 0125.4-2022.
+		// SM9 uses identity-based cryptography and requires the master public key,
+		// user identifier (uid), and private key generation function identifier (hid).
 		if crypto.IsSM9Algorithm(key.Algorithm()) {
 			jwkMap := buildSM9JWKMap(key)
 			if jwkMap != nil {
@@ -117,13 +119,15 @@ func buildSM2JWKMap(key Key) map[string]interface{} {
 }
 
 // buildSM9JWKMap constructs a JWK map for an SM9 signing master public key.
+// The hid (private key generation function identifier) is set to 1 for signing keys.
 func buildSM9JWKMap(key Key) map[string]interface{} {
 	masterPubKey, ok := key.Key().(*sm9.SignMasterPublicKey)
 	if !ok {
 		return nil
 	}
 
-	sm9jwk, err := crypto.NewSM9SignJWK(masterPubKey, key.ID(), key.Use())
+	// hid=1 for signing keys per SM9 standard.
+	sm9jwk, err := crypto.NewSM9SignJWK(masterPubKey, key.ID(), key.Use(), 1)
 	if err != nil {
 		return nil
 	}

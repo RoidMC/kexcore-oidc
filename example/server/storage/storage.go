@@ -42,6 +42,7 @@ var serviceKey1 = &rsa.PublicKey{
 var (
 	_ op.Storage                  = &Storage{}
 	_ op.ClientCredentialsStorage = &Storage{}
+	_ op.SM9JWTProfileKeyStorage  = &Storage{}
 )
 
 // storage implements the op.Storage interface
@@ -76,6 +77,10 @@ type signingKey struct {
 
 func (s *signingKey) SignatureAlgorithm() string {
 	return s.algorithm
+}
+
+func (s *signingKey) SM9UID() []byte {
+	return s.sm9UID
 }
 
 func (s *signingKey) Key() any {
@@ -135,9 +140,7 @@ func NewStorage(userStore UserStore) *Storage {
 }
 
 // NewStorageWithAlgorithms creates a Storage with the specified signing algorithms.
-// Supported algorithms: RS256, SGD_SM3_SM2.
-// TODO: SM9 signing (SGD_SM3_SM9) is not yet integrated into the OIDC JWS flow.
-// TODO: JWE encryption (SGD_SM2_3, SGD_SM9_3) is not yet integrated into the OIDC token flow.
+// Supported algorithms: RS256, SGD_SM3_SM2, SGD_SM3_SM9.
 func NewStorageWithAlgorithms(userStore UserStore, algorithms []string) *Storage {
 	return NewStorageWithClientsAndAlgorithms(userStore, clients, algorithms)
 }
@@ -278,7 +281,7 @@ func NewStorageWithClientsAndAlgorithms(userStore UserStore, clients map[string]
 		userStore:     userStore,
 		services: map[string]Service{
 			userStore.ExampleClientID(): {
-				keys: map[string]*rsa.PublicKey{
+				keys: map[string]any{
 					ServiceUserKeyID: serviceKey1,
 				},
 			},
@@ -742,6 +745,25 @@ func (s *Storage) GetKeyByIDAndClientID(ctx context.Context, keyID, clientID str
 	jwkKey.Set(jwk.KeyIDKey, keyID)
 	jwkKey.Set(jwk.KeyUsageKey, "sig")
 	return jwkKey, nil
+}
+
+// GetSM9MasterPublicKeyByIDAndClientID implements the op.SM9JWTProfileKeyStorage interface.
+func (s *Storage) GetSM9MasterPublicKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (*sm9.SignMasterPublicKey, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	service, ok := s.services[clientID]
+	if !ok {
+		return nil, fmt.Errorf("clientID not found")
+	}
+	key, ok := service.keys[keyID]
+	if !ok {
+		return nil, fmt.Errorf("key not found")
+	}
+	masterPub, ok := key.(*sm9.SignMasterPublicKey)
+	if !ok {
+		return nil, fmt.Errorf("key is not an SM9 master public key")
+	}
+	return masterPub, nil
 }
 
 // ValidateJWTProfileScopes implements the op.Storage interface

@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"crypto/rsa"
 	"encoding/json"
 	"os"
 	"strings"
@@ -31,7 +30,7 @@ type User struct {
 }
 
 type Service struct {
-	keys map[string]*rsa.PublicKey
+	keys map[string]any
 }
 
 type UserStore interface {

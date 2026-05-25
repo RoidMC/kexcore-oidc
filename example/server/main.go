@@ -6,12 +6,14 @@
 package main
 
 import (
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 
+	"github.com/emmansun/gmsm/sm9"
 	"github.com/roidmc/kexcore-oidc/example/server/config"
 	"github.com/roidmc/kexcore-oidc/example/server/exampleop"
 	"github.com/roidmc/kexcore-oidc/example/server/storage"
@@ -55,6 +57,16 @@ func main() {
 		storage.WebClient("Test Client 2", "test-secret-2",
 			"https://www.certification.openid.net/test/a/kexcore-test/callback",
 		),
+		// JWE 加密演示客户端
+		storage.EncryptedWebClient("web-dir-sm4", "secret", oidc.JWEAlgDir, oidc.JWEEncSM4GCM,
+			cfg.RedirectURI...,
+		),
+		storage.EncryptedWebClient("web-sm2", "secret", oidc.JWEAlgSM23, oidc.JWEEncSM4GCM,
+			cfg.RedirectURI...,
+		),
+		storage.EncryptedWebClient("web-sm9", "secret", oidc.JWEAlgSM93, oidc.JWEEncSM4GCM,
+			cfg.RedirectURI...,
+		),
 	)
 
 	// the OpenIDProvider interface needs a Storage interface handling various checks and state manipulations
@@ -90,6 +102,8 @@ func main() {
 var _ op.Encrypter = &myCrypto{}
 var _ op.Decrypter = &myCrypto{}
 var _ op.TokenEncryptionKeyProvider = &myCrypto{}
+var _ op.SM2TokenEncryptionPublicKeyProvider = &myCrypto{}
+var _ op.SM9TokenEncryptionPublicKeyProvider = &myCrypto{}
 
 // myCrypto demonstrates how to provide a custom implementation of op.Crypto
 // that also supports JWE token encryption (ID token, Userinfo).
@@ -97,17 +111,39 @@ var _ op.TokenEncryptionKeyProvider = &myCrypto{}
 // Set CRYPTO_METHOD=sm4 to use SM4-GCM (国密) instead of AES-256-GCM for JWE.
 // The key must be 32 bytes for AES-256 or 16 bytes for SM4.
 type myCrypto struct {
-	key    []byte
-	method string // "aes" or "sm4"
-	logger *slog.Logger
+	key          []byte
+	method       string // "aes" or "sm4"
+	logger       *slog.Logger
+	sm2PubKey    *ecdsa.PublicKey
+	sm9MasterPub *sm9.EncryptMasterPublicKey
+	sm9EncUID    []byte
 }
 
 func newMyCrypto(key [32]byte, method string, l *slog.Logger) *myCrypto {
-	return &myCrypto{
+	mc := &myCrypto{
 		key:    append([]byte(nil), key[:]...),
 		method: method,
 		logger: l,
 	}
+
+	// Generate SM2 encryption key for SGD_SM2_3 JWE key wrapping
+	sm2Key, err := crypto.SM2GenerateKey()
+	if err != nil {
+		l.Error("failed to generate SM2 encryption key", "error", err)
+	} else {
+		mc.sm2PubKey = sm2Key.Public().(*ecdsa.PublicKey)
+	}
+
+	// Generate SM9 encryption master key for SGD_SM9_3 JWE key wrapping
+	sm9MasterKey, err := crypto.SM9GenerateEncryptMasterKey()
+	if err != nil {
+		l.Error("failed to generate SM9 encryption master key", "error", err)
+	} else {
+		mc.sm9MasterPub = sm9MasterKey.PublicKey()
+		mc.sm9EncUID = []byte("kexcore-jwe")
+	}
+
+	return mc
 }
 
 // TokenEncryptionKey returns the raw symmetric key for JWE "dir" mode encryption.
@@ -140,4 +176,19 @@ func (m *myCrypto) myJWEEnc() string {
 		return oidc.JWEEncSM4GCM
 	}
 	return oidc.JWEEncA256GCM
+}
+
+// SM2TokenEncryptionPublicKey returns the SM2 public key for SGD_SM2_3 JWE key wrapping.
+func (m *myCrypto) SM2TokenEncryptionPublicKey() *ecdsa.PublicKey {
+	return m.sm2PubKey
+}
+
+// SM9TokenEncryptionMasterPublicKey returns the SM9 master public key for SGD_SM9_3 JWE key wrapping.
+func (m *myCrypto) SM9TokenEncryptionMasterPublicKey() *sm9.EncryptMasterPublicKey {
+	return m.sm9MasterPub
+}
+
+// SM9TokenEncryptionUID returns the user identifier for SM9 encryption.
+func (m *myCrypto) SM9TokenEncryptionUID() []byte {
+	return m.sm9EncUID
 }

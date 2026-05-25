@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/emmansun/gmsm/sm9"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 
@@ -111,6 +112,13 @@ type JWTProfileKeyStorage interface {
 	GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (jwk.Key, error)
 }
 
+// SM9JWTProfileKeyStorage extends JWTProfileKeyStorage to support SM9 identity-based
+// signatures where the verification key is a master public key + uid rather than a jwk.Key.
+type SM9JWTProfileKeyStorage interface {
+	JWTProfileKeyStorage
+	GetSM9MasterPublicKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (*sm9.SignMasterPublicKey, error)
+}
+
 // SubjectIsIssuer checks that subject equals issuer
 func SubjectIsIssuer(request *oidc.JWTTokenRequest) error {
 	if request.Issuer != request.Subject {
@@ -152,8 +160,10 @@ func (k *jwtProfileKeySet) VerifySignature(ctx context.Context, rawToken []byte)
 		return verifySM2SignatureFromKey(jwsMsg, key)
 	}
 
-	// TODO: SM9 JWT Profile verification requires interface changes
-	// (JWTProfileKeyStorage returns jwk.Key which cannot represent SM9 master public keys).
+	// SM9 signatures use custom verification since jwx does not support SM9.
+	if crypto.IsSM9Algorithm(sigAlg.String()) {
+		return k.verifySM9Signature(ctx, jwsMsg, rawToken, keyID)
+	}
 
 	payload, err = jws.Verify(rawToken, jws.WithKey(sigAlg, key))
 	if err != nil {
@@ -186,6 +196,49 @@ func verifySM2SignatureFromKey(jwsMsg *jws.Message, key jwk.Key) ([]byte, error)
 	}
 
 	if err := crypto.VerifySM2JWSSignature(signingInput, sigBytes, pubKey); err != nil {
+		return nil, err
+	}
+	return jwsMsg.Payload(), nil
+}
+
+// verifySM9Signature verifies an SM9 JWS signature using the master public key from storage.
+func (k *jwtProfileKeySet) verifySM9Signature(ctx context.Context, jwsMsg *jws.Message, rawToken []byte, keyID string) ([]byte, error) {
+	sm9Storage, ok := k.storage.(SM9JWTProfileKeyStorage)
+	if !ok {
+		return nil, fmt.Errorf("SM9 JWT Profile verification requires SM9JWTProfileKeyStorage")
+	}
+
+	masterPubKey, err := sm9Storage.GetSM9MasterPublicKeyByIDAndClientID(ctx, keyID, k.clientID)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching SM9 master public key: %w", err)
+	}
+
+	sig := jwsMsg.Signatures()[0]
+	sigBytes, err := base64.RawURLEncoding.DecodeString(string(sig.Signature()))
+	if err != nil {
+		return nil, fmt.Errorf("error decoding SM9 signature: %w", err)
+	}
+
+	// Extract uid from JWS protected header
+	uidVal, ok := sig.ProtectedHeaders().Field("uid")
+	if !ok {
+		return nil, fmt.Errorf("SM9 signature missing uid in protected header")
+	}
+	uidB64, ok := uidVal.(string)
+	if !ok {
+		return nil, fmt.Errorf("SM9 uid header parameter must be a string, got %T", uidVal)
+	}
+	uid, err := base64.RawURLEncoding.DecodeString(uidB64)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding SM9 uid: %w", err)
+	}
+
+	signingInput, err := crypto.BuildSigningInput(sig.ProtectedHeaders(), jwsMsg.Payload())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := crypto.VerifySM9JWSSignature(signingInput, sigBytes, masterPubKey, uid); err != nil {
 		return nil, err
 	}
 	return jwsMsg.Payload(), nil

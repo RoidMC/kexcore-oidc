@@ -105,39 +105,60 @@ func IsSM2Algorithm(alg string) bool {
 // SM9SignJWK represents a JSON Web Key for an SM9 signing master public key.
 // SM9 uses identity-based cryptography (IBC) where the master public key is used
 // for verification and user signing keys are derived from the master key + uid.
-// The x field contains the ASN.1 DER-encoded master public key.
+// The kid field serves as the identity identifier.
 type SM9SignJWK struct {
 	Kty string `json:"kty"`
 	Crv string `json:"crv"`
 	X   string `json:"x"`
+	Y   string `json:"y"`
+	Hid int    `json:"hid"`
 	Alg string `json:"alg,omitempty"`
 	Kid string `json:"kid,omitempty"`
 	Use string `json:"use,omitempty"`
 }
 
 // NewSM9SignJWK constructs an SM9SignJWK from an SM9 signing master public key.
-func NewSM9SignJWK(masterPubKey *sm9.SignMasterPublicKey, kid, use string) (SM9SignJWK, error) {
-	raw, err := masterPubKey.MarshalASN1()
-	if err != nil {
-		return SM9SignJWK{}, fmt.Errorf("error marshaling SM9 master public key: %w", err)
+// The hid parameter is the SM9 private key generation function identifier
+// (1 for signing, 3 for encryption).
+func NewSM9SignJWK(masterPubKey *sm9.SignMasterPublicKey, kid, use string, hid int) (SM9SignJWK, error) {
+	raw := masterPubKey.Bytes()
+	// SignMasterPublicKey.Bytes() returns uncompressed point: 04 || x(64 bytes) || y(64 bytes)
+	// Total length should be 129 bytes (1 + 64 + 64).
+	if len(raw) != 129 || raw[0] != 4 {
+		return SM9SignJWK{}, fmt.Errorf("invalid SM9 master public key format: expected 129 bytes uncompressed point, got %d bytes", len(raw))
 	}
+	xBytes := raw[1:65]
+	yBytes := raw[65:129]
+
 	return SM9SignJWK{
 		Kty: "EC",
 		Crv: "SM9",
-		X:   base64.RawURLEncoding.EncodeToString(raw),
+		X:   base64.RawURLEncoding.EncodeToString(xBytes),
+		Y:   base64.RawURLEncoding.EncodeToString(yBytes),
+		Hid: hid,
 		Alg: SGD_SM3_SM9,
 		Kid: kid,
 		Use: use,
 	}, nil
 }
 
-// ParseSM9SignMasterPublicKey parses an SM9 signing master public key from a JWK x field.
-func ParseSM9SignMasterPublicKey(xBase64 string) (*sm9.SignMasterPublicKey, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(xBase64)
+// ParseSM9SignMasterPublicKey parses an SM9 signing master public key from
+// JWK x and y fields.
+func ParseSM9SignMasterPublicKey(xBase64, yBase64 string) (*sm9.SignMasterPublicKey, error) {
+	xBytes, err := base64.RawURLEncoding.DecodeString(xBase64)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding SM9 master public key: %w", err)
+		return nil, fmt.Errorf("error decoding SM9 master public key x: %w", err)
 	}
-	return sm9.UnmarshalSignMasterPublicKeyASN1(raw)
+	yBytes, err := base64.RawURLEncoding.DecodeString(yBase64)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding SM9 master public key y: %w", err)
+	}
+	// Reconstruct uncompressed point: 04 || x || y
+	raw := make([]byte, 1+len(xBytes)+len(yBytes))
+	raw[0] = 4
+	copy(raw[1:], xBytes)
+	copy(raw[1+len(xBytes):], yBytes)
+	return sm9.UnmarshalSignMasterPublicKeyRaw(raw)
 }
 
 // VerifySM9JWSSignature verifies an SM9 JWS signature using SM3 hash.
@@ -184,8 +205,9 @@ type JWKSKey struct {
 type rawJWK struct {
 	Kty string `json:"kty"`
 	Crv string `json:"crv"`
-	X   string `json:"x"`
-	Y   string `json:"y"`
+	X   string `json:"x,omitempty"`
+	Y   string `json:"y,omitempty"`
+	Hid int    `json:"hid,omitempty"`
 	Alg string `json:"alg,omitempty"`
 	Kid string `json:"kid,omitempty"`
 	Use string `json:"use,omitempty"`
@@ -215,7 +237,7 @@ func ParseJWKSBytes(data []byte) ([]JWKSKey, error) {
 			keys = append(keys, JWKSKey{Kid: raw.Kid, Alg: raw.Alg, Use: raw.Use, Key: pubKey})
 
 		case IsSM9Algorithm(raw.Alg):
-			masterPubKey, err := ParseSM9SignMasterPublicKey(raw.X)
+			masterPubKey, err := ParseSM9SignMasterPublicKey(raw.X, raw.Y)
 			if err != nil {
 				continue
 			}

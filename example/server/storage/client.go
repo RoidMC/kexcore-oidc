@@ -34,6 +34,8 @@ type Client struct {
 	clockSkew                      time.Duration
 	postLogoutRedirectURIGlobs     []string
 	redirectURIGlobs               []string
+	idTokenEncryptionAlg           string
+	idTokenEncryptionEnc           string
 }
 
 // GetID must return the client_id
@@ -209,6 +211,28 @@ func DeviceClient(id, secret string) *Client {
 		idTokenUserinfoClaimsAssertion: false,
 		clockSkew:                      0,
 	}
+}
+
+// IDTokenEncryptionAlg returns the JWE key management algorithm for ID token encryption.
+// Returns empty string if encryption is not requested.
+func (c *Client) IDTokenEncryptionAlg() string {
+	return c.idTokenEncryptionAlg
+}
+
+// IDTokenEncryptionEnc returns the JWE content encryption algorithm for ID token encryption.
+// Returns empty string if encryption is not requested.
+func (c *Client) IDTokenEncryptionEnc() string {
+	return c.idTokenEncryptionEnc
+}
+
+// EncryptedWebClient creates a web client that requests ID token encryption.
+// alg is the JWE key management algorithm (e.g. "dir", "SGD_SM2_3", "SGD_SM9_3").
+// enc is the JWE content encryption algorithm (e.g. "A256GCM", "SGD_SM4_GCM").
+func EncryptedWebClient(id, secret string, alg, enc string, redirectURIs ...string) *Client {
+	c := WebClient(id, secret, redirectURIs...)
+	c.idTokenEncryptionAlg = alg
+	c.idTokenEncryptionEnc = enc
+	return c
 }
 
 type hasRedirectGlobs struct {

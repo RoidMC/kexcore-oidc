@@ -36,7 +36,7 @@ func TestNewSM9SignJWK(t *testing.T) {
 	masterKey, err := crypto.SM9GenerateSignMasterKey()
 	require.NoError(t, err)
 
-	jwk, err := crypto.NewSM9SignJWK(masterKey.PublicKey(), "test-kid", "sig")
+	jwk, err := crypto.NewSM9SignJWK(masterKey.PublicKey(), "test-kid", "sig", 1)
 	require.NoError(t, err)
 
 	assert.Equal(t, "EC", jwk.Kty)
@@ -45,16 +45,18 @@ func TestNewSM9SignJWK(t *testing.T) {
 	assert.Equal(t, "test-kid", jwk.Kid)
 	assert.Equal(t, "sig", jwk.Use)
 	assert.NotEmpty(t, jwk.X)
+	assert.NotEmpty(t, jwk.Y)
+	assert.Equal(t, 1, jwk.Hid)
 }
 
 func TestParseSM9SignMasterPublicKey(t *testing.T) {
 	masterKey, err := crypto.SM9GenerateSignMasterKey()
 	require.NoError(t, err)
 
-	jwk, err := crypto.NewSM9SignJWK(masterKey.PublicKey(), "test-kid", "sig")
+	jwk, err := crypto.NewSM9SignJWK(masterKey.PublicKey(), "test-kid", "sig", 1)
 	require.NoError(t, err)
 
-	parsed, err := crypto.ParseSM9SignMasterPublicKey(jwk.X)
+	parsed, err := crypto.ParseSM9SignMasterPublicKey(jwk.X, jwk.Y)
 	require.NoError(t, err)
 
 	assert.True(t, masterKey.PublicKey().Equal(parsed))
@@ -93,7 +95,7 @@ func TestParseJWKSBytes(t *testing.T) {
 	require.NoError(t, err)
 
 	sm2JWK := crypto.NewSM2JWK(&sm2Key.PublicKey, "sm2-kid", "sig")
-	sm9JWK, err := crypto.NewSM9SignJWK(sm9MasterKey.PublicKey(), "sm9-kid", "sig")
+	sm9JWK, err := crypto.NewSM9SignJWK(sm9MasterKey.PublicKey(), "sm9-kid", "sig", 1)
 	require.NoError(t, err)
 
 	jwks := map[string]interface{}{
@@ -103,7 +105,8 @@ func TestParseJWKSBytes(t *testing.T) {
 				"alg": sm2JWK.Alg, "kid": sm2JWK.Kid, "use": sm2JWK.Use,
 			},
 			map[string]interface{}{
-				"kty": sm9JWK.Kty, "crv": sm9JWK.Crv, "x": sm9JWK.X,
+				"kty": sm9JWK.Kty, "crv": sm9JWK.Crv, "x": sm9JWK.X, "y": sm9JWK.Y,
+				"hid": sm9JWK.Hid,
 				"alg": sm9JWK.Alg, "kid": sm9JWK.Kid, "use": sm9JWK.Use,
 			},
 			map[string]interface{}{
