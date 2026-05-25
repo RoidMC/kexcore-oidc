@@ -5,6 +5,8 @@
 package crypto
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/base64"
@@ -120,7 +122,7 @@ func SM2EncryptJWE(publicKey *ecdsa.PublicKey, plaintext []byte) (string, error)
 //  4. Decrypt the ciphertext using SM4-GCM with the recovered CEK, using the
 //     base64url-encoded protected header as AAD.
 func SM2DecryptJWE(privateKey *sm2.PrivateKey, compact string) ([]byte, error) {
-	parts, header, err := parseJWECompact(compact)
+	parts, header, err := ParseJWECompact(compact)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +227,7 @@ func SM9EncryptJWE(masterPubKey *sm9.EncryptMasterPublicKey, uid []byte, enc str
 // SM9DecryptJWE decrypts a GM/T 0125.3 JWE compact serialization
 // with SM9 key wrapping (SGD_SM9_3) and SM4 content encryption.
 func SM9DecryptJWE(userKey *sm9.EncryptPrivateKey, uid []byte, compact string) ([]byte, error) {
-	parts, header, err := parseJWECompact(compact)
+	parts, header, err := ParseJWECompact(compact)
 	if err != nil {
 		return nil, err
 	}
@@ -251,8 +253,8 @@ func SM9DecryptJWE(userKey *sm9.EncryptPrivateKey, uid []byte, compact string) (
 
 // --- Internal helpers ---
 
-// parseJWECompact parses and validates a JWE compact serialization.
-func parseJWECompact(compact string) ([]string, *jweHeader, error) {
+// ParseJWECompact parses and validates a JWE compact serialization.
+func ParseJWECompact(compact string) ([]string, *jweHeader, error) {
 	parts := strings.Split(compact, ".")
 	if len(parts) != 5 {
 		return nil, nil, ErrInvalidJWEParts
@@ -337,4 +339,35 @@ func sm4TagSize(enc string) int {
 	default:
 		return SM4GCMTagSize
 	}
+}
+
+// --- AES-GCM helpers (standard crypto, used by OIDC verifier for JWE) ---
+
+// AESGCMEncrypt encrypts plaintext using AES-GCM with the given key, nonce, and additional data.
+// The key length determines the AES variant (16 bytes = AES-128, 32 bytes = AES-256).
+// Returns ciphertext||tag (combined output).
+func AESGCMEncrypt(key, nonce, plaintext, additionalData []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("kexcore/crypto: AES-GCM encrypt: %w", err)
+	}
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("kexcore/crypto: AES-GCM encrypt: %w", err)
+	}
+	return aesgcm.Seal(nil, nonce, plaintext, additionalData), nil
+}
+
+// AESGCMDecrypt decrypts ciphertext (ciphertext||tag) using AES-GCM with the given key, nonce, and additional data.
+// The key length determines the AES variant (16 bytes = AES-128, 32 bytes = AES-256).
+func AESGCMDecrypt(key, nonce, ciphertext, additionalData []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("kexcore/crypto: AES-GCM decrypt: %w", err)
+	}
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("kexcore/crypto: AES-GCM decrypt: %w", err)
+	}
+	return aesgcm.Open(nil, nonce, ciphertext, additionalData)
 }

@@ -7,6 +7,7 @@ package op
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"time"
 
@@ -48,6 +49,17 @@ func CreateTokenResponse(ctx context.Context, request IDTokenRequest, client Cli
 	idToken, err := CreateIDToken(ctx, IssuerFromContext(ctx), request, client.IDTokenLifetime(), accessToken, code, creator.Storage(), client)
 	if err != nil {
 		return nil, err
+	}
+
+	// Optionally encrypt the ID token if the client supports it.
+	if encClient, ok := client.(IDTokenEncryptionClient); ok {
+		if alg, enc := encClient.IDTokenEncryptionAlg(), encClient.IDTokenEncryptionEnc(); alg != "" && enc != "" {
+			encrypted, err := encryptIDToken(idToken, creator.Crypto(), alg, enc)
+			if err != nil {
+				return nil, err
+			}
+			idToken = encrypted
+		}
 	}
 
 	var state string
@@ -281,4 +293,53 @@ func removeUserinfoScopes(scopes []string) []string {
 		}
 	}
 	return newScopeList
+}
+
+// encryptIDToken encrypts a signed ID token (JWS compact) into a JWE compact
+// based on the requested key management algorithm (alg) and content encryption
+// algorithm (enc).
+//
+// Supported key management algorithms:
+//   - "dir": Direct symmetric encryption (requires TokenEncryptionKeyProvider)
+//   - "A256GCMKW": Standard AES-256 GCM key wrapping
+//   - "SGD_SM2_3": SM2 public-key key wrapping (requires SM2TokenEncryptionPublicKeyProvider)
+//   - "SGD_SM9_3": SM9 identity-based key wrapping (requires SM9TokenEncryptionPublicKeyProvider)
+//
+// Supported content encryption methods:
+//   - "SGD_SM4_GCM": SM4-GCM (GM/T 0125.3)
+//   - "A256GCM": AES-256-GCM
+//   - "A128GCM": AES-128-GCM
+func encryptIDToken(signedToken string, c Crypto, alg, enc string) (string, error) {
+	switch alg {
+	case oidc.JWEAlgDir:
+		keyProvider, ok := c.(TokenEncryptionKeyProvider)
+		if !ok || keyProvider.TokenEncryptionKey() == nil {
+			return "", fmt.Errorf("token encryption requested but Crypto does not implement TokenEncryptionKeyProvider")
+		}
+		key := keyProvider.TokenEncryptionKey()
+		switch enc {
+		case oidc.JWEEncSM4GCM:
+			return oidc.EncryptToken(signedToken, key)
+		case oidc.JWEEncA256GCM:
+			return oidc.EncryptTokenA256GCM(signedToken, key)
+		case oidc.JWEEncA128GCM:
+			return oidc.EncryptTokenA128GCM(signedToken, key)
+		default:
+			return "", fmt.Errorf("unsupported JWE content encryption: %s", enc)
+		}
+	case oidc.JWEAlgSM23:
+		pkProvider, ok := c.(SM2TokenEncryptionPublicKeyProvider)
+		if !ok || pkProvider.SM2TokenEncryptionPublicKey() == nil {
+			return "", fmt.Errorf("SM2 encryption requested but Crypto does not implement SM2TokenEncryptionPublicKeyProvider")
+		}
+		return oidc.EncryptTokenSM2(signedToken, pkProvider.SM2TokenEncryptionPublicKey())
+	case oidc.JWEAlgSM93:
+		pkProvider, ok := c.(SM9TokenEncryptionPublicKeyProvider)
+		if !ok || pkProvider.SM9TokenEncryptionMasterPublicKey() == nil {
+			return "", fmt.Errorf("SM9 encryption requested but Crypto does not implement SM9TokenEncryptionPublicKeyProvider")
+		}
+		return oidc.EncryptTokenSM9(signedToken, pkProvider.SM9TokenEncryptionMasterPublicKey(), pkProvider.SM9TokenEncryptionUID())
+	default:
+		return "", fmt.Errorf("unsupported JWE key management algorithm: %s", alg)
+	}
 }

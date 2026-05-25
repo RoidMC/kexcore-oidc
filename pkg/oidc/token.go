@@ -416,3 +416,61 @@ func NewLogoutTokenClaims(issuer, subject string, audience Audience, expiration 
 		SessionID: sessionID,
 	}
 }
+
+// BackChannelLogoutEventKey is the event key used in the "events" claim of a Logout Token.
+const BackChannelLogoutEventKey = "http://schemas.openid.net/event/backchannel-logout"
+
+// GetIssuer returns the issuer.
+func (c *LogoutTokenClaims) GetIssuer() string {
+	return c.Issuer
+}
+
+// GetSubject returns the subject.
+func (c *LogoutTokenClaims) GetSubject() string {
+	return c.Subject
+}
+
+// GetExpiration returns the expiration time as time.Time.
+func (c *LogoutTokenClaims) GetExpiration() time.Time {
+	return c.Expiration.AsTime()
+}
+
+// GetIssuedAt returns the issued-at time as time.Time.
+func (c *LogoutTokenClaims) GetIssuedAt() time.Time {
+	return c.IssuedAt.AsTime()
+}
+
+// GetAudience returns the audience as []string.
+func (c *LogoutTokenClaims) GetAudience() []string {
+	return c.Audience
+}
+
+// GetNonce returns an empty string. Logout Tokens MUST NOT contain a nonce claim.
+func (c *LogoutTokenClaims) GetNonce() string {
+	return ""
+}
+
+// GetAuthTime returns zero time. Logout Tokens do not have an auth_time claim.
+func (c *LogoutTokenClaims) GetAuthTime() time.Time {
+	return time.Time{}
+}
+
+// GetAuthorizedParty returns empty string. Logout Tokens do not have an azp claim.
+func (c *LogoutTokenClaims) GetAuthorizedParty() string {
+	return ""
+}
+
+// GetAuthenticationContextClassReference returns empty string.
+func (c *LogoutTokenClaims) GetAuthenticationContextClassReference() string {
+	return ""
+}
+
+// SetSignatureAlgorithm stores the signature algorithm for signature verification.
+func (c *LogoutTokenClaims) SetSignatureAlgorithm(alg string) {
+	// Stored in Claims map if needed.
+}
+
+// GetSignatureAlgorithm returns the signature algorithm (empty for Logout Tokens).
+func (c *LogoutTokenClaims) GetSignatureAlgorithm() string {
+	return ""
+}

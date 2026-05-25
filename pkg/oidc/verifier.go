@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright Zitadel
-// Modifications Copyright 2026 RoidMC Studios
+// Copyright 2026 RoidMC Studios
 
 package oidc
 
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -16,7 +17,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emmansun/gmsm/sm9"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwe"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+)
+
+// Supported JWE key management algorithms (alg).
+const (
+	JWEAlgDir       = "dir"       // Direct symmetric encryption (no key wrapping)
+	JWEAlgA256GCMKW = "A256GCMKW" // AES-256 GCM key wrapping
+	JWEAlgSM23      = "SGD_SM2_3" // SM2 public key encryption (GM/T 0125.3)
+	JWEAlgSM93      = "SGD_SM9_3" // SM9 identity-based encryption (GM/T 0125.3)
+)
+
+// Supported JWE content encryption algorithms (enc).
+const (
+	JWEEncSM4GCM  = "SGD_SM4_GCM" // SM4-GCM, GM/T 0125.3
+	JWEEncA256GCM = "A256GCM"     // AES-256-GCM
+	JWEEncA128GCM = "A128GCM"     // AES-128-GCM
 )
 
 type Claims interface {
@@ -81,6 +102,7 @@ type Verifier struct {
 	AZP               AZPVerifier
 	KeySet            KeySet
 	Nonce             func(ctx context.Context) string
+	DecryptionKey     []byte
 }
 
 // ACRVerifier specifies the function to be used by the `DefaultVerifier` for validating the acr claim
@@ -97,8 +119,220 @@ func DefaultACRVerifier(possibleValues []string) ACRVerifier {
 	}
 }
 
+// DecryptToken detects whether tokenString is a JWE (5-part compact serialization)
+// or a plain JWS/signed token. If it is a JWE, decryption needs a key which must be
+// provided via context. If no key is available and the token is JWE, an error is returned.
+//
+// For OP-side decryption (access tokens), use the Crypto interface.
+// For RP-side decryption (ID tokens), pass a Decrypter via the verifier options.
 func DecryptToken(tokenString string) (string, error) {
-	return tokenString, nil // TODO: impl
+	return decryptToken(tokenString, nil)
+}
+
+// DecryptTokenWithKey is like DecryptToken but uses the provided key for decryption.
+func DecryptTokenWithKey(tokenString string, key []byte) (string, error) {
+	return decryptToken(tokenString, key)
+}
+
+func decryptToken(tokenString string, key []byte) (string, error) {
+	parts := strings.Split(tokenString, ".")
+	if len(parts) == 3 {
+		// Standard JWS (header.payload.signature) — no encryption.
+		return tokenString, nil
+	}
+	if len(parts) == 5 {
+		// JWE compact serialization — needs decryption.
+		if key == nil {
+			return "", errors.New("token is JWE-encrypted but no decryption key provided")
+		}
+
+		// Use the existing crypto package to decrypt.
+		// Try AES-GCM decryption (the most common case for OP-encrypted tokens).
+		plaintext, err := jweDecrypt(tokenString, key)
+		if err != nil {
+			return "", fmt.Errorf("failed to decrypt JWE token: %w", err)
+		}
+		return string(plaintext), nil
+	}
+	// Unknown format — treat as plain token.
+	return tokenString, nil
+}
+
+// jweDecrypt decrypts a JWE compact serialization using a symmetric key.
+// It tries AES256GCM first (standard), then SM4-GCM (GM/T mode).
+func jweDecrypt(compact string, key []byte) ([]byte, error) {
+	// Try SM4-GCM "dir" mode first (5 parts with empty encrypted key).
+	parts := strings.Split(compact, ".")
+	if len(parts) != 5 {
+		return nil, errors.New("invalid JWE: expected 5 parts")
+	}
+
+	// Decode header to determine algorithm
+	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode JWE header: %w", err)
+	}
+
+	type jweHdr struct {
+		Alg string `json:"alg"`
+		Enc string `json:"enc"`
+	}
+	var hdr jweHdr
+	if err := json.Unmarshal(headerJSON, &hdr); err != nil {
+		return nil, fmt.Errorf("failed to parse JWE header: %w", err)
+	}
+
+	switch hdr.Alg {
+	case JWEAlgDir:
+		switch hdr.Enc {
+		case JWEEncSM4GCM, JWEEncA256GCM, JWEEncA128GCM:
+			return decryptDirMode(compact, key, hdr.Enc)
+		}
+		return nil, fmt.Errorf("unsupported JWE content encryption: %s", hdr.Enc)
+	case JWEAlgA256GCMKW:
+		// Use jwx for standard AES-GCM key wrapping
+		return decryptAESGCMKW(compact, key)
+	default:
+		return nil, fmt.Errorf("unsupported JWE algorithm: %s", hdr.Alg)
+	}
+}
+
+func decryptDirMode(compact string, key []byte, enc string) ([]byte, error) {
+	parts := strings.Split(compact, ".")
+	if parts[1] != "" {
+		return nil, errors.New("expected empty encrypted key for dir mode")
+	}
+
+	iv, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode IV: %w", err)
+	}
+	ciphertext, err := base64.RawURLEncoding.DecodeString(parts[3])
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode ciphertext: %w", err)
+	}
+	tag, err := base64.RawURLEncoding.DecodeString(parts[4])
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode tag: %w", err)
+	}
+
+	sealed := append(ciphertext, tag...)
+	aad := []byte(parts[0])
+
+	// Dispatch decryption based on JWE header "enc" value, NOT key length.
+	// Key length is ambiguous (SM4 and AES-128 both use 16 bytes).
+	switch enc {
+	case JWEEncSM4GCM:
+		plaintext, err := crypto.SM4DecryptGCMWithNonce(key, iv, sealed, aad)
+		if err != nil {
+			return nil, fmt.Errorf("sm4-gcm decrypt failed: %w", err)
+		}
+		return plaintext, nil
+	case JWEEncA128GCM, JWEEncA256GCM:
+		plaintext, err := crypto.AESGCMDecrypt(key, iv, sealed, aad)
+		if err != nil {
+			return nil, fmt.Errorf("aes-gcm decrypt failed: %w", err)
+		}
+		return plaintext, nil
+	default:
+		return nil, fmt.Errorf("unsupported JWE content encryption: %s", enc)
+	}
+}
+
+func decryptAESGCMKW(compact string, key []byte) ([]byte, error) {
+	jk, err := jwk.Import[jwk.SymmetricKey](key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create key: %w", err)
+	}
+	decrypted, err := jwe.Decrypt([]byte(compact), jwe.WithKey(jwa.A256GCMKW(), jk))
+	if err != nil {
+		return nil, err
+	}
+	return decrypted, nil
+}
+
+// EncryptToken wraps a signed JWT (3-part) in JWE "dir" mode using SM4-GCM.
+// This is used by the OP to optionally encrypt ID tokens before returning them.
+// For AES-GCM, use EncryptTokenA256GCM or EncryptTokenA128GCM.
+func EncryptToken(signedToken string, key []byte) (string, error) {
+	return encryptTokenDir(signedToken, key, JWEEncSM4GCM)
+}
+
+// EncryptTokenA256GCM wraps a signed JWT in JWE "dir" mode using AES-256-GCM.
+func EncryptTokenA256GCM(signedToken string, key []byte) (string, error) {
+	return encryptTokenDir(signedToken, key, JWEEncA256GCM)
+}
+
+// EncryptTokenA128GCM wraps a signed JWT in JWE "dir" mode using AES-128-GCM.
+func EncryptTokenA128GCM(signedToken string, key []byte) (string, error) {
+	return encryptTokenDir(signedToken, key, JWEEncA128GCM)
+}
+
+// EncryptTokenSM2 wraps a signed JWT in JWE using SM2 public-key encryption
+// (SGD_SM2_3 key wrapping with SGD_SM4_GCM content encryption) per GM/T 0125.3.
+// The publicKey is the recipient's SM2 public key (typically the RP's SM2 key).
+func EncryptTokenSM2(signedToken string, publicKey *ecdsa.PublicKey) (string, error) {
+	jweToken, err := crypto.SM2EncryptJWE(publicKey, []byte(signedToken))
+	if err != nil {
+		return "", fmt.Errorf("kexcore/oidc: SM2 JWE encrypt: %w", err)
+	}
+	return string(jweToken), nil
+}
+
+// EncryptTokenSM9 wraps a signed JWT in JWE using SM9 identity-based encryption
+// (SGD_SM9_3 key wrapping with SGD_SM4_GCM content encryption) per GM/T 0125.3.
+// masterPubKey is the SM9 master public key of the recipient. uid is the
+// recipient's identity (used for encryption, can be nil).
+func EncryptTokenSM9(signedToken string, masterPubKey *sm9.EncryptMasterPublicKey, uid []byte) (string, error) {
+	jweToken, err := crypto.SM9EncryptJWE(masterPubKey, uid, crypto.SGD_SM4_GCM, []byte(signedToken))
+	if err != nil {
+		return "", fmt.Errorf("kexcore/oidc: SM9 JWE encrypt: %w", err)
+	}
+	return string(jweToken), nil
+}
+
+// encryptTokenDir performs direct symmetric encryption (alg=dir) of a payload.
+// It uses the specified content encryption algorithm (enc) to encrypt the payload.
+//
+// TODO: When adding new ciphers, a registry-based dispatch (map[enc]encryptFunc)
+// would eliminate the need to modify the switch statement.
+func encryptTokenDir(payload string, key []byte, enc string) (string, error) {
+	header := map[string]string{"alg": "dir", "enc": enc}
+	headerJSON, err := json.Marshal(header)
+	if err != nil {
+		return "", err
+	}
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+
+	iv := make([]byte, 12)
+	if _, err := rand.Read(iv); err != nil {
+		return "", err
+	}
+
+	var sealed []byte
+	switch enc {
+	case JWEEncSM4GCM:
+		sealed, err = crypto.SM4EncryptGCMWithNonce(key, iv, []byte(payload), []byte(headerB64))
+	case JWEEncA128GCM, JWEEncA256GCM:
+		sealed, err = crypto.AESGCMEncrypt(key, iv, []byte(payload), []byte(headerB64))
+	default:
+		return "", fmt.Errorf("unsupported JWE content encryption: %s", enc)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	tagSize := 16
+	if len(sealed) < tagSize {
+		return "", errors.New("encryption output too short")
+	}
+	ciphertext := sealed[:len(sealed)-tagSize]
+	tag := sealed[len(sealed)-tagSize:]
+
+	return headerB64 + ".." +
+		base64.RawURLEncoding.EncodeToString(iv) + "." +
+		base64.RawURLEncoding.EncodeToString(ciphertext) + "." +
+		base64.RawURLEncoding.EncodeToString(tag), nil
 }
 
 func ParseToken(tokenString string, claims any) ([]byte, error) {

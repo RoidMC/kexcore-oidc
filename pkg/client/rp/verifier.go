@@ -41,7 +41,15 @@ func VerifyIDToken[C oidc.Claims](ctx context.Context, token string, v *IDTokenV
 
 	decrypted, err := oidc.DecryptToken(token)
 	if err != nil {
-		return nilClaims, err
+		// If a decryption key is configured, try with that key.
+		if v.DecryptionKey != nil {
+			decrypted, err = oidc.DecryptTokenWithKey(token, v.DecryptionKey)
+			if err != nil {
+				return nilClaims, err
+			}
+		} else {
+			return nilClaims, err
+		}
 	}
 	payload, err := oidc.ParseToken(decrypted, &claims)
 	if err != nil {
@@ -182,5 +190,14 @@ func WithAuthTimeMaxAge(maxAge time.Duration) VerifierOption {
 func WithSupportedSigningAlgorithms(algs ...string) VerifierOption {
 	return func(v *IDTokenVerifier) {
 		v.SupportedSignAlgs = algs
+	}
+}
+
+// WithDecryptionKey sets a key for JWE decryption of encrypted ID tokens.
+// If the ID token is JWE-encrypted and this key is provided, it will be used
+// to decrypt the token before verifying the signature.
+func WithDecryptionKey(key []byte) VerifierOption {
+	return func(v *IDTokenVerifier) {
+		v.DecryptionKey = key
 	}
 }

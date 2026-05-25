@@ -35,11 +35,54 @@
 
 ### 待完成
 - [ ] SM2/SM9 JWK 的 x5c / x5t 证书链支持
-- [ ] JWE 加密集成到 OIDC token 流程（id_token / userinfo 响应加密）
-  - SM2 JWE（`SGD_SM2_3` + `SGD_SM4_GCM`）作为 id_token 加密方式
-  - SM9 JWE（`SGD_SM9_3` + `SGD_SM4_GCM/CCM`）作为 id_token 加密方式
-  - Discovery 文档声明 `id_token_encryption_alg_values_supported` 和 `id_token_encryption_enc_values_supported`
-  - RP 客户端支持解密 SM2/SM9 JWE 加密的 id_token
+- [x] JWE 加密集成到 OIDC token 流程（id_token / userinfo 响应加密）
+  - [x] `dir` 模式对称加密（`SGD_SM4_GCM` / `A256GCM` / `A128GCM`）— 通过 `EncryptToken` / `EncryptTokenA256GCM` / `EncryptTokenA128GCM`
+  - [x] OP 端 `encryptIDToken()` 根据客户端声明的 `enc` 自动选择加密算法
+  - [x] RP 端 `DecryptToken` / `DecryptTokenWithKey` 解密 JWE 加密的 ID Token
+  - [x] `TokenEncryptionKeyProvider` 接口 — Crypto 实现类暴露对称密钥
+  - [x] `IDTokenEncryptionClient` 接口 — 客户端声明加密偏好（alg + enc）
+  - [x] JWE 常量定义（`JWEAlgDir`/`JWEAlgA256GCMKW`/`JWEEncSM4GCM`/`JWEEncA256GCM`/`JWEEncA128GCM`）
+  - [x] 修复 `decryptDirMode` 密钥长度推断 BUG — 改为基于 JWE header `enc` 字段分发
+  - [x] SM2 JWE（`SGD_SM2_3` + `SGD_SM4_GCM`）作为 id_token 加密方式
+    - `EncryptTokenSM2(signedToken, publicKey)` — OP 端使用 RP 的 SM2 公钥加密
+    - `SM2TokenEncryptionPublicKeyProvider` 接口 — Crypto 实现类暴露 SM2 公钥
+    - `encryptIDToken()` 自动根据 `alg=SGD_SM2_3` 分发到 `EncryptTokenSM2`
+    - RP 端解密通过 `crypto.SM2DecryptJWE(privateKey, compact)`（`pkg/crypto/jwe.go`）
+  - [x] SM9 JWE（`SGD_SM9_3` + `SGD_SM4_GCM/CCM`）作为 id_token 加密方式
+    - `EncryptTokenSM9(signedToken, masterPubKey, uid)` — OP 端使用 RP 的 SM9 主公钥加密
+    - `SM9TokenEncryptionPublicKeyProvider` 接口 — Crypto 实现类暴露 SM9 主公钥和 UID
+    - `encryptIDToken()` 自动根据 `alg=SGD_SM9_3` 分发到 `EncryptTokenSM9`
+    - RP 端解密通过 `crypto.SM9DecryptJWE(userKey, uid, compact)`（`pkg/crypto/jwe.go`）
+  - [x] 重构：AES-GCM/SM4-GCM 加解密函数从 `oidc/verifier.go` 抽取到 `pkg/crypto/jwe.go`
+    - `crypto.AESGCMEncrypt` / `crypto.AESGCMDecrypt` — AES-GCM 通用加解密
+    - `crypto.ParseJWECompact` — JWE compact 解析（原 `parseJWECompact` 导出）
+    - `verifier.go` 移除本地 `aesGCMEncrypt`/`aesGCMDecrypt`/`sm4GCMEncrypt`/`sm4GCMDecrypt`/`sm4NewCipher`，改用 `crypto` 包函数
+  - [x] Discovery 文档声明 `id_token_encryption_alg_values_supported` 和 `id_token_encryption_enc_values_supported`
+
+---
+
+## 🔙 Back-Channel Logout（OpenID Connect Back-Channel Logout 1.0）
+
+### 已完成
+- [x] `pkg/op/client.go` — `BackChannelLogoutClient` 接口（`BackChannelLogoutURI()`）
+- [x] `pkg/op/op.go` — `Endpoints.BackChannelLogout` 端点定义
+- [x] `pkg/op/backchannel_logout.go` — OP 端 BCL 端点处理器（请求解析、会话终止、Logout Token 生成与推送）
+- [x] `pkg/op/backchannel_logout.go` — `BackChannelLogoutStorage` 接口（`ClientsForSession` 查询会话关联客户端）
+- [x] `pkg/op/server_http.go` — 条件注册 `/backchannel_logout` 端点（仅当 server 实现 `BackChannelLogoutHandler`）
+- [x] `pkg/oidc/token.go` — `LogoutTokenClaims` 结构体（实现 `Claims` 接口，含 `GetIssuer`/`GetSubject`/`GetAudience` 等方法）
+- [x] `pkg/oidc/token.go` — `BackChannelLogoutEventKey` 常量
+- [x] `pkg/client/rp/backchannel_logout.go` — RP 端 `BackChannelLogoutHandler`、`LogoutTokenVerifier`、`VerifyLogoutToken`
+- [x] `pkg/op/test/backchannel_logout_test.go` — 11 个测试用例（JWE 加解密、Logout Token 生成、BCL 推送、Crypto 密钥暴露）
+
+### 待完成
+- [ ] Logout Token `typ` header 设为 `logout+jwt`（OIDC 规范 RECOMMENDED，当前 Signer 不支持自定义 JWT header）
+- [ ] 并行推送 Logout Token 到多个 RP（OIDC 规范 encouraged，当前串行）
+- [ ] Logout Token 加密支持（OIDC 规范 MAY，当前仅签名）
+- [ ] **Example server 集成 Back-Channel Logout 演示**
+  - `example/server/storage` 实现 `op.BackChannelLogoutStorage` 接口（`ClientsForSession` 方法）
+  - `example/server/exampleop/op.go` 在 `Config` 中启用 `BackChannelLogoutSupported: true`
+  - `example/server/main.go` 注册支持 `backchannel_logout_uri` 的客户端
+  - 确认 `/backchannel_logout` 端点默认启用逻辑：仅当 server 实现 `BackChannelLogoutHandler` 时注册（当前 `server_http.go` 已支持），但 Discovery 字段 `backchannel_logout_supported` 默认 `false`，需显式开启
 
 ---
 

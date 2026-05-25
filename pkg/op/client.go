@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -66,6 +71,48 @@ type HasRedirectGlobs interface {
 	Client
 	RedirectURIGlobs() []string
 	PostLogoutRedirectURIGlobs() []string
+}
+
+// IDTokenEncryptionClient is an optional interface that clients can implement
+// to request ID token encryption. When implemented, the OP will encrypt the
+// signed ID token using the configured algorithm and encryption method before
+// returning it in the token response.
+//
+// Supported algorithms:
+//   - "dir" (direct encryption): The OP uses a shared symmetric key for encryption.
+//     Requires Crypto to implement TokenEncryptionKeyProvider.
+//   - "A256GCMKW" (AES-256 GCM Key Wrapping): Standard AES key wrapping.
+//   - "SGD_SM2_3" (SM2 public-key encryption): Requires Crypto to implement
+//     SM2TokenEncryptionPublicKeyProvider (GM/T 0125.3).
+//   - "SGD_SM9_3" (SM9 identity-based encryption): Requires Crypto to implement
+//     SM9TokenEncryptionPublicKeyProvider (GM/T 0125.3).
+//
+// Supported encryption methods:
+//   - "SGD_SM4_GCM" (SM4-GCM, GM/T 0125.3)
+//   - "A256GCM" (AES-256-GCM)
+//   - "A128GCM" (AES-128-GCM)
+type IDTokenEncryptionClient interface {
+	Client
+
+	// IDTokenEncryptionAlg returns the JWE algorithm for key management.
+	// Returns empty string if encryption is not requested.
+	IDTokenEncryptionAlg() string
+
+	// IDTokenEncryptionEnc returns the JWE content encryption algorithm.
+	// Returns empty string if encryption is not requested.
+	IDTokenEncryptionEnc() string
+}
+
+// BackChannelLogoutClient is an optional interface that clients can implement
+// to support back-channel logout (OpenID Connect Back-Channel Logout 1.0).
+// When implemented, the OP will send a Logout Token to the client's
+// backchannel_logout_uri when a session is terminated.
+type BackChannelLogoutClient interface {
+	Client
+
+	// BackChannelLogoutURI returns the URI where the OP will send Logout Tokens
+	// via HTTP POST when a session is terminated.
+	BackChannelLogoutURI() string
 }
 
 func ContainsResponseType(types []oidc.ResponseType, responseType oidc.ResponseType) bool {

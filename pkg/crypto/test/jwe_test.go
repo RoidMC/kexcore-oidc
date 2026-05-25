@@ -402,3 +402,306 @@ func TestSM9EncryptDecryptJWE_EmptyPayload(t *testing.T) {
 		t.Errorf("expected empty plaintext, got %d bytes", len(decrypted))
 	}
 }
+
+// --- AES-GCM helpers tests ---
+
+func TestAESGCMEncryptDecrypt_RoundTrip(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i)
+	}
+	nonce := make([]byte, 12)
+	for i := range nonce {
+		nonce[i] = byte(i + 100)
+	}
+	plaintext := []byte("AES-GCM round-trip test for OIDC JWE")
+	aad := []byte("additional authenticated data")
+
+	sealed, err := crypto.AESGCMEncrypt(key, nonce, plaintext, aad)
+	if err != nil {
+		t.Fatalf("AESGCMEncrypt failed: %v", err)
+	}
+	if len(sealed) == 0 {
+		t.Fatal("sealed output is empty")
+	}
+
+	decrypted, err := crypto.AESGCMDecrypt(key, nonce, sealed, aad)
+	if err != nil {
+		t.Fatalf("AESGCMDecrypt failed: %v", err)
+	}
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Errorf("decrypted text doesn't match\ngot: %s\nwant: %s", decrypted, plaintext)
+	}
+}
+
+func TestAESGCMEncryptDecrypt_AES128(t *testing.T) {
+	key := make([]byte, 16)
+	for i := range key {
+		key[i] = byte(i)
+	}
+	nonce := make([]byte, 12)
+	for i := range nonce {
+		nonce[i] = byte(i + 200)
+	}
+	plaintext := []byte("AES-128-GCM test")
+
+	sealed, err := crypto.AESGCMEncrypt(key, nonce, plaintext, nil)
+	if err != nil {
+		t.Fatalf("AESGCMEncrypt (AES-128) failed: %v", err)
+	}
+
+	decrypted, err := crypto.AESGCMDecrypt(key, nonce, sealed, nil)
+	if err != nil {
+		t.Fatalf("AESGCMDecrypt (AES-128) failed: %v", err)
+	}
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Error("AES-128 round-trip mismatch")
+	}
+}
+
+func TestAESGCMDecrypt_WrongKey(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i)
+	}
+	wrongKey := make([]byte, 32)
+	for i := range wrongKey {
+		wrongKey[i] = byte(i + 1)
+	}
+	nonce := make([]byte, 12)
+	for i := range nonce {
+		nonce[i] = byte(i + 50)
+	}
+	plaintext := []byte("wrong key test")
+
+	sealed, err := crypto.AESGCMEncrypt(key, nonce, plaintext, nil)
+	if err != nil {
+		t.Fatalf("AESGCMEncrypt failed: %v", err)
+	}
+
+	_, err = crypto.AESGCMDecrypt(wrongKey, nonce, sealed, nil)
+	if err == nil {
+		t.Error("expected decryption failure with wrong key")
+	}
+}
+
+func TestAESGCMDecrypt_TamperedCiphertext(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i)
+	}
+	nonce := make([]byte, 12)
+	for i := range nonce {
+		nonce[i] = byte(i + 50)
+	}
+	plaintext := []byte("tamper test")
+
+	sealed, err := crypto.AESGCMEncrypt(key, nonce, plaintext, nil)
+	if err != nil {
+		t.Fatalf("AESGCMEncrypt failed: %v", err)
+	}
+
+	sealed[len(sealed)-1] ^= 0xff
+
+	_, err = crypto.AESGCMDecrypt(key, nonce, sealed, nil)
+	if err == nil {
+		t.Error("expected decryption failure for tampered ciphertext")
+	}
+}
+
+func TestAESGCMEncryptDecrypt_EmptyPlaintext(t *testing.T) {
+	key := make([]byte, 32)
+	nonce := make([]byte, 12)
+
+	sealed, err := crypto.AESGCMEncrypt(key, nonce, []byte{}, nil)
+	if err != nil {
+		t.Fatalf("AESGCMEncrypt empty plaintext failed: %v", err)
+	}
+
+	decrypted, err := crypto.AESGCMDecrypt(key, nonce, sealed, nil)
+	if err != nil {
+		t.Fatalf("AESGCMDecrypt empty plaintext failed: %v", err)
+	}
+	if len(decrypted) != 0 {
+		t.Errorf("expected empty plaintext, got %d bytes", len(decrypted))
+	}
+}
+
+func TestAESGCMEncryptDecrypt_LargePayload(t *testing.T) {
+	key := make([]byte, 32)
+	nonce := make([]byte, 12)
+	plaintext := make([]byte, 1024*10)
+	for i := range plaintext {
+		plaintext[i] = byte(i % 256)
+	}
+
+	sealed, err := crypto.AESGCMEncrypt(key, nonce, plaintext, nil)
+	if err != nil {
+		t.Fatalf("AESGCMEncrypt large payload failed: %v", err)
+	}
+
+	decrypted, err := crypto.AESGCMDecrypt(key, nonce, sealed, nil)
+	if err != nil {
+		t.Fatalf("AESGCMDecrypt large payload failed: %v", err)
+	}
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Error("large payload round-trip mismatch")
+	}
+}
+
+func TestAESGCMEncrypt_InvalidKeyLength(t *testing.T) {
+	key := make([]byte, 15) // Invalid: less than 16 bytes
+	nonce := make([]byte, 12)
+	_, err := crypto.AESGCMEncrypt(key, nonce, []byte("test"), nil)
+	if err == nil {
+		t.Error("expected error for invalid AES key length (15 bytes)")
+	}
+}
+
+// --- SM9 unsupported enc tests ---
+
+func TestSM9EncryptJWE_UnsupportedEnc(t *testing.T) {
+	masterKey, _ := crypto.SM9GenerateEncryptMasterKey()
+	uid := []byte("unsupporteduser")
+
+	_, err := crypto.SM9EncryptJWE(masterKey.PublicKey(), uid, "UNKNOWN_ENC", []byte("test"))
+	if err == nil {
+		t.Error("expected error for unsupported enc algorithm")
+	}
+}
+
+func TestSM9DecryptJWE_UnsupportedEnc(t *testing.T) {
+	masterKey, _ := crypto.SM9GenerateEncryptMasterKey()
+	uid := []byte("unsupporteduser")
+	userKey, _ := crypto.SM9GenerateEncryptUserKey(masterKey, uid)
+
+	// Craft a JWE with unsupported enc
+	header := struct {
+		Alg string `json:"alg"`
+		Enc string `json:"enc"`
+	}{Alg: crypto.SGD_SM9_3, Enc: "UNKNOWN_ENC"}
+	headerJSON, _ := json.Marshal(header)
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+	fakeKey := base64.RawURLEncoding.EncodeToString([]byte("fakekey"))
+	fakeIV := base64.RawURLEncoding.EncodeToString(make([]byte, 12))
+	fakeCipher := base64.RawURLEncoding.EncodeToString([]byte("cipher"))
+	fakeTag := base64.RawURLEncoding.EncodeToString(make([]byte, 16))
+	compact := headerB64 + "." + fakeKey + "." + fakeIV + "." + fakeCipher + "." + fakeTag
+
+	_, err := crypto.SM9DecryptJWE(userKey, uid, compact)
+	if err == nil {
+		t.Error("expected error for unsupported enc during decryption")
+	}
+}
+
+// --- SM2 header mismatch tests ---
+
+func TestSM2DecryptJWE_HeaderMismatch(t *testing.T) {
+	privateKey, _ := crypto.SM2GenerateKey()
+
+	// Craft a JWE with wrong alg header
+	header := struct {
+		Alg string `json:"alg"`
+		Enc string `json:"enc"`
+	}{Alg: crypto.SGD_SM9_3, Enc: crypto.SGD_SM4_GCM}
+	headerJSON, _ := json.Marshal(header)
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+	fakeKey := base64.RawURLEncoding.EncodeToString([]byte("fakekey"))
+	fakeIV := base64.RawURLEncoding.EncodeToString(make([]byte, 12))
+	fakeCipher := base64.RawURLEncoding.EncodeToString([]byte("cipher"))
+	fakeTag := base64.RawURLEncoding.EncodeToString(make([]byte, 16))
+	compact := headerB64 + "." + fakeKey + "." + fakeIV + "." + fakeCipher + "." + fakeTag
+
+	_, err := crypto.SM2DecryptJWE(privateKey, compact)
+	if err == nil {
+		t.Error("expected error for SM2 header alg mismatch")
+	}
+}
+
+func TestSM9DecryptJWE_HeaderMismatch(t *testing.T) {
+	masterKey, _ := crypto.SM9GenerateEncryptMasterKey()
+	uid := []byte("mismatchuser")
+	userKey, _ := crypto.SM9GenerateEncryptUserKey(masterKey, uid)
+
+	// Craft a JWE with wrong alg header
+	header := struct {
+		Alg string `json:"alg"`
+		Enc string `json:"enc"`
+	}{Alg: crypto.SGD_SM2_3, Enc: crypto.SGD_SM4_GCM}
+	headerJSON, _ := json.Marshal(header)
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+	fakeKey := base64.RawURLEncoding.EncodeToString([]byte("fakekey"))
+	fakeIV := base64.RawURLEncoding.EncodeToString(make([]byte, 12))
+	fakeCipher := base64.RawURLEncoding.EncodeToString([]byte("cipher"))
+	fakeTag := base64.RawURLEncoding.EncodeToString(make([]byte, 16))
+	compact := headerB64 + "." + fakeKey + "." + fakeIV + "." + fakeCipher + "." + fakeTag
+
+	_, err := crypto.SM9DecryptJWE(userKey, uid, compact)
+	if err == nil {
+		t.Error("expected error for SM9 header alg mismatch")
+	}
+}
+
+// --- ParseJWECompact tests ---
+
+func TestParseJWECompact_Valid(t *testing.T) {
+	privateKey, _ := crypto.SM2GenerateKey()
+	compact, _ := crypto.SM2EncryptJWE(&privateKey.PublicKey, []byte("parse test"))
+
+	parts, header, err := crypto.ParseJWECompact(compact)
+	if err != nil {
+		t.Fatalf("ParseJWECompact failed: %v", err)
+	}
+	if len(parts) != 5 {
+		t.Errorf("expected 5 parts, got %d", len(parts))
+	}
+	if header.Algorithm != crypto.SGD_SM2_3 {
+		t.Errorf("expected alg=%s, got %s", crypto.SGD_SM2_3, header.Algorithm)
+	}
+	if header.Encryption != crypto.SGD_SM4_GCM {
+		t.Errorf("expected enc=%s, got %s", crypto.SGD_SM4_GCM, header.Encryption)
+	}
+}
+
+func TestParseJWECompact_TooFewParts(t *testing.T) {
+	_, _, err := crypto.ParseJWECompact("a.b.c")
+	if err == nil {
+		t.Error("expected error for too few parts")
+	}
+}
+
+func TestParseJWECompact_TooManyParts(t *testing.T) {
+	_, _, err := crypto.ParseJWECompact("a.b.c.d.e.f")
+	if err == nil {
+		t.Error("expected error for too many parts")
+	}
+}
+
+func TestParseJWECompact_EmptyString(t *testing.T) {
+	_, _, err := crypto.ParseJWECompact("")
+	if err == nil {
+		t.Error("expected error for empty string")
+	}
+}
+
+func TestParseJWECompact_EmptyPart(t *testing.T) {
+	_, _, err := crypto.ParseJWECompact("a.b..d.e")
+	if err == nil {
+		t.Error("expected error for empty part")
+	}
+}
+
+func TestParseJWECompact_InvalidBase64Header(t *testing.T) {
+	_, _, err := crypto.ParseJWECompact("!!!.b.c.d.e")
+	if err == nil {
+		t.Error("expected error for invalid base64 header")
+	}
+}
+
+func TestParseJWECompact_InvalidJSONHeader(t *testing.T) {
+	badHeader := base64.RawURLEncoding.EncodeToString([]byte("not-json"))
+	_, _, err := crypto.ParseJWECompact(badHeader + ".b.c.d.e")
+	if err == nil {
+		t.Error("expected error for invalid JSON header")
+	}
+}

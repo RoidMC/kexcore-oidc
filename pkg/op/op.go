@@ -191,6 +191,7 @@ type Endpoints struct {
 	Revocation          *Endpoint
 	EndSession          *Endpoint
 	CheckSessionIframe  *Endpoint
+	BackChannelLogout   *Endpoint
 	JwksURI             *Endpoint
 	DeviceAuthorization *Endpoint
 }

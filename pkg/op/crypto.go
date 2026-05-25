@@ -5,6 +5,7 @@
 package op
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/emmansun/gmsm/sm9"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwe"
 	"github.com/lestrrat-go/jwx/v4/jwk"
@@ -28,6 +30,28 @@ type Decrypter interface {
 type Crypto interface {
 	Encrypt(string) (string, error)
 	Decrypt(string) (string, error)
+}
+
+// TokenEncryptionKeyProvider is an optional interface that Crypto implementations
+// can adopt to expose their raw key material for JWE token encryption (ID token, Userinfo).
+// The returned key byte slice must be 16 bytes for SM4/AES-128 or 32 bytes for AES-256.
+type TokenEncryptionKeyProvider interface {
+	TokenEncryptionKey() []byte
+}
+
+// SM2TokenEncryptionPublicKeyProvider is an optional interface for Crypto
+// implementations that provide an SM2 public key for encrypting ID tokens
+// using SGD_SM2_3 key wrapping per GM/T 0125.3.
+type SM2TokenEncryptionPublicKeyProvider interface {
+	SM2TokenEncryptionPublicKey() *ecdsa.PublicKey
+}
+
+// SM9TokenEncryptionPublicKeyProvider is an optional interface for Crypto
+// implementations that provide an SM9 master public key and UID for encrypting
+// ID tokens using SGD_SM9_3 key wrapping per GM/T 0125.3.
+type SM9TokenEncryptionPublicKeyProvider interface {
+	SM9TokenEncryptionMasterPublicKey() *sm9.EncryptMasterPublicKey
+	SM9TokenEncryptionUID() []byte
 }
 
 type aesCrypto struct {
@@ -103,6 +127,10 @@ func (c *aes256GCMCrypto) Decrypt(s string) (string, error) {
 		return "", fmt.Errorf("failed to decrypt: %w", err)
 	}
 	return string(decrypted), nil
+}
+
+func (c *aes256GCMCrypto) TokenEncryptionKey() []byte {
+	return c.key
 }
 
 // sm4GCMCrypto implements JWE-based encryption using direct key mode (dir)
@@ -229,6 +257,10 @@ func (c *sm4GCMCrypto) Decrypt(s string) (string, error) {
 	}
 
 	return string(plaintext), nil
+}
+
+func (c *sm4GCMCrypto) TokenEncryptionKey() []byte {
+	return c.key
 }
 
 type CompositeCrypto struct {

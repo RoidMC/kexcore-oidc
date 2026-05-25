@@ -15,10 +15,35 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/roidmc/kexcore-oidc/example/server/storage"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
 )
+
+const testIssuer = "https://localhost:9998/"
+
+func newTestProvider(config *op.Config) op.OpenIDProvider {
+	return newTestProviderWithCrypto(config, nil)
+}
+
+func newTestProviderWithCrypto(config *op.Config, crypto op.Crypto) op.OpenIDProvider {
+	stor := storage.NewStorage(storage.NewUserStore(testIssuer))
+	keySet := &op.OpenIDKeySet{stor}
+	opts := []op.Option{
+		op.WithAllowInsecure(),
+		op.WithAccessTokenKeySet(keySet),
+		op.WithIDTokenHintKeySet(keySet),
+	}
+	if crypto != nil {
+		opts = append(opts, op.WithCrypto(crypto))
+	}
+	provider, err := op.NewProvider(config, stor, op.StaticIssuer(testIssuer), opts...)
+	if err != nil {
+		panic(err)
+	}
+	return provider
+}
 
 func TestDiscover(t *testing.T) {
 	type args struct {
@@ -624,4 +649,71 @@ func Test_CodeChallengeMethods(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// ---------- JWE Discovery Tests ----------
+
+func Test_IDTokenEncryptionAlgValues(t *testing.T) {
+	t.Run("nil crypto returns nil", func(t *testing.T) {
+		m := mock.NewMockConfiguration(gomock.NewController(t))
+		got := op.IDTokenEncryptionAlgValues(m)
+		assert.Nil(t, got)
+	})
+
+	t.Run("provider with AES256GCMCrypto returns dir", func(t *testing.T) {
+		var key [32]byte
+		c := op.NewAES256GCMCrypto(key, "")
+		p := newTestProviderWithCrypto(&op.Config{}, c)
+		got := op.IDTokenEncryptionAlgValues(p)
+		assert.Equal(t, []string{"dir"}, got)
+	})
+
+	t.Run("provider with SM4GCMCrypto returns dir", func(t *testing.T) {
+		var key [16]byte
+		c := op.NewSM4GCMCrypto(key, "")
+		p := newTestProviderWithCrypto(&op.Config{}, c)
+		got := op.IDTokenEncryptionAlgValues(p)
+		assert.Equal(t, []string{"dir"}, got)
+	})
+}
+
+func Test_IDTokenEncryptionEncValues(t *testing.T) {
+	t.Run("nil crypto returns nil", func(t *testing.T) {
+		m := mock.NewMockConfiguration(gomock.NewController(t))
+		got := op.IDTokenEncryptionEncValues(m)
+		assert.Nil(t, got)
+	})
+
+	t.Run("provider with AES256GCMCrypto returns all symmetric encs", func(t *testing.T) {
+		var key [32]byte
+		c := op.NewAES256GCMCrypto(key, "")
+		p := newTestProviderWithCrypto(&op.Config{}, c)
+		got := op.IDTokenEncryptionEncValues(p)
+		assert.ElementsMatch(t, []string{"SGD_SM4_GCM", "A256GCM", "A128GCM"}, got)
+	})
+
+	t.Run("provider with SM4GCMCrypto returns all symmetric encs", func(t *testing.T) {
+		var key [16]byte
+		c := op.NewSM4GCMCrypto(key, "")
+		p := newTestProviderWithCrypto(&op.Config{}, c)
+		got := op.IDTokenEncryptionEncValues(p)
+		assert.ElementsMatch(t, []string{"SGD_SM4_GCM", "A256GCM", "A128GCM"}, got)
+	})
+}
+
+func Test_CreateDiscoveryConfig_JWEFields(t *testing.T) {
+	var key [32]byte
+	c := op.NewAES256GCMCrypto(key, "")
+	p := newTestProviderWithCrypto(&op.Config{}, c)
+
+	ctx := context.Background()
+	storage := mock.NewMockDiscoverStorage(gomock.NewController(t))
+	storage.EXPECT().SignatureAlgorithms(gomock.Any()).Return([]string{"RS256"}, nil)
+
+	cfg := op.CreateDiscoveryConfig(ctx, p, storage)
+
+	assert.Equal(t, []string{"dir"}, cfg.IDTokenEncryptionAlgValuesSupported)
+	assert.ElementsMatch(t, []string{"SGD_SM4_GCM", "A256GCM", "A128GCM"}, cfg.IDTokenEncryptionEncValuesSupported)
+	assert.Equal(t, []string{"dir"}, cfg.JWEAlgValuesSupported)
+	assert.ElementsMatch(t, []string{"SGD_SM4_GCM", "A256GCM", "A128GCM"}, cfg.JWEEncValuesSupported)
 }

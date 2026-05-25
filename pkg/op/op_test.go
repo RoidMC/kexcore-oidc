@@ -65,13 +65,21 @@ func init() {
 }
 
 func newTestProvider(config *op.Config) op.OpenIDProvider {
-	storage := storage.NewStorage(storage.NewUserStore(testIssuer))
-	keySet := &op.OpenIDKeySet{storage}
-	provider, err := op.NewProvider(config, storage, op.StaticIssuer(testIssuer),
+	return newTestProviderWithCrypto(config, nil)
+}
+
+func newTestProviderWithCrypto(config *op.Config, crypto op.Crypto) op.OpenIDProvider {
+	stor := storage.NewStorage(storage.NewUserStore(testIssuer))
+	keySet := &op.OpenIDKeySet{stor}
+	opts := []op.Option{
 		op.WithAllowInsecure(),
 		op.WithAccessTokenKeySet(keySet),
 		op.WithIDTokenHintKeySet(keySet),
-	)
+	}
+	if crypto != nil {
+		opts = append(opts, op.WithCrypto(crypto))
+	}
+	provider, err := op.NewProvider(config, stor, op.StaticIssuer(testIssuer), opts...)
 	if err != nil {
 		panic(err)
 	}

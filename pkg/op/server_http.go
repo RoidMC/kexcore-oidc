@@ -124,6 +124,9 @@ func (s *webServer) createRouter() {
 	s.endpointRoute(s.endpoints.Userinfo, s.userInfoHandler)
 	s.endpointRoute(s.endpoints.Revocation, s.withClient(s.revocationHandler))
 	s.endpointRoute(s.endpoints.EndSession, s.endSessionHandler)
+	if bclHandler, ok := s.server.(BackChannelLogoutHandler); ok {
+		s.endpointRoute(s.endpoints.BackChannelLogout, backChannelLogoutHandler(bclHandler))
+	}
 	s.endpointRoute(s.endpoints.JwksURI, simpleHandler(s, s.server.Keys))
 }
 

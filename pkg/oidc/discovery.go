@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package oidc
 
 const (
@@ -153,6 +158,14 @@ type DiscoveryConfiguration struct {
 	// BackChannelLogoutSessionSupported specifies whether the OP can pass a sid (session ID) Claim in the Logout Token to identify the RP session with the OP.
 	// If supported, the sid Claim is also included in ID Tokens issued by the OP. If omitted, the default value is false.
 	BackChannelLogoutSessionSupported bool `json:"backchannel_logout_session_supported,omitempty"`
+
+	// JWEAlgValuesSupported contains a list of JWE encryption algorithms (alg values) supported by the OP.
+	// This is a general-purpose field complementing the specific *EncryptionAlgValuesSupported fields.
+	JWEAlgValuesSupported []string `json:"jwe_alg_values_supported,omitempty"`
+
+	// JWEEncValuesSupported contains a list of JWE content encryption algorithms (enc values) supported by the OP.
+	// This is a general-purpose field complementing the specific *EncryptionEncValuesSupported fields.
+	JWEEncValuesSupported []string `json:"jwe_enc_values_supported,omitempty"`
 }
 
 type AuthMethod string
