@@ -22,6 +22,7 @@ type Signer struct {
 	algorithm string
 	key       interface{}
 	keyID     string
+	tokenType string
 	sm2Priv   *gmsm.PrivateKey
 	sm9Priv   *sm9.SignPrivateKey
 	sm9UID    []byte
@@ -71,6 +72,12 @@ func (s *Signer) SetSM9UID(uid []byte) {
 	s.sm9UID = uid
 }
 
+// SetTokenType sets the JWT typ header value (e.g. "JWT", "logout+jwt").
+// If empty, the default "JWT" is used.
+func (s *Signer) SetTokenType(tokenType string) {
+	s.tokenType = tokenType
+}
+
 // Algorithm returns the JWA signature algorithm string.
 func (s *Signer) Algorithm() string {
 	return s.algorithm
@@ -100,6 +107,13 @@ func (s *Signer) Sign(payload []byte) (string, error) {
 	return string(signed), nil
 }
 
+func (s *Signer) tokenTypeOrDefault() string {
+	if s.tokenType != "" {
+		return s.tokenType
+	}
+	return "JWT"
+}
+
 func (s *Signer) signSM2(payload []byte) (string, error) {
 	h, err := GetHashAlgorithm(s.algorithm)
 	if err != nil {
@@ -115,7 +129,7 @@ func (s *Signer) signSM2(payload []byte) (string, error) {
 
 	headerJSON, err := json.Marshal(map[string]interface{}{
 		"alg": s.algorithm,
-		"typ": "JWT",
+		"typ": s.tokenTypeOrDefault(),
 	})
 	if err != nil {
 		return "", err
@@ -178,7 +192,7 @@ func (s *Signer) signSM9(payload []byte) (string, error) {
 
 	headerMap := map[string]interface{}{
 		"alg": s.algorithm,
-		"typ": "JWT",
+		"typ": s.tokenTypeOrDefault(),
 		"uid": base64.RawURLEncoding.EncodeToString(s.sm9UID),
 	}
 	if s.keyID != "" {

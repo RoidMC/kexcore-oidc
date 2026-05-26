@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package storage
 
 import (
@@ -32,10 +37,12 @@ type Client struct {
 	devMode                        bool
 	idTokenUserinfoClaimsAssertion bool
 	clockSkew                      time.Duration
+	postLogoutRedirectURIs         []string
 	postLogoutRedirectURIGlobs     []string
 	redirectURIGlobs               []string
 	idTokenEncryptionAlg           string
 	idTokenEncryptionEnc           string
+	backChannelLogoutURI           string
 }
 
 // GetID must return the client_id
@@ -50,7 +57,7 @@ func (c *Client) RedirectURIs() []string {
 
 // PostLogoutRedirectURIs must return the registered post_logout_redirect_uris for sign-outs
 func (c *Client) PostLogoutRedirectURIs() []string {
-	return []string{}
+	return c.postLogoutRedirectURIs
 }
 
 // ApplicationType must return the type of the client (app, native, user agent)
@@ -195,6 +202,24 @@ func WebClient(id, secret string, redirectURIs ...string) *Client {
 	}
 }
 
+// OIDFTestClient creates a web client pre-configured for OIDF Conformance Suite testing.
+// It includes the required post_logout_redirect_uri used by the conformance test suite.
+func OIDFTestClient(id, secret string, redirectURIs ...string) *Client {
+	c := WebClient(id, secret, redirectURIs...)
+	c.postLogoutRedirectURIs = []string{
+		"https://www.certification.openid.net/test/a/kexcore-test/post_logout_redirect",
+	}
+	return c
+}
+
+// OIDFBackChannelLogoutTestClient creates a web client pre-configured for OIDF Conformance Suite
+// back-channel logout testing. It includes both post_logout_redirect_uri and backchannel_logout_uri.
+func OIDFBackChannelLogoutTestClient(id, secret, backChannelLogoutURI string, redirectURIs ...string) *Client {
+	c := OIDFTestClient(id, secret, redirectURIs...)
+	c.backChannelLogoutURI = backChannelLogoutURI
+	return c
+}
+
 // DeviceClient creates a device client with Basic authentication.
 func DeviceClient(id, secret string) *Client {
 	return &Client{
@@ -225,6 +250,12 @@ func (c *Client) IDTokenEncryptionEnc() string {
 	return c.idTokenEncryptionEnc
 }
 
+// BackChannelLogoutURI returns the URI where the OP will send Logout Tokens
+// via HTTP POST when a session is terminated.
+func (c *Client) BackChannelLogoutURI() string {
+	return c.backChannelLogoutURI
+}
+
 // EncryptedWebClient creates a web client that requests ID token encryption.
 // alg is the JWE key management algorithm (e.g. "dir", "SGD_SM2_3", "SGD_SM9_3").
 // enc is the JWE content encryption algorithm (e.g. "A256GCM", "SGD_SM4_GCM").
@@ -232,6 +263,14 @@ func EncryptedWebClient(id, secret string, alg, enc string, redirectURIs ...stri
 	c := WebClient(id, secret, redirectURIs...)
 	c.idTokenEncryptionAlg = alg
 	c.idTokenEncryptionEnc = enc
+	return c
+}
+
+// BackChannelLogoutWebClient creates a web client that supports back-channel logout.
+// uri is the RP's backchannel_logout_uri where Logout Tokens will be sent.
+func BackChannelLogoutWebClient(id, secret, uri string, redirectURIs ...string) *Client {
+	c := WebClient(id, secret, redirectURIs...)
+	c.backChannelLogoutURI = uri
 	return c
 }
 

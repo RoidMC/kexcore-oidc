@@ -43,6 +43,13 @@ type AuthRequest interface {
 	Done() bool
 }
 
+// AuthRequestSessionID should be implemented if backchannel_logout_session_supported
+// is enabled. When supported, the sid Claim must be present in both ID Tokens and
+// Logout Tokens.
+type AuthRequestSessionID interface {
+	GetSessionID() string
+}
+
 // AuthRequestSessionState should be implemented if [OpenID Connect Session Management](https://openid.net/specs/openid-connect-session-1_0.html) is supported
 type AuthRequestSessionState interface {
 	// GetSessionState returns session_state.

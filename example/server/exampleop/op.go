@@ -130,6 +130,10 @@ func newOP(
 		// enables use of the `request` Object parameter
 		RequestObjectSupported: true,
 
+		// enables back-channel logout support (OP-initiated logout via push to RP)
+		BackChannelLogoutSupported:        true,
+		BackChannelLogoutSessionSupported: true,
+
 		// this example has only static texts (in English), so we'll set the here accordingly
 		SupportedUILocales: []language.Tag{language.English},
 

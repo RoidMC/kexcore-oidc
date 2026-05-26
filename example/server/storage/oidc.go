@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package storage
 
 import (
@@ -39,8 +44,9 @@ type AuthRequest struct {
 	Nonce         string
 	CodeChallenge *OIDCCodeChallenge
 
-	done     bool
-	authTime time.Time
+	done      bool
+	authTime  time.Time
+	sessionID string
 }
 
 // LogValue allows you to define which fields will be logged.
@@ -118,6 +124,10 @@ func (a *AuthRequest) GetSubject() string {
 
 func (a *AuthRequest) Done() bool {
 	return a.done
+}
+
+func (a *AuthRequest) GetSessionID() string {
+	return a.sessionID
 }
 
 func PromptToInternal(oidcPrompt oidc.SpaceDelimitedArray) []string {
@@ -232,4 +242,8 @@ func (r *RefreshTokenRequest) GetSubject() string {
 
 func (r *RefreshTokenRequest) SetCurrentScopes(scopes []string) {
 	r.Scopes = scopes
+}
+
+func (r *RefreshTokenRequest) GetSessionID() string {
+	return r.SessionID
 }

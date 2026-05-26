@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -19,6 +24,13 @@ type RefreshTokenRequest interface {
 	GetScopes() []string
 	GetSubject() string
 	SetCurrentScopes(scopes []string)
+}
+
+// RefreshTokenRequestSessionID should be implemented if backchannel_logout_session_supported
+// is enabled. When supported, the sid Claim must be present in both ID Tokens and
+// Logout Tokens.
+type RefreshTokenRequestSessionID interface {
+	GetSessionID() string
 }
 
 // RefreshTokenExchange handles the OAuth 2.0 refresh_token grant, including

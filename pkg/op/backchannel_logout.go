@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
@@ -27,6 +28,17 @@ type BackChannelLogoutHandler interface {
 	Storage() Storage
 	Crypto() Crypto
 	Logger() *slog.Logger
+}
+
+// LogoutTokenEncryptionClient is an optional interface that clients can implement
+// to request Logout Token encryption. When implemented, the OP will encrypt the
+// signed Logout Token before sending it to the RP's backchannel_logout_uri.
+//
+// Supported algorithms and encryption methods are the same as IDTokenEncryptionClient.
+type LogoutTokenEncryptionClient interface {
+	Client
+	LogoutTokenEncryptionAlg() string
+	LogoutTokenEncryptionEnc() string
 }
 
 // ---------- OP endpoint handler ----------
@@ -56,16 +68,17 @@ func BackChannelLogout(w http.ResponseWriter, r *http.Request, handler BackChann
 		return
 	}
 
+	// Push Logout Tokens BEFORE terminating the session, because
+	// ClientsForSession relies on active tokens to discover RPs.
+	if err := pushLogoutTokens(ctx, handler, req.Subject, req.SessionID); err != nil {
+		handler.Logger().ErrorContext(ctx, "failed to push logout tokens", "error", err)
+	}
+
 	// Terminate the session.
 	if err := handler.Storage().TerminateSession(ctx, req.Subject, ""); err != nil {
 		handler.Logger().ErrorContext(ctx, "failed to terminate session", "error", err)
 		RequestError(w, r, oidc.DefaultToServerError(err, "error terminating session"), handler.Logger())
 		return
-	}
-
-	// Push Logout Tokens to all RPs that have registered a backchannel_logout_uri.
-	if err := pushLogoutTokens(ctx, handler, req.Subject, req.SessionID); err != nil {
-		handler.Logger().ErrorContext(ctx, "failed to push logout tokens", "error", err)
 	}
 
 	// Respond with 200 OK.
@@ -99,11 +112,8 @@ func parseBackChannelLogoutRequest(r *http.Request, decoder httphelper.Decoder) 
 // pushLogoutTokens generates and pushes a Logout Token to each RP that has
 // registered a backchannel_logout_uri.
 //
-// TODO: The OIDC spec encourages sending logout requests in parallel (Section 2.3).
-// Currently requests are sent sequentially.
-// TODO: Logout Token encryption: the spec says "A Logout Token MUST be signed
-// and MAY also be encrypted" (Section 2.4). Currently only signing is implemented.
-// If encrypted, the iss claim SHOULD be replicated in JWT header params.
+// Logout requests are sent in parallel using a worker pool (OIDC spec Section 2.3 encourages parallel sending).
+// Logout Token encryption is supported when the client implements LogoutTokenEncryptionClient.
 func pushLogoutTokens(ctx context.Context, handler BackChannelLogoutHandler, sub, sid string) error {
 	issuer := IssuerFromContext(ctx)
 	if issuer == "" {
@@ -129,37 +139,92 @@ func pushLogoutTokens(ctx context.Context, handler BackChannelLogoutHandler, sub
 	if err != nil {
 		return fmt.Errorf("failed to get clients for session: %w", err)
 	}
+	handler.Logger().DebugContext(ctx, "pushLogoutTokens: found clients for session", "sub", sub, "sid", sid, "client_count", len(clients))
 
+	// Filter clients that actually have a backchannel_logout_uri.
+	type clientTarget struct {
+		client Client
+		uri    string
+	}
+	targets := make([]clientTarget, 0, len(clients))
 	for _, client := range clients {
 		bclClient, ok := client.(BackChannelLogoutClient)
 		if !ok {
+			handler.Logger().DebugContext(ctx, "pushLogoutTokens: client does not implement BackChannelLogoutClient", "client_id", client.GetID())
 			continue
 		}
 		uri := bclClient.BackChannelLogoutURI()
 		if uri == "" {
+			handler.Logger().DebugContext(ctx, "pushLogoutTokens: client has no backchannel_logout_uri", "client_id", client.GetID())
 			continue
 		}
-
-		logoutToken, err := createLogoutToken(issuer, sub, sid, client.GetID(), signer)
-		if err != nil {
-			handler.Logger().ErrorContext(ctx, "failed to create logout token", "client_id", client.GetID(), "error", err)
-			continue
-		}
-
-		if err := sendLogoutToken(ctx, uri, logoutToken, handler.Logger()); err != nil {
-			handler.Logger().ErrorContext(ctx, "failed to send logout token", "client_id", client.GetID(), "uri", uri, "error", err)
-			continue
-		}
+		targets = append(targets, clientTarget{client: client, uri: uri})
 	}
 
-	return nil
+	handler.Logger().DebugContext(ctx, "pushLogoutTokens: targets after filtering", "target_count", len(targets))
+	if len(targets) == 0 {
+		return nil
+	}
+
+	// Send logout tokens in parallel with a bounded worker pool.
+	const maxWorkers = 10
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, maxWorkers)
+	errChan := make(chan error, len(targets))
+
+	for _, t := range targets {
+		wg.Add(1)
+		semaphore <- struct{}{}
+		go func(client Client, uri string) {
+			defer wg.Done()
+			defer func() { <-semaphore }()
+
+			// Create a separate signer for each goroutine to avoid
+			// concurrent SetTokenType mutations on the shared signer.
+			goroutineSigner := *signer
+			logoutToken, err := createLogoutToken(issuer, sub, sid, client.GetID(), &goroutineSigner)
+			if err != nil {
+				handler.Logger().ErrorContext(ctx, "failed to create logout token", "client_id", client.GetID(), "error", err)
+				errChan <- fmt.Errorf("client %s: create logout token: %w", client.GetID(), err)
+				return
+			}
+
+			// Encrypt the Logout Token if the client supports it.
+			if encClient, ok := client.(LogoutTokenEncryptionClient); ok {
+				if alg, enc := encClient.LogoutTokenEncryptionAlg(), encClient.LogoutTokenEncryptionEnc(); alg != "" && enc != "" {
+					encrypted, err := encryptIDToken(logoutToken, handler.Crypto(), alg, enc)
+					if err != nil {
+						handler.Logger().ErrorContext(ctx, "failed to encrypt logout token", "client_id", client.GetID(), "error", err)
+						errChan <- fmt.Errorf("client %s: encrypt logout token: %w", client.GetID(), err)
+						return
+					}
+					logoutToken = encrypted
+				}
+			}
+
+			if err := sendLogoutToken(ctx, uri, logoutToken, handler.Logger()); err != nil {
+				handler.Logger().ErrorContext(ctx, "failed to send logout token", "client_id", client.GetID(), "uri", uri, "error", err)
+				errChan <- fmt.Errorf("client %s: send logout token: %w", client.GetID(), err)
+				return
+			}
+		}(t.client, t.uri)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Collect errors (log them individually; return first error if any).
+	var firstErr error
+	for err := range errChan {
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 // createLogoutToken creates a signed JWT Logout Token.
-//
-// TODO: The OIDC spec RECOMMENDS setting the JWT header typ="logout+jwt"
-// to explicitly type the token and prevent cross-JWT confusion.
-// Currently the Signer does not support custom JWT header parameters.
+// The JWT header typ is set to "logout+jwt" per OIDC Back-Channel Logout spec recommendation.
 func createLogoutToken(issuer, sub, sid, audience string, signer *crypto.Signer) (string, error) {
 	now := time.Now()
 	claims := &oidc.LogoutTokenClaims{
@@ -174,6 +239,8 @@ func createLogoutToken(issuer, sub, sid, audience string, signer *crypto.Signer)
 			oidc.BackChannelLogoutEventKey: struct{}{},
 		},
 	}
+	signer.SetTokenType("logout+jwt")
+	defer signer.SetTokenType("")
 	return crypto.Sign(claims, signer)
 }
 

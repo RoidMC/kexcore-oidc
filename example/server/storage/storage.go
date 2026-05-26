@@ -43,6 +43,7 @@ var (
 	_ op.Storage                  = &Storage{}
 	_ op.ClientCredentialsStorage = &Storage{}
 	_ op.SM9JWTProfileKeyStorage  = &Storage{}
+	_ op.BackChannelLogoutStorage = &Storage{}
 )
 
 // storage implements the op.Storage interface
@@ -327,6 +328,9 @@ func (s *Storage) CheckUsernamePassword(username, password, id string) error {
 
 		request.authTime = time.Now()
 
+		// Generate a session ID for back-channel logout support.
+		request.sessionID = uuid.NewString()
+
 		return nil
 	}
 	return fmt.Errorf("username or password wrong")
@@ -462,7 +466,11 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, request op.T
 		if err != nil {
 			return "", "", time.Time{}, err
 		}
-		refreshToken, err := s.createRefreshToken(accessToken, amr, authTime)
+		var sessionID string
+		if sidReq, ok := request.(op.AuthRequestSessionID); ok {
+			sessionID = sidReq.GetSessionID()
+		}
+		refreshToken, err := s.createRefreshToken(accessToken, amr, authTime, sessionID)
 		if err != nil {
 			return "", "", time.Time{}, err
 		}
@@ -496,7 +504,7 @@ func (s *Storage) exchangeRefreshToken(ctx context.Context, request op.TokenExch
 		return "", "", time.Time{}, err
 	}
 
-	refreshToken, err := s.createRefreshToken(accessToken, nil, authTime)
+	refreshToken, err := s.createRefreshToken(accessToken, nil, authTime, "")
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
@@ -784,7 +792,7 @@ func (s *Storage) Health(ctx context.Context) error {
 }
 
 // createRefreshToken will store a refresh_token in-memory based on the provided information
-func (s *Storage) createRefreshToken(accessToken *Token, amr []string, authTime time.Time) (string, error) {
+func (s *Storage) createRefreshToken(accessToken *Token, amr []string, authTime time.Time, sessionID string) (string, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	token := &RefreshToken{
@@ -798,6 +806,7 @@ func (s *Storage) createRefreshToken(accessToken *Token, amr []string, authTime 
 		Expiration:    time.Now().Add(5 * time.Hour),
 		Scopes:        accessToken.Scopes,
 		AccessToken:   accessToken.ID,
+		SessionID:     sessionID,
 	}
 	s.refreshTokens[token.ID] = token
 	return token.Token, nil
@@ -1128,4 +1137,27 @@ func (s *Storage) ClientCredentialsTokenRequest(ctx context.Context, clientID st
 		Audience: []string{clientID},
 		Scopes:   scopes,
 	}, nil
+}
+
+// ClientsForSession implements the op.BackChannelLogoutStorage interface.
+// It returns all clients that have an active session for the given subject and/or session ID.
+func (s *Storage) ClientsForSession(ctx context.Context, sub, sid string) ([]op.Client, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	clientMap := make(map[string]op.Client)
+	for _, token := range s.tokens {
+		if token.Subject == sub {
+			client, ok := s.clients[token.ApplicationID]
+			if ok {
+				clientMap[token.ApplicationID] = RedirectGlobsClient(client)
+			}
+		}
+	}
+
+	result := make([]op.Client, 0, len(clientMap))
+	for _, client := range clientMap {
+		result = append(result, client)
+	}
+	return result, nil
 }

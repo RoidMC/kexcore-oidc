@@ -88,10 +88,10 @@
 - [x] `pkg/op/test/backchannel_logout_test.go` — 11 个测试用例（JWE 加解密、Logout Token 生成、BCL 推送、Crypto 密钥暴露）
 
 ### 待完成
-- [ ] Logout Token `typ` header 设为 `logout+jwt`（OIDC 规范 RECOMMENDED，当前 Signer 不支持自定义 JWT header）
-- [ ] 并行推送 Logout Token 到多个 RP（OIDC 规范 encouraged，当前串行）
-- [ ] Logout Token 加密支持（OIDC 规范 MAY，当前仅签名）
-- [ ] **Example server 集成 Back-Channel Logout 演示**
+- [x] Logout Token `typ` header 设为 `logout+jwt`（OIDC 规范 RECOMMENDED，当前 Signer 不支持自定义 JWT header）
+- [x] 并行推送 Logout Token 到多个 RP（OIDC 规范 encouraged，当前串行）
+- [x] Logout Token 加密支持（OIDC 规范 MAY，当前仅签名）
+- [x] **Example server 集成 Back-Channel Logout 演示**
   - `example/server/storage` 实现 `op.BackChannelLogoutStorage` 接口（`ClientsForSession` 方法）
   - `example/server/exampleop/op.go` 在 `Config` 中启用 `BackChannelLogoutSupported: true`
   - `example/server/main.go` 注册支持 `backchannel_logout_uri` 的客户端

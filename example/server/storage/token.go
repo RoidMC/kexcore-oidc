@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package storage
 
 import "time"
@@ -23,4 +28,5 @@ type RefreshToken struct {
 	Expiration    time.Time
 	Scopes        []string
 	AccessToken   string // Token.ID
+	SessionID     string // for back-channel logout support
 }

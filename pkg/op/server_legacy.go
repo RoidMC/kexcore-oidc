@@ -1,14 +1,25 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
+
+// Ensure LegacyServer implements BackChannelLogoutHandler.
+// Note: Crypto() is satisfied because OpenIDProvider already has Crypto().
+var _ BackChannelLogoutHandler = (*LegacyServer)(nil)
 
 // ExtendedLegacyServer allows embedding [LegacyServer] in a struct,
 // so that its methods can be individually overridden.
@@ -446,6 +457,15 @@ func (s *LegacyServer) EndSession(ctx context.Context, r *Request[oidc.EndSessio
 	if err != nil {
 		return nil, err
 	}
+
+	// Push Logout Tokens BEFORE terminating the session, because
+	// ClientsForSession relies on active tokens to discover RPs.
+	if session.UserID != "" {
+		if pushErr := pushLogoutTokens(ctx, s, session.UserID, ""); pushErr != nil {
+			s.provider.Logger().ErrorContext(ctx, "failed to push logout tokens after end session", "error", pushErr)
+		}
+	}
+
 	redirect := session.RedirectURI
 	if fromRequest, ok := s.provider.Storage().(CanTerminateSessionFromRequest); ok {
 		redirect, err = fromRequest.TerminateSessionFromRequest(ctx, session)
@@ -455,5 +475,26 @@ func (s *LegacyServer) EndSession(ctx context.Context, r *Request[oidc.EndSessio
 	if err != nil {
 		return nil, err
 	}
+
 	return NewRedirect(redirect), nil
+}
+
+// Decoder returns the provider's decoder.
+func (s *LegacyServer) Decoder() httphelper.Decoder {
+	return s.provider.Decoder()
+}
+
+// Logger returns the provider's logger.
+func (s *LegacyServer) Logger() *slog.Logger {
+	return s.provider.Logger()
+}
+
+// Crypto returns the provider's crypto implementation.
+func (s *LegacyServer) Crypto() Crypto {
+	return s.provider.Crypto()
+}
+
+// Storage returns the provider's storage.
+func (s *LegacyServer) Storage() Storage {
+	return s.provider.Storage()
 }

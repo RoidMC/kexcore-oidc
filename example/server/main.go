@@ -51,10 +51,12 @@ func main() {
 		storage.WebClient("web", "secret", cfg.RedirectURI...),
 		storage.WebClient("api", "secret", cfg.RedirectURI...),
 		// OIDF Conformance Suite 测试客户端
-		storage.WebClient("Test Client 1", "test-secret-1",
+		storage.OIDFBackChannelLogoutTestClient("Test Client 1", "test-secret-1",
+			"https://www.certification.openid.net/test/a/kexcore-test/backchannel_logout",
 			"https://www.certification.openid.net/test/a/kexcore-test/callback",
 		),
-		storage.WebClient("Test Client 2", "test-secret-2",
+		storage.OIDFBackChannelLogoutTestClient("Test Client 2", "test-secret-2",
+			"https://www.certification.openid.net/test/a/kexcore-test/backchannel_logout",
 			"https://www.certification.openid.net/test/a/kexcore-test/callback",
 		),
 		// JWE 加密演示客户端
@@ -65,6 +67,10 @@ func main() {
 			cfg.RedirectURI...,
 		),
 		storage.EncryptedWebClient("web-sm9", "secret", oidc.JWEAlgSM93, oidc.JWEEncSM4GCM,
+			cfg.RedirectURI...,
+		),
+		// Back-Channel Logout 演示客户端
+		storage.BackChannelLogoutWebClient("web-bcl", "secret", "http://localhost:9999/backchannel_logout",
 			cfg.RedirectURI...,
 		),
 	)

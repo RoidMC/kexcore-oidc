@@ -15,6 +15,7 @@
 This project is an easy-to-use client (RP) and server (OP) implementation for the `OIDC` (OpenID Connect) standard written for `Go`.
 
 The RP is certified for the [oidf-basic] and [oidf-config] profile.
+The OP is certified for the [oidf-backchannel] profile.
 
 Whenever possible we tried to reuse / extend existing packages like `OAuth2 for Go`.
 
@@ -86,11 +87,13 @@ The library uses build tags to enable or disable features. The following build t
 
 Example server allows extra configuration using environment variables and could be used for end-to-end testing of your services.
 
-| Name         | Format                           | Description                           |
-| ------------ | -------------------------------- | ------------------------------------- |
-| PORT         | Number between 1 and 65535       | OIDC listen port                      |
-| REDIRECT_URI | Comma-separated URIs             | List of allowed redirect URIs         |
-| USERS_FILE   | Path to json in local filesystem | Users with their data and credentials |
+| Name               | Format                           | Description                                                      |
+| ------------------ | -------------------------------- | ---------------------------------------------------------------- |
+| PORT               | Number between 1 and 65535       | OIDC listen port                                                 |
+| REDIRECT_URI       | Comma-separated URIs             | List of allowed redirect URIs                                    |
+| USERS_FILE         | Path to json in local filesystem | Users with their data and credentials                            |
+| ISSUER             | URL                              | Issuer identifier (e.g. `https://your-domain.com/`)              |
+| SIGNING_ALGORITHMS | Comma-separated algorithms       | Enabled JWS algorithms (default: `RS256,RS384,RS512,EdDSA,SGD_SM3_SM2,SGD_SM3_SM9`) |
 
 Here is json equivalent for one of the default users
 
@@ -130,6 +133,8 @@ Here is json equivalent for one of the default users
 | JWE ID Token Encryption | yes        | yes             | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022] (dir mode) |
 | Back-Channel Logout  | yes           | yes             | OpenID Connect [Back-Channel Logout][12] 1.0 |
 | DPoP                 | not yet       | not yet         | [RFC 9449][14]                               |
+
+> **Note on Chinese Commercial Cryptography (国密):** This library supports SM2, SM9, and SM4 algorithms via the `SGD_SM3_SM2`, `SGD_SM3_SM9`, and `SM4` identifiers. These are **not defined in RFC 7518** and therefore are **not recognized by the OpenID Foundation (OIDF) Conformance Test Suite**. When running OIDF certification tests, disable national-crypto algorithms by setting the environment variable `SIGNING_ALGORITHMS=RS256,RS384,RS512,EdDSA` so that the JWKS endpoint only returns standard JWKs.
 
 [1]: https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth "3.1. Authentication using the Authorization Code Flow"
 [2]: https://openid.net/specs/openid-connect-core-1_0.html#ImplicitFlowAuth "3.2. Authentication using the Implicit Flow"
@@ -174,7 +179,7 @@ Versions that also build are marked with :warning:.
 
 ## Why another library
 
-Why based on zitadel/iodc? Because we have reviewed products such as Ory/Hydra, Ory/site, etc. and found them difficult to develop and use out of the box, we have chosen the zitadel based oidc SDK for hard fork development
+Why based on zitadel/iodc? Because we have reviewed products such as Ory/Hydra, Ory/fosite, etc. and found them difficult to develop and use out of the box, we have chosen the zitadel based oidc SDK for hard fork development
 
 ### Goals
 
@@ -204,5 +209,6 @@ language governing permissions and limitations under the License.
 <!--zitadel/oidc issue reference-->
 [^1]: https://github.com/zitadel/oidc/issues/135#issuecomment-950563892
 
-[oidf-basic]: https://www.certification.openid.net/log-detail.html?log=GJw8Lct7VW2mcFK&public=true
-[oidf-config]: https://www.certification.openid.net/log-detail.html?log=3iE9O7fRSAhYzoC&public=true
+[oidf-basic]: https://www.certification.openid.net/log-detail.html?log=SpSbfydiglCBorB&public=true
+[oidf-config]: https://www.certification.openid.net/log-detail.html?log=ONiasADvOhTyslW&public=true
+[oidf-backchannel]: https://www.certification.openid.net/plan-detail.html?plan=khTQPpmApoDc9&public=true

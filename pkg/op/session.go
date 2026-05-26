@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -41,6 +46,17 @@ func EndSession(w http.ResponseWriter, r *http.Request, ender SessionEnder) {
 		RequestError(w, r, err, ender.Logger())
 		return
 	}
+
+	// Push Logout Tokens BEFORE terminating the session, because
+	// ClientsForSession relies on active tokens to discover RPs.
+	if session.UserID != "" {
+		if bclHandler, ok := ender.(BackChannelLogoutHandler); ok {
+			if pushErr := pushLogoutTokens(r.Context(), bclHandler, session.UserID, ""); pushErr != nil {
+				ender.Logger().ErrorContext(r.Context(), "failed to push logout tokens after end session", "error", pushErr)
+			}
+		}
+	}
+
 	redirect := session.RedirectURI
 	if fromRequest, ok := ender.Storage().(CanTerminateSessionFromRequest); ok {
 		redirect, err = fromRequest.TerminateSessionFromRequest(r.Context(), session)

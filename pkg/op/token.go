@@ -230,6 +230,13 @@ func CreateIDToken(ctx context.Context, issuer string, request IDTokenRequest, v
 		claims.Actor = actorReq.GetActor()
 	}
 
+	// Include sid claim when backchannel_logout_session_supported is enabled.
+	if sidReq, ok := request.(AuthRequestSessionID); ok {
+		claims.SessionID = sidReq.GetSessionID()
+	} else if sidReq, ok := request.(RefreshTokenRequestSessionID); ok {
+		claims.SessionID = sidReq.GetSessionID()
+	}
+
 	scopes := client.RestrictAdditionalIdTokenScopes()(request.GetScopes())
 	signingKey, err := storage.SigningKey(ctx)
 	if err != nil {
