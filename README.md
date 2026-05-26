@@ -12,7 +12,8 @@
 
 ## What Is It
 
-This project is an easy-to-use client (RP) and server (OP) implementation for the `OIDC` (OpenID Connect) standard written for `Go`.
+A full-stack OIDC SDK (OP + RP) for Go, compliant with **OAuth 2.1**,
+**OpenID Connect Core 1.0**, and **Chinese Commercial Cryptography** (SM2/SM3/SM4/SM9).
 
 The RP is certified for the [oidf-basic] and [oidf-config] profile.
 The OP is certified for the [oidf-backchannel] profile.
