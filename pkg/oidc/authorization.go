@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package oidc
 
 import (
@@ -89,6 +94,23 @@ type AuthRequest struct {
 
 	// RequestParam enables OIDC requests to be passed in a single, self-contained parameter (as JWT, called Request Object)
 	RequestParam string `schema:"request"`
+
+	// RequestURI is a reference to a Pushed Authorization Request (PAR) stored by the OP.
+	// https://datatracker.ietf.org/doc/html/rfc9126
+	RequestURI string `schema:"request_uri"`
+}
+
+// PushedAuthRequest represents the parameters sent to the Pushed Authorization Request endpoint.
+// https://datatracker.ietf.org/doc/html/rfc9126#section-2.1
+type PushedAuthRequest struct {
+	AuthRequest
+}
+
+// PushedAuthResponse is the successful response from the Pushed Authorization Request endpoint.
+// https://datatracker.ietf.org/doc/html/rfc9126#section-2.2
+type PushedAuthResponse struct {
+	RequestURI string `json:"request_uri"`
+	ExpiresIn  int    `json:"expires_in"`
 }
 
 func (a *AuthRequest) LogValue() slog.Value {

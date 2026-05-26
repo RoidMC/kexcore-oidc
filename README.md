@@ -129,6 +129,7 @@ Here is json equivalent for one of the default users
 | PKCE                 | yes           | yes             | [RFC 7636][8]                                |
 | Token Exchange       | yes           | yes             | [RFC 8693][9]                                |
 | Device Authorization | yes           | yes             | [RFC 8628][10]                               |
+| PAR                  | yes           | yes             | [RFC 9126][15]                               |
 | mTLS                 | not yet       | not yet         | [RFC 8705][11]                               |
 | JWE ID Token Encryption | yes        | yes             | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022] (dir mode) |
 | Back-Channel Logout  | yes           | yes             | OpenID Connect [Back-Channel Logout][12] 1.0 |
@@ -150,6 +151,7 @@ Here is json equivalent for one of the default users
 [12]: https://openid.net/specs/openid-connect-backchannel-1_0.html "OpenID Connect Back-Channel Logout 1.0 incorporating errata set 1"
 [13]: https://www.rfc-editor.org/rfc/rfc7516.html "JSON Web Encryption (JWE)"
 [14]: https://www.rfc-editor.org/rfc/rfc9449.html "OAuth 2.0 Demonstrating Proof of Possession (DPoP)"
+[15]: https://www.rfc-editor.org/rfc/rfc9126.html "OAuth 2.0 Pushed Authorization Requests (PAR)"
 [GM/T 0125.3-2022]: http://www.gmbz.org.cn/file/2023-06-21/a34ff879-563b-4e91-96ea-57e4c15c944a.pdf "GM/T 0125.3-2022 JWE"
 
 ## Contributors

@@ -99,6 +99,25 @@
 
 ---
 
+## 📤 Pushed Authorization Requests (PAR, RFC 9126)
+
+### 已完成
+- [x] `pkg/oidc/authorization.go` — `PushedAuthRequest`、`PushedAuthResponse` 数据结构定义，`AuthRequest` 增加 `RequestURI` 字段
+- [x] `pkg/op/par.go` — `PushedAuthRequestStorage` 接口定义（`StorePushedAuthRequest`、`PushedAuthRequestByURI`）
+- [x] `pkg/op/par.go` — PAR 端点处理器（`PushedAuthRequestHandler`、`PushedAuthRequest`、`parseAndValidatePushedAuthRequest`、`authenticatePARClient`）
+- [x] `pkg/op/par.go` — RFC 9126 合规性：公共客户端使用 `code` 响应类型时强制要求 PKCE（`code_challenge`）
+- [x] `pkg/op/config.go` — `Configuration` 接口增加 `PushedAuthRequestSupported()`、`PushedAuthRequestEndpoint()`
+- [x] `pkg/op/op.go` — `Config` 增加 `PushedAuthRequestSupported` 字段，`Endpoints` 增加 `PushedAuthorizationRequest` 端点，`CreateRouter` 条件注册路由（仅 POST 方法）
+- [x] `pkg/op/auth_request.go` — `Authorize` 函数支持 `request_uri` 参数解析（`resolvePushedAuthRequest`），`request` 和 `request_uri` 互斥检查
+- [x] `pkg/op/discovery.go` — Discovery 文档声明 `pushed_authorization_request_endpoint` 和 `request_uri_parameter_supported`
+- [x] `pkg/oidc/discovery.go` — `DiscoveryConfiguration` 增加 `PushedAuthorizationRequestEndpoint` 和 `RequestURIParameterSupported` 字段
+- [x] `pkg/op/mock/configuration.mock.go` — 手动添加 `PushedAuthRequestSupported` 和 `PushedAuthRequestEndpoint` 的 mock 方法
+- [x] `example/server/exampleop/op.go` — Config 启用 `PushedAuthRequestSupported: true`
+- [x] `example/server/storage/storage.go` — 实现 `PushedAuthRequestStorage` 接口（`StorePushedAuthRequest`、`PushedAuthRequestByURI`），使用 `urn:ietf:params:oauth:request_uri:` 前缀
+- [x] `pkg/op/test/par_test.go` — 10 个测试用例（端点、Discovery、PAR 请求验证、`request_uri` 解析、公共客户端 PKCE 强制等）
+
+---
+
 ## 🔴 协议功能（SDK 应提供）
 
 ### 1. Dynamic Client Registration (DCR)

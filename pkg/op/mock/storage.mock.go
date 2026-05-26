@@ -10,7 +10,7 @@ import (
 	time "time"
 
 	gomock "github.com/golang/mock/gomock"
-	"github.com/lestrrat-go/jwx/v4/jwk"
+	jwk "github.com/lestrrat-go/jwx/v4/jwk"
 	oidc "github.com/roidmc/kexcore-oidc/pkg/oidc"
 	op "github.com/roidmc/kexcore-oidc/pkg/op"
 )

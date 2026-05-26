@@ -44,24 +44,32 @@ var (
 	_ op.ClientCredentialsStorage = &Storage{}
 	_ op.SM9JWTProfileKeyStorage  = &Storage{}
 	_ op.BackChannelLogoutStorage = &Storage{}
+	_ op.PushedAuthRequestStorage = &Storage{}
 )
 
 // storage implements the op.Storage interface
 // typically you would implement this as a layer on top of your database
 // for simplicity this example keeps everything in-memory
 type Storage struct {
-	lock          sync.Mutex
-	authRequests  map[string]*AuthRequest
-	codes         map[string]string
-	tokens        map[string]*Token
-	clients       map[string]*Client
-	userStore     UserStore
-	services      map[string]Service
-	refreshTokens map[string]*RefreshToken
-	signingKeys   []signingKey
-	deviceCodes   map[string]deviceAuthorizationEntry
-	userCodes     map[string]string
-	serviceUsers  map[string]*Client
+	lock               sync.Mutex
+	authRequests       map[string]*AuthRequest
+	codes              map[string]string
+	tokens             map[string]*Token
+	clients            map[string]*Client
+	userStore          UserStore
+	services           map[string]Service
+	refreshTokens      map[string]*RefreshToken
+	signingKeys        []signingKey
+	deviceCodes        map[string]deviceAuthorizationEntry
+	userCodes          map[string]string
+	serviceUsers       map[string]*Client
+	pushedAuthRequests map[string]*pushedAuthRequestEntry
+}
+
+type pushedAuthRequestEntry struct {
+	authReq   *oidc.AuthRequest
+	clientID  string
+	expiresAt time.Time
 }
 
 type signingKey struct {
@@ -287,9 +295,10 @@ func NewStorageWithClientsAndAlgorithms(userStore UserStore, clients map[string]
 				},
 			},
 		},
-		signingKeys: signingKeys,
-		deviceCodes: make(map[string]deviceAuthorizationEntry),
-		userCodes:   make(map[string]string),
+		signingKeys:        signingKeys,
+		deviceCodes:        make(map[string]deviceAuthorizationEntry),
+		userCodes:          make(map[string]string),
+		pushedAuthRequests: make(map[string]*pushedAuthRequestEntry),
 		serviceUsers: map[string]*Client{
 			"sid1": {
 				id:     "sid1",
@@ -1160,4 +1169,39 @@ func (s *Storage) ClientsForSession(ctx context.Context, sub, sid string) ([]op.
 		result = append(result, client)
 	}
 	return result, nil
+}
+
+// StorePushedAuthRequest implements the op.PushedAuthRequestStorage interface.
+// It stores the pushed authorization request and returns a request_uri.
+func (s *Storage) StorePushedAuthRequest(ctx context.Context, clientID string, authReq *oidc.AuthRequest, expiresIn time.Duration) (string, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	uri := "urn:ietf:params:oauth:request_uri:" + uuid.NewString()
+	s.pushedAuthRequests[uri] = &pushedAuthRequestEntry{
+		authReq:   authReq,
+		clientID:  clientID,
+		expiresAt: time.Now().Add(expiresIn),
+	}
+	return uri, nil
+}
+
+// PushedAuthRequestByURI implements the op.PushedAuthRequestStorage interface.
+// It retrieves the stored authorization request by its request_uri.
+func (s *Storage) PushedAuthRequestByURI(ctx context.Context, clientID string, requestURI string) (*oidc.AuthRequest, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	entry, ok := s.pushedAuthRequests[requestURI]
+	if !ok {
+		return nil, fmt.Errorf("request_uri not found")
+	}
+	if entry.clientID != clientID {
+		return nil, fmt.Errorf("client_id mismatch for request_uri")
+	}
+	if time.Now().After(entry.expiresAt) {
+		delete(s.pushedAuthRequests, requestURI)
+		return nil, fmt.Errorf("request_uri expired")
+	}
+	return entry.authReq, nil
 }

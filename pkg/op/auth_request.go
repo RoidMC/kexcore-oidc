@@ -104,10 +104,24 @@ func Authorize(w http.ResponseWriter, r *http.Request, authorizer Authorizer) {
 		AuthRequestError(w, r, nil, err, authorizer)
 		return
 	}
+	// RFC 9101 Section 5.2.1: request and request_uri MUST NOT be used together.
+	// This also aligns with RFC 9126 PAR, where a pushed request_uri replaces the need for a request parameter.
+	if authReq.RequestParam != "" && authReq.RequestURI != "" {
+		AuthRequestError(w, r, authReq, oidc.ErrInvalidRequest().WithDescription("request and request_uri must not be used together"), authorizer)
+		return
+	}
 	if authReq.RequestParam != "" && authorizer.RequestObjectSupported() {
 		err = ParseRequestObject(ctx, authReq, authorizer.Storage(), IssuerFromContext(ctx))
 		if err != nil {
 			AuthRequestError(w, r, nil, err, authorizer)
+			return
+		}
+	}
+	var usedRequestURI bool
+	if authReq.RequestURI != "" {
+		usedRequestURI = true
+		if err := resolvePushedAuthRequest(ctx, authReq, authorizer); err != nil {
+			AuthRequestError(w, r, authReq, err, authorizer)
 			return
 		}
 	}
@@ -136,7 +150,10 @@ func Authorize(w http.ResponseWriter, r *http.Request, authorizer Authorizer) {
 		AuthRequestError(w, r, authReq, err, authorizer)
 		return
 	}
-	if authReq.RequestParam != "" {
+	// Reject request parameter if it was not already processed via request object parsing
+	// above. When a request_uri was resolved, the stored request may contain a request
+	// parameter that was already validated during the PAR endpoint call.
+	if authReq.RequestParam != "" && !usedRequestURI {
 		AuthRequestError(w, r, authReq, oidc.ErrRequestNotSupported(), authorizer)
 		return
 	}
@@ -676,4 +693,33 @@ func mergeQueryParams(uri *url.URL, params url.Values) string {
 	}
 	uri.RawQuery = queries.Encode()
 	return uri.String()
+}
+
+// ResolvePushedAuthRequestForTest exposes resolvePushedAuthRequest for testing.
+func ResolvePushedAuthRequestForTest(authReq *oidc.AuthRequest, authorizer Authorizer) error {
+	return resolvePushedAuthRequest(context.Background(), authReq, authorizer)
+}
+
+// resolvePushedAuthRequest resolves a request_uri reference to the stored
+// Pushed Authorization Request parameters. It mutates authReq in place.
+func resolvePushedAuthRequest(ctx context.Context, authReq *oidc.AuthRequest, authorizer Authorizer) error {
+	parStorage, ok := authorizer.Storage().(PushedAuthRequestStorage)
+	if !ok {
+		return oidc.ErrInvalidRequest().WithDescription("pushed authorization requests not supported")
+	}
+	storedReq, err := parStorage.PushedAuthRequestByURI(ctx, authReq.ClientID, authReq.RequestURI)
+	if err != nil {
+		return oidc.ErrInvalidRequest().WithDescription("invalid or expired request_uri").WithParent(err)
+	}
+	// The stored request overwrites the current (mostly empty) authReq.
+	// ClientID must match; preserve any new state if provided.
+	state := authReq.State
+	*authReq = *storedReq
+	// Clear the request_uri since it has been resolved; it should not be
+	// forwarded or stored as part of the authorization request.
+	authReq.RequestURI = ""
+	if state != "" {
+		authReq.State = state
+	}
+	return nil
 }

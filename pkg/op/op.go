@@ -40,18 +40,20 @@ const (
 	defaultEndSessionEndpoint    = "end_session"
 	defaultKeysEndpoint          = "keys"
 	defaultDeviceAuthzEndpoint   = "/device_authorization"
+	defaultPushedAuthEndpoint    = "pushed_authorization_request"
 )
 
 var (
 	DefaultEndpoints = &Endpoints{
-		Authorization:       NewEndpoint(defaultAuthorizationEndpoint),
-		Token:               NewEndpoint(defaultTokenEndpoint),
-		Introspection:       NewEndpoint(defaultIntrospectEndpoint),
-		Userinfo:            NewEndpoint(defaultUserinfoEndpoint),
-		Revocation:          NewEndpoint(defaultRevocationEndpoint),
-		EndSession:          NewEndpoint(defaultEndSessionEndpoint),
-		JwksURI:             NewEndpoint(defaultKeysEndpoint),
-		DeviceAuthorization: NewEndpoint(defaultDeviceAuthzEndpoint),
+		Authorization:              NewEndpoint(defaultAuthorizationEndpoint),
+		Token:                      NewEndpoint(defaultTokenEndpoint),
+		Introspection:              NewEndpoint(defaultIntrospectEndpoint),
+		Userinfo:                   NewEndpoint(defaultUserinfoEndpoint),
+		Revocation:                 NewEndpoint(defaultRevocationEndpoint),
+		EndSession:                 NewEndpoint(defaultEndSessionEndpoint),
+		JwksURI:                    NewEndpoint(defaultKeysEndpoint),
+		DeviceAuthorization:        NewEndpoint(defaultDeviceAuthzEndpoint),
+		PushedAuthorizationRequest: NewEndpoint(defaultPushedAuthEndpoint),
 	}
 
 	DefaultSupportedClaims = []string{
@@ -150,6 +152,9 @@ func CreateRouter(o OpenIDProvider, interceptors ...HttpInterceptor) chi.Router 
 	router.HandleFunc(o.EndSessionEndpoint().Relative(), endSessionHandler(o))
 	router.HandleFunc(o.KeysEndpoint().Relative(), keysHandler(o.Storage()))
 	router.HandleFunc(o.DeviceAuthorizationEndpoint().Relative(), DeviceAuthorizationHandler(o))
+	if o.PushedAuthRequestSupported() {
+		router.Post(o.PushedAuthRequestEndpoint().Relative(), PushedAuthRequestHandler(o))
+	}
 	return router
 }
 
@@ -180,20 +185,22 @@ type Config struct {
 	DeviceAuthorization               DeviceAuthorizationConfig
 	BackChannelLogoutSupported        bool
 	BackChannelLogoutSessionSupported bool
+	PushedAuthRequestSupported        bool
 }
 
 // Endpoints defines endpoint routes.
 type Endpoints struct {
-	Authorization       *Endpoint
-	Token               *Endpoint
-	Introspection       *Endpoint
-	Userinfo            *Endpoint
-	Revocation          *Endpoint
-	EndSession          *Endpoint
-	CheckSessionIframe  *Endpoint
-	BackChannelLogout   *Endpoint
-	JwksURI             *Endpoint
-	DeviceAuthorization *Endpoint
+	Authorization              *Endpoint
+	Token                      *Endpoint
+	Introspection              *Endpoint
+	Userinfo                   *Endpoint
+	Revocation                 *Endpoint
+	EndSession                 *Endpoint
+	CheckSessionIframe         *Endpoint
+	BackChannelLogout          *Endpoint
+	JwksURI                    *Endpoint
+	DeviceAuthorization        *Endpoint
+	PushedAuthorizationRequest *Endpoint
 }
 
 // NewProvider creates a provider with a router on it's embedded http.Handler.
@@ -422,6 +429,14 @@ func (o *Provider) BackChannelLogoutSupported() bool {
 
 func (o *Provider) BackChannelLogoutSessionSupported() bool {
 	return o.config.BackChannelLogoutSessionSupported
+}
+
+func (o *Provider) PushedAuthRequestSupported() bool {
+	return o.config.PushedAuthRequestSupported
+}
+
+func (o *Provider) PushedAuthRequestEndpoint() *Endpoint {
+	return o.endpoints.PushedAuthorizationRequest
 }
 
 func (o *Provider) Storage() Storage {

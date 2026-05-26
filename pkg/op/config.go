@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
+
 package op
 
 import (
@@ -53,6 +58,9 @@ type Configuration interface {
 
 	BackChannelLogoutSupported() bool
 	BackChannelLogoutSessionSupported() bool
+
+	PushedAuthRequestSupported() bool
+	PushedAuthRequestEndpoint() *Endpoint
 }
 
 type IssuerFromRequest func(r *http.Request) string

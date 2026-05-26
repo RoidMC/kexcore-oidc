@@ -33,6 +33,10 @@ type DiscoveryConfiguration struct {
 
 	DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint,omitempty"`
 
+	// PushedAuthorizationRequestEndpoint is a URL of the Pushed Authorization Request Endpoint.
+	// https://datatracker.ietf.org/doc/html/rfc9126
+	PushedAuthorizationRequestEndpoint string `json:"pushed_authorization_request_endpoint,omitempty"`
+
 	// CheckSessionIframe is a URL where the OP provides an iframe that support cross-origin communications for session state information with the RP Client.
 	CheckSessionIframe string `json:"check_session_iframe,omitempty"`
 

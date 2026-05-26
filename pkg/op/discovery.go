@@ -48,6 +48,7 @@ func CreateDiscoveryConfig(ctx context.Context, config Configuration, storage Di
 		EndSessionEndpoint:                                 config.EndSessionEndpoint().Absolute(issuer),
 		JwksURI:                                            config.KeysEndpoint().Absolute(issuer),
 		DeviceAuthorizationEndpoint:                        config.DeviceAuthorizationEndpoint().Absolute(issuer),
+		PushedAuthorizationRequestEndpoint:                 PushedAuthRequestEndpoint(config, issuer),
 		CheckSessionIframe:                                 config.CheckSessionIframe().Absolute(issuer),
 		ScopesSupported:                                    Scopes(config),
 		ResponseTypesSupported:                             ResponseTypes(config),
@@ -67,6 +68,7 @@ func CreateDiscoveryConfig(ctx context.Context, config Configuration, storage Di
 		CodeChallengeMethodsSupported:                      CodeChallengeMethods(config),
 		UILocalesSupported:                                 config.SupportedUILocales(),
 		RequestParameterSupported:                          config.RequestObjectSupported(),
+		RequestURIParameterSupported:                       config.PushedAuthRequestSupported(),
 		BackChannelLogoutSupported:                         config.BackChannelLogoutSupported(),
 		BackChannelLogoutSessionSupported:                  config.BackChannelLogoutSessionSupported(),
 		JWEAlgValuesSupported:                              IDTokenEncryptionAlgValues(config),
@@ -86,6 +88,7 @@ func createDiscoveryConfigV2(ctx context.Context, config Configuration, storage 
 		EndSessionEndpoint:                                 endpoints.EndSession.Absolute(issuer),
 		JwksURI:                                            endpoints.JwksURI.Absolute(issuer),
 		DeviceAuthorizationEndpoint:                        endpoints.DeviceAuthorization.Absolute(issuer),
+		PushedAuthorizationRequestEndpoint:                 PushedAuthRequestEndpoint(config, issuer),
 		ScopesSupported:                                    Scopes(config),
 		ResponseTypesSupported:                             ResponseTypes(config),
 		GrantTypesSupported:                                GrantTypes(config),
@@ -104,6 +107,7 @@ func createDiscoveryConfigV2(ctx context.Context, config Configuration, storage 
 		CodeChallengeMethodsSupported:                      CodeChallengeMethods(config),
 		UILocalesSupported:                                 config.SupportedUILocales(),
 		RequestParameterSupported:                          config.RequestObjectSupported(),
+		RequestURIParameterSupported:                       config.PushedAuthRequestSupported(),
 		BackChannelLogoutSupported:                         config.BackChannelLogoutSupported(),
 		BackChannelLogoutSessionSupported:                  config.BackChannelLogoutSessionSupported(),
 		JWEAlgValuesSupported:                              IDTokenEncryptionAlgValues(config),
@@ -308,4 +312,17 @@ func CodeChallengeMethods(c Configuration) []oidc.CodeChallengeMethod {
 		codeMethods = append(codeMethods, oidc.CodeChallengeMethodS256)
 	}
 	return codeMethods
+}
+
+// PushedAuthRequestEndpoint returns the pushed authorization request endpoint URL
+// if the provider supports PAR, otherwise an empty string.
+func PushedAuthRequestEndpoint(c Configuration, issuer string) string {
+	if !c.PushedAuthRequestSupported() {
+		return ""
+	}
+	endpoint := c.PushedAuthRequestEndpoint()
+	if endpoint == nil {
+		return ""
+	}
+	return endpoint.Absolute(issuer)
 }

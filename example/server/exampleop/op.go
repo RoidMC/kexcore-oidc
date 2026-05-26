@@ -134,6 +134,9 @@ func newOP(
 		BackChannelLogoutSupported:        true,
 		BackChannelLogoutSessionSupported: true,
 
+		// enables Pushed Authorization Requests (PAR, RFC 9126)
+		PushedAuthRequestSupported: true,
+
 		// this example has only static texts (in English), so we'll set the here accordingly
 		SupportedUILocales: []language.Tag{language.English},
 

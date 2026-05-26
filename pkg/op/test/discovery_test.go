@@ -717,3 +717,52 @@ func Test_CreateDiscoveryConfig_JWEFields(t *testing.T) {
 	assert.Equal(t, []string{"dir"}, cfg.JWEAlgValuesSupported)
 	assert.ElementsMatch(t, []string{"SGD_SM4_GCM", "A256GCM", "A128GCM"}, cfg.JWEEncValuesSupported)
 }
+
+// ---------- PAR Discovery Tests ----------
+
+func Test_PushedAuthRequestEndpoint(t *testing.T) {
+	t.Run("not supported", func(t *testing.T) {
+		m := mock.NewMockConfiguration(gomock.NewController(t))
+		m.EXPECT().PushedAuthRequestSupported().Return(false)
+		got := op.PushedAuthRequestEndpoint(m, testIssuer)
+		assert.Empty(t, got)
+	})
+
+	t.Run("supported with endpoint", func(t *testing.T) {
+		m := mock.NewMockConfiguration(gomock.NewController(t))
+		m.EXPECT().PushedAuthRequestSupported().Return(true)
+		m.EXPECT().PushedAuthRequestEndpoint().Return(op.NewEndpoint("pushed_authorization_request"))
+		got := op.PushedAuthRequestEndpoint(m, testIssuer)
+		assert.Equal(t, testIssuer+"pushed_authorization_request", got)
+	})
+
+	t.Run("supported but nil endpoint", func(t *testing.T) {
+		m := mock.NewMockConfiguration(gomock.NewController(t))
+		m.EXPECT().PushedAuthRequestSupported().Return(true)
+		m.EXPECT().PushedAuthRequestEndpoint().Return(nil)
+		got := op.PushedAuthRequestEndpoint(m, testIssuer)
+		assert.Empty(t, got)
+	})
+}
+
+func Test_CreateDiscoveryConfig_PAR(t *testing.T) {
+	t.Run("PAR not supported", func(t *testing.T) {
+		p := newTestProvider(&op.Config{PushedAuthRequestSupported: false})
+		ctx := context.Background()
+		storage := mock.NewMockDiscoverStorage(gomock.NewController(t))
+		storage.EXPECT().SignatureAlgorithms(gomock.Any()).Return([]string{"RS256"}, nil)
+
+		cfg := op.CreateDiscoveryConfig(ctx, p, storage)
+		assert.Empty(t, cfg.PushedAuthorizationRequestEndpoint)
+	})
+
+	t.Run("PAR supported", func(t *testing.T) {
+		p := newTestProvider(&op.Config{PushedAuthRequestSupported: true})
+		ctx := op.ContextWithIssuer(context.Background(), testIssuer)
+		storage := mock.NewMockDiscoverStorage(gomock.NewController(t))
+		storage.EXPECT().SignatureAlgorithms(gomock.Any()).Return([]string{"RS256"}, nil)
+
+		cfg := op.CreateDiscoveryConfig(ctx, p, storage)
+		assert.Equal(t, testIssuer+"pushed_authorization_request", cfg.PushedAuthorizationRequestEndpoint)
+	})
+}
