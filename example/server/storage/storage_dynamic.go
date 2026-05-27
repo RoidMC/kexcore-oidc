@@ -272,3 +272,59 @@ func (s *multiStorage) storageFromContext(ctx context.Context) (*Storage, *oidc.
 	}
 	return storage, nil
 }
+
+// ClientRegistrationStorage implementation
+
+// CreateClient implements the op.ClientRegistrationStorage interface (RFC 7591).
+func (s *multiStorage) CreateClient(ctx context.Context, req *op.RegistrationRequest, clientID, clientSecret, registrationAccessToken, registrationURI string) (*op.ClientRegistration, error) {
+	storage, err := s.storageFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return storage.CreateClient(ctx, req, clientID, clientSecret, registrationAccessToken, registrationURI)
+}
+
+// GetClientRegistration implements the op.ClientRegistrationStorage interface (RFC 7592).
+func (s *multiStorage) GetClientRegistration(ctx context.Context, clientID string) (*op.ClientRegistration, error) {
+	storage, err := s.storageFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return storage.GetClientRegistration(ctx, clientID)
+}
+
+// GetClientRegistrationByToken implements the op.ClientRegistrationStorage interface (RFC 7592).
+func (s *multiStorage) GetClientRegistrationByToken(ctx context.Context, registrationAccessToken string) (*op.ClientRegistration, error) {
+	storage, err := s.storageFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return storage.GetClientRegistrationByToken(ctx, registrationAccessToken)
+}
+
+// UpdateClientRegistration implements the op.ClientRegistrationStorage interface (RFC 7592).
+func (s *multiStorage) UpdateClientRegistration(ctx context.Context, clientID string, update *op.RegistrationUpdateRequest) (*op.ClientRegistration, error) {
+	storage, err := s.storageFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return storage.UpdateClientRegistration(ctx, clientID, update)
+}
+
+// DeleteClientRegistration implements the op.ClientRegistrationStorage interface (RFC 7592).
+func (s *multiStorage) DeleteClientRegistration(ctx context.Context, clientID string) error {
+	storage, err := s.storageFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return storage.DeleteClientRegistration(ctx, clientID)
+}
+
+// ValidateInitialAccessToken implements the op.ClientRegistrationStorage interface (RFC 7591).
+func (s *multiStorage) ValidateInitialAccessToken(ctx context.Context, initialAccessToken string) error {
+	storage, err := s.storageFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return storage.ValidateInitialAccessToken(ctx, initialAccessToken)
+}

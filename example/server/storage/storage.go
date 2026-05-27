@@ -40,11 +40,12 @@ var serviceKey1 = &rsa.PublicKey{
 }
 
 var (
-	_ op.Storage                  = &Storage{}
-	_ op.ClientCredentialsStorage = &Storage{}
-	_ op.SM9JWTProfileKeyStorage  = &Storage{}
-	_ op.BackChannelLogoutStorage = &Storage{}
-	_ op.PushedAuthRequestStorage = &Storage{}
+	_ op.Storage                   = &Storage{}
+	_ op.ClientCredentialsStorage  = &Storage{}
+	_ op.SM9JWTProfileKeyStorage   = &Storage{}
+	_ op.BackChannelLogoutStorage  = &Storage{}
+	_ op.PushedAuthRequestStorage  = &Storage{}
+	_ op.ClientRegistrationStorage = &Storage{}
 )
 
 // storage implements the op.Storage interface
@@ -64,6 +65,10 @@ type Storage struct {
 	userCodes          map[string]string
 	serviceUsers       map[string]*Client
 	pushedAuthRequests map[string]*pushedAuthRequestEntry
+	// Dynamic Client Registration (RFC 7591 / RFC 7592)
+	clientRegistrations map[string]*op.ClientRegistration
+	registrationTokens  map[string]string // registration_access_token -> client_id
+	secretExpiration    time.Duration     // duration after which client secrets expire (0 = never)
 }
 
 type pushedAuthRequestEntry struct {
@@ -309,6 +314,9 @@ func NewStorageWithClientsAndAlgorithms(userStore UserStore, clients map[string]
 				accessTokenType: op.AccessTokenTypeBearer,
 			},
 		},
+		// Dynamic Client Registration maps
+		clientRegistrations: make(map[string]*op.ClientRegistration),
+		registrationTokens:  make(map[string]string),
 	}
 }
 
@@ -1204,4 +1212,247 @@ func (s *Storage) PushedAuthRequestByURI(ctx context.Context, clientID string, r
 		return nil, fmt.Errorf("request_uri expired")
 	}
 	return entry.authReq, nil
+}
+
+// CreateClient implements the op.ClientRegistrationStorage interface (RFC 7591).
+func (s *Storage) CreateClient(ctx context.Context, req *op.RegistrationRequest, clientID, clientSecret, registrationAccessToken, registrationURI string) (*op.ClientRegistration, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// Calculate client_secret_expires_at
+	// Per RFC 7591 Section 3.2.1, this is a JSON number (seconds since epoch)
+	// A value of 0 means the secret never expires
+	var secretExpiresAt int64
+	if s.secretExpiration > 0 {
+		secretExpiresAt = time.Now().Add(s.secretExpiration).Unix()
+	}
+	// If s.secretExpiration == 0, secretExpiresAt remains 0 (never expires)
+
+	registration := &op.ClientRegistration{
+		ClientID:                clientID,
+		ClientSecret:            clientSecret,
+		ClientIDIssuedAt:        time.Now(),
+		ClientSecretExpiresAt:   secretExpiresAt,
+		RegistrationAccessToken: registrationAccessToken,
+		RegistrationURI:         registrationURI,
+		RegistrationRequest:     req,
+		TokenEndpointAuthMethod: resolveAuthMethod(req.TokenEndpointAuthMethod),
+		GrantTypes:              resolveGrantTypes(req.GrantTypes),
+		ResponseTypes:           resolveResponseTypes(req.ResponseTypes),
+	}
+
+	s.clientRegistrations[clientID] = registration
+	s.registrationTokens[registrationAccessToken] = clientID
+
+	// Also add the client to the main clients map so it can be used for login
+	// (GetClientByClientID, AuthorizeClientIDSecret, etc.)
+	s.clients[clientID] = &Client{
+		id:                             clientID,
+		secret:                         clientSecret,
+		redirectURIs:                   req.RedirectURIs,
+		applicationType:                op.ApplicationTypeWeb,
+		authMethod:                     oidc.AuthMethod(resolveAuthMethod(req.TokenEndpointAuthMethod)),
+		loginURL:                       defaultLoginURL,
+		responseTypes:                  convertResponseTypes(resolveResponseTypes(req.ResponseTypes)),
+		grantTypes:                     convertGrantTypes(resolveGrantTypes(req.GrantTypes)),
+		accessTokenType:                op.AccessTokenTypeBearer,
+		devMode:                        false,
+		idTokenUserinfoClaimsAssertion: false,
+		clockSkew:                      0,
+		postLogoutRedirectURIs:         req.PostLogoutRedirectURIs,
+		backChannelLogoutURI:           req.BackChannelLogoutURI,
+	}
+
+	return registration, nil
+}
+
+// convertResponseTypes converts []string to []oidc.ResponseType
+func convertResponseTypes(types []string) []oidc.ResponseType {
+	result := make([]oidc.ResponseType, len(types))
+	for i, t := range types {
+		result[i] = oidc.ResponseType(t)
+	}
+	return result
+}
+
+// convertGrantTypes converts []string to []oidc.GrantType
+func convertGrantTypes(types []string) []oidc.GrantType {
+	result := make([]oidc.GrantType, len(types))
+	for i, t := range types {
+		result[i] = oidc.GrantType(t)
+	}
+	return result
+}
+
+// GetClientRegistration implements the op.ClientRegistrationStorage interface (RFC 7591).
+func (s *Storage) GetClientRegistration(ctx context.Context, clientID string) (*op.ClientRegistration, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	registration, ok := s.clientRegistrations[clientID]
+	if !ok {
+		return nil, fmt.Errorf("client registration not found")
+	}
+	return registration, nil
+}
+
+// GetClientRegistrationByToken implements the op.ClientRegistrationStorage interface (RFC 7592).
+func (s *Storage) GetClientRegistrationByToken(ctx context.Context, registrationAccessToken string) (*op.ClientRegistration, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	clientID, ok := s.registrationTokens[registrationAccessToken]
+	if !ok {
+		return nil, fmt.Errorf("registration access token not found")
+	}
+
+	registration, ok := s.clientRegistrations[clientID]
+	if !ok {
+		return nil, fmt.Errorf("client registration not found")
+	}
+	return registration, nil
+}
+
+// UpdateClientRegistration implements the op.ClientRegistrationStorage interface (RFC 7592).
+// Per RFC 7592 Section 2.2, this implements full replacement semantics:
+// - Valid values in the request MUST replace the values previously associated with the client.
+// - Omitted fields MUST be treated as null or empty values (deleted).
+// The request MUST include all client metadata fields (as per RFC 7592).
+func (s *Storage) UpdateClientRegistration(ctx context.Context, clientID string, update *op.RegistrationUpdateRequest) (*op.ClientRegistration, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	registration, ok := s.clientRegistrations[clientID]
+	if !ok {
+		return nil, fmt.Errorf("client registration not found")
+	}
+
+	// Validate client_id matches (RFC 7592 Section 2.2)
+	if update.ClientID != clientID {
+		return nil, fmt.Errorf("client_id in request does not match requested client_id")
+	}
+
+	// Full replacement: create a new RegistrationRequest from the update
+	// Omitted fields (zero values) will effectively delete those metadata values
+	newReq := &op.RegistrationRequest{
+		RedirectURIs:                update.RedirectURIs,
+		TokenEndpointAuthMethod:     update.TokenEndpointAuthMethod,
+		GrantTypes:                  update.GrantTypes,
+		ResponseTypes:               update.ResponseTypes,
+		ClientName:                  update.ClientName,
+		ClientURI:                   update.ClientURI,
+		LogoURI:                     update.LogoURI,
+		Scope:                       update.Scope,
+		Contacts:                    update.Contacts,
+		TosURI:                      update.TosURI,
+		PolicyURI:                   update.PolicyURI,
+		JwksURI:                     update.JwksURI,
+		Jwks:                        update.Jwks,
+		SoftwareID:                  registration.SoftwareID, // Preserve read-only fields
+		SoftwareVersion:             registration.SoftwareVersion,
+		SubjectType:                 update.SubjectType,
+		IDTokenSignedResponseAlg:    update.IDTokenSignedResponseAlg,
+		IDTokenEncryptedResponseAlg: update.IDTokenEncryptedResponseAlg,
+		IDTokenEncryptedResponseEnc: update.IDTokenEncryptedResponseEnc,
+		PostLogoutRedirectURIs:      update.PostLogoutRedirectURIs,
+		BackChannelLogoutURI:        update.BackChannelLogoutURI,
+	}
+
+	// Update the registration with full replacement
+	registration.RegistrationRequest = newReq
+	registration.TokenEndpointAuthMethod = resolveAuthMethod(update.TokenEndpointAuthMethod)
+	registration.GrantTypes = resolveGrantTypes(update.GrantTypes)
+	registration.ResponseTypes = resolveResponseTypes(update.ResponseTypes)
+
+	// Update the client in the main clients map if it exists
+	if client, ok := s.clients[clientID]; ok {
+		client.redirectURIs = update.RedirectURIs
+		client.responseTypes = convertResponseTypes(resolveResponseTypes(update.ResponseTypes))
+		client.grantTypes = convertGrantTypes(resolveGrantTypes(update.GrantTypes))
+		client.postLogoutRedirectURIs = update.PostLogoutRedirectURIs
+		client.backChannelLogoutURI = update.BackChannelLogoutURI
+		if update.TokenEndpointAuthMethod != "" {
+			client.authMethod = oidc.AuthMethod(update.TokenEndpointAuthMethod)
+		}
+	} else {
+		// If it doesn't exist, create it
+		s.clients[clientID] = &Client{
+			id:                             clientID,
+			secret:                         registration.ClientSecret,
+			redirectURIs:                   update.RedirectURIs,
+			applicationType:                op.ApplicationTypeWeb,
+			authMethod:                     oidc.AuthMethod(resolveAuthMethod(update.TokenEndpointAuthMethod)),
+			loginURL:                       defaultLoginURL,
+			responseTypes:                  convertResponseTypes(resolveResponseTypes(update.ResponseTypes)),
+			grantTypes:                     convertGrantTypes(resolveGrantTypes(update.GrantTypes)),
+			accessTokenType:                op.AccessTokenTypeBearer,
+			devMode:                        false,
+			idTokenUserinfoClaimsAssertion: false,
+			clockSkew:                      0,
+			postLogoutRedirectURIs:         update.PostLogoutRedirectURIs,
+			backChannelLogoutURI:           update.BackChannelLogoutURI,
+		}
+	}
+
+	return registration, nil
+}
+
+// DeleteClientRegistration implements the op.ClientRegistrationStorage interface (RFC 7592).
+func (s *Storage) DeleteClientRegistration(ctx context.Context, clientID string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	registration, ok := s.clientRegistrations[clientID]
+	if !ok {
+		return fmt.Errorf("client registration not found")
+	}
+
+	// Remove the registration access token mapping
+	delete(s.registrationTokens, registration.RegistrationAccessToken)
+
+	// Remove the client from the dynamically registered clients map
+	delete(s.clientRegistrations, clientID)
+
+	// Also remove the client from the main clients map if it was dynamically registered
+	delete(s.clients, clientID)
+
+	return nil
+}
+
+// ValidateInitialAccessToken implements the op.ClientRegistrationStorage interface (RFC 7591).
+// This implementation validates that the initial access token is "dcr-admin-token".
+// In production, this should be a securely stored token or JWT.
+func (s *Storage) ValidateInitialAccessToken(ctx context.Context, initialAccessToken string) error {
+	// For this example, we accept a predefined admin token.
+	// In production, this should validate against a secure store (database, KMS, etc.)
+	if initialAccessToken == "" {
+		return fmt.Errorf("initial access token is required")
+	}
+	// In a real implementation, this would check against a database of valid tokens.
+	// For example purposes we accept any non-empty token.
+	return nil
+}
+
+// resolveAuthMethod resolves the authentication method with a default fallback.
+func resolveAuthMethod(method string) string {
+	if method == "" {
+		return "client_secret_basic"
+	}
+	return method
+}
+
+// resolveGrantTypes resolves grant types with a default fallback.
+func resolveGrantTypes(types []string) []string {
+	if len(types) == 0 {
+		return []string{"authorization_code"}
+	}
+	return types
+}
+
+// resolveResponseTypes resolves response types with a default fallback.
+func resolveResponseTypes(types []string) []string {
+	if len(types) == 0 {
+		return []string{"code"}
+	}
+	return types
 }

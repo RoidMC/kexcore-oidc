@@ -129,6 +129,14 @@ func newDynamicOP(ctx context.Context, storage op.Storage, key [32]byte, keyId s
 		//enables use of the `request` Object parameter
 		RequestObjectSupported: true,
 
+		//enables Dynamic Client Registration (RFC 7591 / RFC 7592)
+		// Required for OIDF Dynamic Certification Profile tests
+		RegistrationSupported: true,
+
+		//enables Pushed Authorization Requests (RFC 9126)
+		// Required for OIDF PAR tests
+		PushedAuthRequestSupported: true,
+
 		//this example has only static texts (in English), so we'll set the here accordingly
 		SupportedUILocales: []language.Tag{language.English},
 	}

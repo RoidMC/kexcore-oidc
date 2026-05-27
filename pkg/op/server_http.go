@@ -12,6 +12,7 @@ import (
 	"net/url"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/muhlemmer/gu"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
@@ -119,6 +120,7 @@ func (s *webServer) createRouter() {
 
 	s.endpointRoute(s.endpoints.Authorization, s.authorizeHandler)
 	s.endpointRoute(s.endpoints.DeviceAuthorization, s.withClient(s.deviceAuthorizationHandler))
+	s.endpointRoute(s.endpoints.PushedAuthorizationRequest, s.withClient(s.pushedAuthRequestHandler))
 	s.endpointRoute(s.endpoints.Token, s.tokensHandler)
 	s.endpointRoute(s.endpoints.Introspection, s.introspectionHandler)
 	s.endpointRoute(s.endpoints.Userinfo, s.userInfoHandler)
@@ -231,18 +233,7 @@ func (s *webServer) authorize(ctx context.Context, r *Request[oidc.AuthRequest])
 	if authReq.RedirectURI == "" {
 		return nil, ErrAuthReqMissingRedirectURI
 	}
-	authReq.MaxAge, err = ValidateAuthReqPrompt(authReq.Prompt, authReq.MaxAge)
-	if err != nil {
-		return nil, err
-	}
-	authReq.Scopes, err = ValidateAuthReqScopes(cr.Client, authReq.Scopes)
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateAuthReqRedirectURI(cr.Client, authReq.RedirectURI, authReq.ResponseType); err != nil {
-		return nil, err
-	}
-	if err := ValidateAuthReqResponseType(cr.Client, authReq.ResponseType); err != nil {
+	if err := ValidateAuthRequestParams(cr.Client, authReq); err != nil {
 		return nil, err
 	}
 	return s.server.Authorize(ctx, cr)
@@ -260,6 +251,22 @@ func (s *webServer) deviceAuthorizationHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	resp.writeOut(w)
+}
+
+func (s *webServer) pushedAuthRequestHandler(w http.ResponseWriter, r *http.Request, client Client) {
+	request, err := decodeRequest[oidc.AuthRequest](s.decoder, r, false)
+	if err != nil {
+		WriteError(w, r, err, s.getLogger(r.Context()))
+		return
+	}
+	resp, err := s.server.PushedAuthorizationRequest(r.Context(), newClientRequest(r, request, client))
+	if err != nil {
+		WriteError(w, r, err, s.getLogger(r.Context()))
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	gu.MapMerge(resp.Header, w.Header())
+	httphelper.MarshalJSONWithStatus(w, resp.Data, http.StatusCreated)
 }
 
 func (s *webServer) tokensHandler(w http.ResponseWriter, r *http.Request) {

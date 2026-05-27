@@ -61,6 +61,13 @@ type Configuration interface {
 
 	PushedAuthRequestSupported() bool
 	PushedAuthRequestEndpoint() *Endpoint
+	RequirePushedAuthorizationRequests() bool
+
+	// Dynamic Client Registration (RFC 7591)
+	RegistrationEndpoint() *Endpoint
+
+	// RegistrationSupported returns true if Dynamic Client Registration is enabled.
+	RegistrationSupported() bool
 }
 
 type IssuerFromRequest func(r *http.Request) string

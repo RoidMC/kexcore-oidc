@@ -137,6 +137,10 @@ func newOP(
 		// enables Pushed Authorization Requests (PAR, RFC 9126)
 		PushedAuthRequestSupported: true,
 
+		// enables Dynamic Client Registration (RFC 7591)
+		// Requires storage to implement op.ClientRegistrationStorage
+		RegistrationSupported: true,
+
 		// this example has only static texts (in English), so we'll set the here accordingly
 		SupportedUILocales: []language.Tag{language.English},
 
@@ -155,6 +159,9 @@ func newOP(
 			op.WithCustomAuthEndpoint(op.NewEndpoint("auth")),
 			// Pass our logger to the OP
 			op.WithLogger(logger.WithGroup("op")),
+			// Enable Dynamic Client Registration (RFC 7591)
+			// The storage must implement op.ClientRegistrationStorage
+			op.WithRegistrationSupported(),
 		}, extraOptions...)...,
 	)
 	if err != nil {

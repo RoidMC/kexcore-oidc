@@ -43,6 +43,7 @@ func RefreshTokenExchange(w http.ResponseWriter, r *http.Request, exchanger Exch
 	tokenReq, err := ParseRefreshTokenRequest(r, exchanger.Decoder())
 	if err != nil {
 		RequestError(w, r, err, exchanger.Logger())
+		return
 	}
 	validatedRequest, client, err := ValidateRefreshTokenRequest(r.Context(), tokenReq, exchanger)
 	if err != nil {

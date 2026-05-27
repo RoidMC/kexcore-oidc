@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright Zitadel
+// Modifications Copyright 2026 RoidMC Studios
 package oidc
 
 import (
@@ -11,7 +15,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/schema"
 	"golang.org/x/text/language"
 )
 
@@ -640,7 +643,7 @@ func TestNewEncoder(t *testing.T) {
 	assert.Equal(t, url.Values{"scope": []string{"foo bar"}}, values)
 
 	var b request
-	schema.NewDecoder().Decode(&b, values)
+	b.Scopes = strings.Split(values.Get("scope"), " ")
 	assert.Equal(t, a, b)
 }
 

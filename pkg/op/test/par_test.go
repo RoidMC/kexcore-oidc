@@ -6,464 +6,631 @@ package op_test
 
 import (
 	"context"
-	"log/slog"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/schema"
 
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
 )
 
-// ---------- Mock Storage for PAR ----------
+type parTestServer struct {
+	op.UnimplementedServer
+	storage op.Storage
+}
 
-type mockPARStorage struct {
+func (s *parTestServer) VerifyClient(ctx context.Context, r *op.Request[op.ClientCredentials]) (op.Client, error) {
+	creds := r.Data
+	clientID := creds.ClientID
+	if clientID == "" {
+		return nil, oidc.ErrInvalidClient().WithDescription("client_id is required")
+	}
+
+	client, err := s.storage.GetClientByClientID(ctx, clientID)
+	if err != nil {
+		return nil, oidc.ErrInvalidClient().WithDescription("client not found").WithParent(err)
+	}
+
+	if client.AuthMethod() != oidc.AuthMethodNone {
+		if err := s.storage.AuthorizeClientIDSecret(ctx, clientID, creds.ClientSecret); err != nil {
+			return nil, oidc.ErrInvalidClient().WithDescription("invalid client credentials").WithParent(err)
+		}
+	}
+	return client, nil
+}
+
+func (s *parTestServer) PushedAuthorizationRequest(ctx context.Context, r *op.ClientRequest[oidc.AuthRequest]) (*op.Response, error) {
+	authReq := r.Data
+	client := r.Client
+
+	if client.AuthMethod() == oidc.AuthMethodNone &&
+		authReq.ResponseType == oidc.ResponseTypeCode &&
+		authReq.CodeChallenge == "" {
+		return nil, oidc.ErrInvalidRequest().WithDescription("public clients must use PKCE (code_challenge) for pushed authorization requests with response_type=code")
+	}
+
+	if authReq.RedirectURI == "" {
+		return nil, oidc.ErrInvalidRequest().WithDescription("redirect_uri is required")
+	}
+
+	if err := op.ValidateAuthRequestParams(client, authReq); err != nil {
+		return nil, err
+	}
+
+	parStorage, ok := s.storage.(op.PushedAuthRequestStorage)
+	if !ok {
+		return nil, oidc.ErrServerError().WithDescription("pushed authorization requests not supported")
+	}
+
+	requestURI, err := parStorage.StorePushedAuthRequest(ctx, client.GetID(), authReq, op.DefaultPushedAuthRequestLifetime)
+	if err != nil {
+		return nil, oidc.ErrServerError().WithDescription("unable to store pushed authorization request").WithParent(err)
+	}
+
+	return op.NewResponse(&oidc.PushedAuthResponse{
+		RequestURI: requestURI,
+		ExpiresIn:  int(op.DefaultPushedAuthRequestLifetime / time.Second),
+	}), nil
+}
+
+type parStorageMock struct {
 	op.Storage
-	storeCalled    bool
-	retrieveCalled bool
-	storedReq      *oidc.AuthRequest
-	storedClientID string
-	storedURI      string
+	counter  atomic.Int64
+	store    map[string]*parEntry
+	forceErr error
 }
 
-func (m *mockPARStorage) StorePushedAuthRequest(ctx context.Context, clientID string, authReq *oidc.AuthRequest, expiresIn time.Duration) (string, error) {
-	m.storeCalled = true
-	m.storedClientID = clientID
-	m.storedReq = authReq
-	m.storedURI = "urn:ietf:params:oauth:request_uri:req-123"
-	return m.storedURI, nil
+type parEntry struct {
+	authReq  *oidc.AuthRequest
+	clientID string
 }
 
-func (m *mockPARStorage) PushedAuthRequestByURI(ctx context.Context, clientID string, requestURI string) (*oidc.AuthRequest, error) {
-	m.retrieveCalled = true
-	if requestURI == m.storedURI && clientID == m.storedClientID {
-		return m.storedReq, nil
+func (s *parStorageMock) StorePushedAuthRequest(_ context.Context, clientID string, authReq *oidc.AuthRequest, _ time.Duration) (string, error) {
+	if s.forceErr != nil {
+		return "", s.forceErr
 	}
-	return nil, assert.AnError
+	n := s.counter.Add(1)
+	uri := fmt.Sprintf("urn:ietf:params:oauth:request_uri:test-%s-%d", clientID, n)
+	s.store[uri] = &parEntry{authReq: authReq, clientID: clientID}
+	return uri, nil
 }
 
-// ---------- Mock Authorizer for PAR ----------
-
-type mockPARAuthorizer struct {
-	storage                op.Storage
-	decoder                *schema.Decoder
-	encoder                httphelper.Encoder
-	crypto                 op.Crypto
-	requestObjectSupported bool
-}
-
-func (m *mockPARAuthorizer) Storage() op.Storage                                         { return m.storage }
-func (m *mockPARAuthorizer) Decoder() httphelper.Decoder                                 { return m.decoder }
-func (m *mockPARAuthorizer) Encoder() httphelper.Encoder                                 { return m.encoder }
-func (m *mockPARAuthorizer) Crypto() op.Crypto                                           { return m.crypto }
-func (m *mockPARAuthorizer) RequestObjectSupported() bool                                { return m.requestObjectSupported }
-func (m *mockPARAuthorizer) Logger() *slog.Logger                                        { return slog.Default() }
-func (m *mockPARAuthorizer) IDTokenHintVerifier(context.Context) *op.IDTokenHintVerifier { return nil }
-
-// Ensure mockPARAuthorizer implements op.Authorizer
-var _ op.Authorizer = (*mockPARAuthorizer)(nil)
-
-func newMockPARAuthorizer(storage op.Storage) *mockPARAuthorizer {
-	return &mockPARAuthorizer{
-		storage: storage,
-		decoder: func() *schema.Decoder {
-			d := schema.NewDecoder()
-			d.IgnoreUnknownKeys(true)
-			return d
-		}(),
+func (s *parStorageMock) PushedAuthRequestByURI(_ context.Context, clientID string, requestURI string) (*oidc.AuthRequest, error) {
+	entry, ok := s.store[requestURI]
+	if !ok {
+		return nil, oidc.ErrInvalidRequest().WithDescription("invalid or expired request_uri")
 	}
+	if entry.clientID != clientID {
+		return nil, oidc.ErrInvalidRequest().WithDescription("client_id mismatch")
+	}
+	return entry.authReq, nil
 }
 
-// ---------- PAR Endpoint Tests ----------
-
-func TestPushedAuthRequest_NotSupported(t *testing.T) {
-	authorizer := newMockPARAuthorizer(&mockStorageNoPAR{})
-	req := httptest.NewRequest(http.MethodPost, "/pushed_authorization_request", nil)
-	rec := httptest.NewRecorder()
-
-	err := op.PushedAuthRequest(rec, req, authorizer)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "pushed authorization requests not supported")
+type parTestSetup struct {
+	t       *testing.T
+	handler http.Handler
+	storage *parStorageMock
 }
 
-func TestPushedAuthRequest_MissingClientID(t *testing.T) {
-	parStorage := &mockPARStorage{}
-	authorizer := newMockPARAuthorizer(parStorage)
+func newPARTestSetup(t *testing.T) *parTestSetup {
+	ctrl := gomock.NewController(t)
+	baseStorage := mock.NewMockStorage(ctrl)
 
-	form := url.Values{}
-	form.Set("redirect_uri", "https://client.example.com/callback")
-	form.Set("response_type", "code")
+	newMockClient := func(id string, appType op.ApplicationType, authMethod oidc.AuthMethod, uris []string, responseTypes []oidc.ResponseType) op.Client {
+		c := mock.NewMockClient(ctrl)
+		c.EXPECT().GetID().AnyTimes().Return(id)
+		c.EXPECT().AuthMethod().AnyTimes().Return(authMethod)
+		c.EXPECT().ApplicationType().AnyTimes().Return(appType)
+		c.EXPECT().RedirectURIs().AnyTimes().Return(uris)
+		c.EXPECT().ResponseTypes().AnyTimes().Return(responseTypes)
+		c.EXPECT().LoginURL(gomock.Any()).AnyTimes().Return("login?id=test")
+		c.EXPECT().IsScopeAllowed(gomock.Any()).AnyTimes().Return(false)
+		c.EXPECT().DevMode().AnyTimes().Return(false)
+		c.EXPECT().GrantTypes().AnyTimes().Return(nil)
+		c.EXPECT().PostLogoutRedirectURIs().AnyTimes().Return(nil)
+		c.EXPECT().IDTokenUserinfoClaimsAssertion().AnyTimes().Return(false)
+		c.EXPECT().ClockSkew().AnyTimes().Return(time.Duration(0))
+		c.EXPECT().RestrictAdditionalIdTokenScopes().AnyTimes().Return(func(scopes []string) []string { return scopes })
+		c.EXPECT().RestrictAdditionalAccessTokenScopes().AnyTimes().Return(func(scopes []string) []string { return scopes })
+		c.EXPECT().IDTokenLifetime().AnyTimes().Return(5 * time.Minute)
+		c.EXPECT().AccessTokenType().AnyTimes().Return(op.AccessTokenTypeBearer)
+		return c
+	}
+
+	webClient := newMockClient("web_client", op.ApplicationTypeWeb, oidc.AuthMethodBasic,
+		[]string{"https://registered.com/callback", "http://registered.com/callback"},
+		[]oidc.ResponseType{oidc.ResponseTypeCode})
+	nativeClient := newMockClient("native_client", op.ApplicationTypeNative, oidc.AuthMethodNone,
+		[]string{"custom://callback", "http://localhost:9999/callback"},
+		[]oidc.ResponseType{oidc.ResponseTypeCode})
+
+	baseStorage.EXPECT().GetClientByClientID(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
+		func(_ context.Context, id string) (op.Client, error) {
+			switch id {
+			case "web_client":
+				return webClient, nil
+			case "native_client":
+				return nativeClient, nil
+			default:
+				return nil, assert.AnError
+			}
+		})
+	baseStorage.EXPECT().AuthorizeClientIDSecret(gomock.Any(), "web_client", "secret").AnyTimes().Return(nil)
+	baseStorage.EXPECT().AuthorizeClientIDSecret(gomock.Any(), "web_client", gomock.Not("secret")).AnyTimes().Return(assert.AnError)
+	baseStorage.EXPECT().AuthorizeClientIDSecret(gomock.Any(), gomock.Not("web_client"), gomock.Any()).AnyTimes().Return(assert.AnError)
+
+	parStore := &parStorageMock{Storage: baseStorage, store: make(map[string]*parEntry)}
+
+	server := &parTestServer{storage: parStore}
+	handler := op.RegisterServer(server, op.Endpoints{
+		Authorization:              op.NewEndpoint("authorize"),
+		Token:                      op.NewEndpoint("token"),
+		Introspection:              op.NewEndpoint("introspect"),
+		Userinfo:                   op.NewEndpoint("userinfo"),
+		Revocation:                 op.NewEndpoint("revoke"),
+		EndSession:                 op.NewEndpoint("end-session"),
+		JwksURI:                    op.NewEndpoint("keys"),
+		PushedAuthorizationRequest: op.NewEndpoint("pushed_authorization_request"),
+	})
+
+	return &parTestSetup{t: t, handler: handler, storage: parStore}
+}
+
+func (s *parTestSetup) doRequest(form url.Values, basicAuth ...string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, "/pushed_authorization_request", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if len(basicAuth) == 2 {
+		req.SetBasicAuth(basicAuth[0], basicAuth[1])
+	}
 	rec := httptest.NewRecorder()
-
-	err := op.PushedAuthRequest(rec, req, authorizer)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "client_id is required")
+	s.handler.ServeHTTP(rec, req)
+	return rec
 }
 
-func TestPushedAuthRequest_PublicClientWithoutPKCERejected(t *testing.T) {
-	// RFC 9126 Section 2.1: Public clients using "code" response type MUST use PKCE
-	parStorage := &mockPARStorage{}
-	mockClient := &mockClient{
-		id:            "public-client",
-		authMethod:    oidc.AuthMethodNone,
-		redirectURIs:  []string{"https://client.example.com/callback"},
-		allowedScopes: []string{"openid"},
-		responseTypes: []oidc.ResponseType{oidc.ResponseTypeCode},
-	}
-	mockStor := &mockStorageWithClient{
-		Storage: parStorage,
-		client:  mockClient,
-	}
-	authorizer := newMockPARAuthorizer(mockStor)
-
-	form := url.Values{}
-	form.Set("client_id", "public-client")
-	form.Set("redirect_uri", "https://client.example.com/callback")
-	form.Set("response_type", "code")
-	form.Set("scope", "openid")
-	req := httptest.NewRequest(http.MethodPost, "/pushed_authorization_request", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
-
-	err := op.PushedAuthRequest(rec, req, authorizer)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "public clients must use PKCE")
-}
-
-func TestPushedAuthRequest_PublicClientWithPKCEAllowed(t *testing.T) {
-	// RFC 9126 Section 2.1: Public clients can use PAR with client_id + PKCE
-	parStorage := &mockPARStorage{}
-	mockClient := &mockClient{
-		id:            "public-client",
-		authMethod:    oidc.AuthMethodNone,
-		redirectURIs:  []string{"https://client.example.com/callback"},
-		allowedScopes: []string{"openid"},
-		responseTypes: []oidc.ResponseType{oidc.ResponseTypeCode},
-	}
-	mockStor := &mockStorageWithClient{
-		Storage: parStorage,
-		client:  mockClient,
-	}
-	authorizer := newMockPARAuthorizer(mockStor)
-
-	form := url.Values{}
-	form.Set("client_id", "public-client")
-	form.Set("redirect_uri", "https://client.example.com/callback")
-	form.Set("response_type", "code")
-	form.Set("scope", "openid")
-	form.Set("code_challenge", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
-	form.Set("code_challenge_method", "S256")
-	req := httptest.NewRequest(http.MethodPost, "/pushed_authorization_request", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
-
-	err := op.PushedAuthRequest(rec, req, authorizer)
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), "request_uri")
-	assert.Contains(t, rec.Body.String(), "expires_in")
-	assert.True(t, parStorage.storeCalled)
+func (s *parTestSetup) parsePARResponse(rec *httptest.ResponseRecorder) oidc.PushedAuthResponse {
+	s.t.Helper()
+	var resp oidc.PushedAuthResponse
+	require.NoError(s.t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	return resp
 }
 
 func TestPushedAuthRequest_Success(t *testing.T) {
-	parStorage := &mockPARStorage{}
-	mockClient := &mockClient{
-		id:            "confidential-client",
-		authMethod:    oidc.AuthMethodBasic,
-		redirectURIs:  []string{"https://client.example.com/callback"},
-		allowedScopes: []string{"openid", "profile"},
-		responseTypes: []oidc.ResponseType{oidc.ResponseTypeCode},
-	}
-	mockStor := &mockStorageWithClient{
-		Storage: parStorage,
-		client:  mockClient,
-	}
-	authorizer := newMockPARAuthorizer(mockStor)
+	s := newPARTestSetup(t)
 
-	form := url.Values{}
-	form.Set("client_id", "confidential-client")
-	form.Set("redirect_uri", "https://client.example.com/callback")
-	form.Set("response_type", "code")
-	form.Set("scope", "openid profile")
-	req := httptest.NewRequest(http.MethodPost, "/pushed_authorization_request", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetBasicAuth("confidential-client", "secret")
-	rec := httptest.NewRecorder()
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid profile"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
 
-	err := op.PushedAuthRequest(rec, req, authorizer)
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), "request_uri")
-	assert.Contains(t, rec.Body.String(), "expires_in")
-	assert.True(t, parStorage.storeCalled)
-	assert.Equal(t, "confidential-client", parStorage.storedClientID)
-	assert.NotNil(t, parStorage.storedReq)
-	assert.Equal(t, "openid profile", parStorage.storedReq.Scopes.String())
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+
+	resp := s.parsePARResponse(rec)
+	assert.NotEmpty(t, resp.RequestURI)
+	assert.Contains(t, resp.RequestURI, "urn:ietf:params:oauth:request_uri:")
+	assert.Equal(t, 600, resp.ExpiresIn)
 }
 
-// ---------- Authorization Endpoint with request_uri Tests ----------
+func TestPushedAuthRequest_PublicClientWithPKCE(t *testing.T) {
+	s := newPARTestSetup(t)
 
-func TestAuthorize_WithRequestURI(t *testing.T) {
-	parStorage := &mockPARStorage{}
-	mockClient := &mockClient{
-		id:            "confidential-client",
-		authMethod:    oidc.AuthMethodBasic,
-		redirectURIs:  []string{"https://client.example.com/callback"},
-		allowedScopes: []string{"openid"},
-		responseTypes: []oidc.ResponseType{oidc.ResponseTypeCode},
+	form := url.Values{
+		"client_id":             {"native_client"},
+		"redirect_uri":          {"custom://callback"},
+		"response_type":         {"code"},
+		"scope":                 {"openid"},
+		"code_challenge":        {"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"},
+		"code_challenge_method": {"S256"},
 	}
-	mockStor := &mockStorageWithClient{
-		Storage: parStorage,
-		client:  mockClient,
-	}
-	authorizer := newMockPARAuthorizer(mockStor)
+	rec := s.doRequest(form)
 
-	// First, store a PAR request
-	form := url.Values{}
-	form.Set("client_id", "confidential-client")
-	form.Set("redirect_uri", "https://client.example.com/callback")
-	form.Set("response_type", "code")
-	form.Set("scope", "openid")
-	parReq := httptest.NewRequest(http.MethodPost, "/pushed_authorization_request", strings.NewReader(form.Encode()))
-	parReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	parReq.SetBasicAuth("confidential-client", "secret")
-	parRec := httptest.NewRecorder()
+	assert.Equal(t, http.StatusCreated, rec.Code)
 
-	err := op.PushedAuthRequest(parRec, parReq, authorizer)
-	require.NoError(t, err)
-	assert.True(t, parStorage.storeCalled)
-
-	// Now, simulate authorization request with request_uri
-	authzForm := url.Values{}
-	authzForm.Set("client_id", "confidential-client")
-	authzForm.Set("request_uri", parStorage.storedURI)
-	authzReq := httptest.NewRequest(http.MethodGet, "/authorize?"+authzForm.Encode(), nil)
-	authzRec := httptest.NewRecorder()
-
-	// The Authorize function should resolve the request_uri and continue processing
-	// Since we don't have a full login handler setup, we just verify it doesn't fail
-	// on the request_uri resolution step.
-	// Note: This will likely redirect to login or fail later in the flow, but should
-	// not fail with "invalid or expired request_uri".
-	// For a complete test, we'd need more infrastructure.
-	_, _ = authzReq, authzRec
+	resp := s.parsePARResponse(rec)
+	entry, ok := s.storage.store[resp.RequestURI]
+	require.True(t, ok)
+	assert.Equal(t, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", entry.authReq.CodeChallenge)
+	assert.Equal(t, oidc.CodeChallengeMethodS256, entry.authReq.CodeChallengeMethod)
 }
 
-func TestResolvePushedAuthRequest_NotSupported(t *testing.T) {
-	authorizer := newMockPARAuthorizer(&mockStorageNoPAR{})
-	authReq := &oidc.AuthRequest{
-		ClientID:   "client",
-		RequestURI: "urn:ietf:params:oauth:request_uri:test",
+func TestPushedAuthRequest_PublicClientWithoutPKCE(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"native_client"},
+		"redirect_uri":  {"custom://callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
 	}
-	err := op.ResolvePushedAuthRequestForTest(authReq, authorizer)
+	rec := s.doRequest(form)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "public clients must use PKCE")
+}
+
+func TestPushedAuthRequest_MissingResponseType(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":    {"web_client"},
+		"redirect_uri": {"https://registered.com/callback"},
+		"scope":        {"openid"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "response type")
+}
+
+func TestPushedAuthRequest_MissingRedirectURI(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "redirect_uri")
+}
+
+func TestPushedAuthRequest_UnregisteredRedirectURI(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://attacker.example.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestPushedAuthRequest_InvalidClientSecret(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+	}
+	rec := s.doRequest(form, "web_client", "wrong-secret")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "invalid_client")
+}
+
+func TestPushedAuthRequest_ClientSecretPost(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"client_secret": {"secret"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+	}
+	rec := s.doRequest(form)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+func TestPushedAuthRequest_UnsupportedScopeStripped(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid admin:all"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+
+	resp := s.parsePARResponse(rec)
+	entry, ok := s.storage.store[resp.RequestURI]
+	require.True(t, ok)
+	assert.NotContains(t, entry.authReq.Scopes, "admin:all")
+	assert.Contains(t, entry.authReq.Scopes, oidc.ScopeOpenID)
+}
+
+func TestPushedAuthRequest_CacheControlAndJSON(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+	assert.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+
+	var resp oidc.PushedAuthResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.NotEmpty(t, resp.RequestURI)
+	assert.Equal(t, 600, resp.ExpiresIn)
+}
+
+func TestPushedAuthRequest_StateAndNoncePreserved(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+		"state":         {"test-state-123"},
+		"nonce":         {"test-nonce-456"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	resp := s.parsePARResponse(rec)
+	entry, ok := s.storage.store[resp.RequestURI]
+	require.True(t, ok)
+	assert.Equal(t, "test-state-123", entry.authReq.State)
+	assert.Equal(t, "test-nonce-456", entry.authReq.Nonce)
+}
+
+func TestPushedAuthRequest_PromptPreserved(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid profile"},
+		"prompt":        {"consent"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	resp := s.parsePARResponse(rec)
+	entry, ok := s.storage.store[resp.RequestURI]
+	require.True(t, ok)
+	assert.Contains(t, entry.authReq.Prompt, "consent")
+}
+
+func TestPushedAuthRequest_WrongClientID(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"unknown_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+	}
+	rec := s.doRequest(form, "unknown_client", "secret")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestPushedAuthRequest_MissingClientID(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+	}
+	rec := s.doRequest(form)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "client_id")
+}
+
+func TestPushedAuthRequest_EmptyScope(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "scope")
+}
+
+func TestPushedAuthRequest_PromptNoneWithOthers(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+		"prompt":        {"none consent"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestPushedAuthRequest_ResponseTypeMismatch(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"id_token"},
+		"scope":         {"openid"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestPushedAuthRequest_DuplicatePAR(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+		"state":         {"first"},
+	}
+	rec1 := s.doRequest(form, "web_client", "secret")
+	require.Equal(t, http.StatusCreated, rec1.Code)
+	resp1 := s.parsePARResponse(rec1)
+
+	form.Set("state", "second")
+	rec2 := s.doRequest(form, "web_client", "secret")
+	require.Equal(t, http.StatusCreated, rec2.Code)
+	resp2 := s.parsePARResponse(rec2)
+
+	assert.NotEqual(t, resp1.RequestURI, resp2.RequestURI)
+
+	entry1 := s.storage.store[resp1.RequestURI]
+	entry2 := s.storage.store[resp2.RequestURI]
+	assert.Equal(t, "first", entry1.authReq.State)
+	assert.Equal(t, "second", entry2.authReq.State)
+}
+
+func TestPushedAuthRequest_CrossClientRequestURIRejected(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	webForm := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+	}
+	rec := s.doRequest(webForm, "web_client", "secret")
+	require.Equal(t, http.StatusCreated, rec.Code)
+	resp := s.parsePARResponse(rec)
+
+	_, err := s.storage.PushedAuthRequestByURI(context.Background(), "native_client", resp.RequestURI)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "pushed authorization requests not supported")
+	assert.Contains(t, err.Error(), "client_id mismatch")
 }
 
-func TestResolvePushedAuthRequest_InvalidURI(t *testing.T) {
-	parStorage := &mockPARStorage{}
-	mockStor := &mockStorageWithClient{
-		Storage: parStorage,
+func TestPushedAuthRequest_StorageError(t *testing.T) {
+	s := newPARTestSetup(t)
+	s.storage.forceErr = errors.New("database connection lost")
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
 	}
-	authorizer := newMockPARAuthorizer(mockStor)
-	authReq := &oidc.AuthRequest{
-		ClientID:   "client",
-		RequestURI: "urn:ietf:params:oauth:request_uri:invalid",
+	rec := s.doRequest(form, "web_client", "secret")
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Contains(t, rec.Body.String(), "server_error")
+}
+
+func TestPushedAuthRequest_MaxAgeAndACRValuesPreserved(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+		"max_age":       {"3600"},
+		"acr_values":    {"urn:mace:incommon:iap:silver"},
 	}
-	err := op.ResolvePushedAuthRequestForTest(authReq, authorizer)
+	rec := s.doRequest(form, "web_client", "secret")
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	resp := s.parsePARResponse(rec)
+	entry, ok := s.storage.store[resp.RequestURI]
+	require.True(t, ok)
+	require.NotNil(t, entry.authReq.MaxAge)
+	assert.Equal(t, uint(3600), *entry.authReq.MaxAge)
+	assert.Contains(t, entry.authReq.ACRValues, "urn:mace:incommon:iap:silver")
+}
+
+func TestPushedAuthRequest_LoginHintPreserved(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+		"login_hint":    {"user@example.com"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	resp := s.parsePARResponse(rec)
+	entry, ok := s.storage.store[resp.RequestURI]
+	require.True(t, ok)
+	assert.Equal(t, "user@example.com", entry.authReq.LoginHint)
+}
+
+func TestPushedAuthRequest_CodeChallengeParamsStored(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":             {"web_client"},
+		"redirect_uri":          {"https://registered.com/callback"},
+		"response_type":         {"code"},
+		"scope":                 {"openid"},
+		"code_challenge":        {"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"},
+		"code_challenge_method": {"S256"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	resp := s.parsePARResponse(rec)
+	entry, ok := s.storage.store[resp.RequestURI]
+	require.True(t, ok)
+	assert.Equal(t, "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", entry.authReq.CodeChallenge)
+	assert.Equal(t, oidc.CodeChallengeMethodS256, entry.authReq.CodeChallengeMethod)
+}
+
+func TestPushedAuthRequest_ExpiredRequestURIRejected(t *testing.T) {
+	s := newPARTestSetup(t)
+
+	form := url.Values{
+		"client_id":     {"web_client"},
+		"redirect_uri":  {"https://registered.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+	}
+	rec := s.doRequest(form, "web_client", "secret")
+	require.Equal(t, http.StatusCreated, rec.Code)
+	resp := s.parsePARResponse(rec)
+
+	delete(s.storage.store, resp.RequestURI)
+
+	_, err := s.storage.PushedAuthRequestByURI(context.Background(), "web_client", resp.RequestURI)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid or expired request_uri")
 }
-
-func TestResolvePushedAuthRequest_Success(t *testing.T) {
-	parStorage := &mockPARStorage{}
-	mockClient := &mockClient{
-		id:            "confidential-client",
-		authMethod:    oidc.AuthMethodBasic,
-		redirectURIs:  []string{"https://client.example.com/callback"},
-		allowedScopes: []string{"openid"},
-		responseTypes: []oidc.ResponseType{oidc.ResponseTypeCode},
-	}
-	mockStor := &mockStorageWithClient{
-		Storage: parStorage,
-		client:  mockClient,
-	}
-	authorizer := newMockPARAuthorizer(mockStor)
-
-	// Store a PAR request first
-	form := url.Values{}
-	form.Set("client_id", "confidential-client")
-	form.Set("redirect_uri", "https://client.example.com/callback")
-	form.Set("response_type", "code")
-	form.Set("scope", "openid")
-	req := httptest.NewRequest(http.MethodPost, "/pushed_authorization_request", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetBasicAuth("confidential-client", "secret")
-	rec := httptest.NewRecorder()
-
-	err := op.PushedAuthRequest(rec, req, authorizer)
-	require.NoError(t, err)
-	require.True(t, parStorage.storeCalled)
-
-	// Now resolve it
-	authReq := &oidc.AuthRequest{
-		ClientID:   "confidential-client",
-		RequestURI: parStorage.storedURI,
-		State:      "custom-state",
-	}
-	err = op.ResolvePushedAuthRequestForTest(authReq, authorizer)
-	require.NoError(t, err)
-	assert.Equal(t, "https://client.example.com/callback", authReq.RedirectURI)
-	assert.Equal(t, oidc.ResponseTypeCode, authReq.ResponseType)
-	assert.Equal(t, "openid", authReq.Scopes.String())
-	assert.Equal(t, "custom-state", authReq.State)
-	assert.True(t, parStorage.retrieveCalled)
-}
-
-// ---------- Mock Helpers ----------
-
-type mockStorageNoPAR struct{}
-
-func (m *mockStorageNoPAR) CreateAuthRequest(context.Context, *oidc.AuthRequest, string) (op.AuthRequest, error) {
-	return nil, nil
-}
-func (m *mockStorageNoPAR) AuthRequestByID(context.Context, string) (op.AuthRequest, error) {
-	return nil, nil
-}
-func (m *mockStorageNoPAR) AuthRequestByCode(context.Context, string) (op.AuthRequest, error) {
-	return nil, nil
-}
-func (m *mockStorageNoPAR) SaveAuthCode(context.Context, string, string) error { return nil }
-func (m *mockStorageNoPAR) DeleteAuthRequest(context.Context, string) error    { return nil }
-func (m *mockStorageNoPAR) CreateAccessToken(context.Context, op.TokenRequest) (string, time.Time, error) {
-	return "", time.Time{}, nil
-}
-func (m *mockStorageNoPAR) CreateAccessAndRefreshTokens(context.Context, op.TokenRequest, string) (string, string, time.Time, error) {
-	return "", "", time.Time{}, nil
-}
-func (m *mockStorageNoPAR) TokenRequestByRefreshToken(context.Context, string) (op.RefreshTokenRequest, error) {
-	return nil, nil
-}
-func (m *mockStorageNoPAR) TerminateSession(context.Context, string, string) error {
-	return nil
-}
-func (m *mockStorageNoPAR) RevokeToken(context.Context, string, string, string) *oidc.Error {
-	return nil
-}
-func (m *mockStorageNoPAR) GetRefreshTokenInfo(context.Context, string, string) (string, string, error) {
-	return "", "", nil
-}
-func (m *mockStorageNoPAR) SigningKey(context.Context) (op.SigningKey, error) { return nil, nil }
-func (m *mockStorageNoPAR) SignatureAlgorithms(context.Context) ([]string, error) {
-	return nil, nil
-}
-func (m *mockStorageNoPAR) KeySet(context.Context) ([]op.Key, error) { return nil, nil }
-func (m *mockStorageNoPAR) GetClientByClientID(context.Context, string) (op.Client, error) {
-	return nil, nil
-}
-func (m *mockStorageNoPAR) AuthorizeClientIDSecret(context.Context, string, string) error {
-	return nil
-}
-func (m *mockStorageNoPAR) SetUserinfoFromToken(context.Context, *oidc.UserInfo, string, string, string) error {
-	return nil
-}
-func (m *mockStorageNoPAR) SetIntrospectionFromToken(context.Context, *oidc.IntrospectionResponse, string, string, string) error {
-	return nil
-}
-func (m *mockStorageNoPAR) GetPrivateClaimsFromScopes(context.Context, string, string, []string) (map[string]any, error) {
-	return nil, nil
-}
-func (m *mockStorageNoPAR) GetKeyByIDAndClientID(context.Context, string, string) (jwk.Key, error) {
-	return nil, nil
-}
-func (m *mockStorageNoPAR) ValidateJWTProfileScopes(context.Context, string, []string) ([]string, error) {
-	return nil, nil
-}
-func (m *mockStorageNoPAR) Health(context.Context) error { return nil }
-
-type mockStorageWithClient struct {
-	op.Storage
-	client op.Client
-}
-
-func (m *mockStorageWithClient) GetClientByClientID(ctx context.Context, clientID string) (op.Client, error) {
-	if m.client != nil && m.client.GetID() == clientID {
-		return m.client, nil
-	}
-	return nil, assert.AnError
-}
-
-func (m *mockStorageWithClient) AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string) error {
-	if clientSecret == "secret" {
-		return nil
-	}
-	return assert.AnError
-}
-
-// Delegate PushedAuthRequestStorage methods to the underlying storage if it implements it.
-func (m *mockStorageWithClient) StorePushedAuthRequest(ctx context.Context, clientID string, authReq *oidc.AuthRequest, expiresIn time.Duration) (string, error) {
-	if par, ok := m.Storage.(op.PushedAuthRequestStorage); ok {
-		return par.StorePushedAuthRequest(ctx, clientID, authReq, expiresIn)
-	}
-	return "", assert.AnError
-}
-
-func (m *mockStorageWithClient) PushedAuthRequestByURI(ctx context.Context, clientID string, requestURI string) (*oidc.AuthRequest, error) {
-	if par, ok := m.Storage.(op.PushedAuthRequestStorage); ok {
-		return par.PushedAuthRequestByURI(ctx, clientID, requestURI)
-	}
-	return nil, assert.AnError
-}
-
-type mockClient struct {
-	id            string
-	authMethod    oidc.AuthMethod
-	redirectURIs  []string
-	allowedScopes []string
-	responseTypes []oidc.ResponseType
-}
-
-func (m *mockClient) GetID() string                       { return m.id }
-func (m *mockClient) RedirectURIs() []string              { return m.redirectURIs }
-func (m *mockClient) PostLogoutRedirectURIs() []string    { return nil }
-func (m *mockClient) ApplicationType() op.ApplicationType { return op.ApplicationTypeWeb }
-func (m *mockClient) AuthMethod() oidc.AuthMethod         { return m.authMethod }
-func (m *mockClient) ResponseTypes() []oidc.ResponseType  { return m.responseTypes }
-func (m *mockClient) GrantTypes() []oidc.GrantType        { return []oidc.GrantType{oidc.GrantTypeCode} }
-func (m *mockClient) LoginURL(string) string              { return "" }
-func (m *mockClient) AccessTokenType() op.AccessTokenType { return op.AccessTokenTypeBearer }
-func (m *mockClient) IDTokenLifetime() time.Duration      { return time.Hour }
-func (m *mockClient) DevMode() bool                       { return false }
-func (m *mockClient) RestrictAdditionalIdTokenScopes() func(scopes []string) []string {
-	return nil
-}
-func (m *mockClient) RestrictAdditionalAccessTokenScopes() func(scopes []string) []string {
-	return nil
-}
-func (m *mockClient) IsScopeAllowed(scope string) bool {
-	for _, s := range m.allowedScopes {
-		if s == scope {
-			return true
-		}
-	}
-	return false
-}
-func (m *mockClient) IDTokenUserinfoClaimsAssertion() bool { return false }
-func (m *mockClient) ClockSkew() time.Duration             { return 0 }
-
-// Ensure mockClient implements op.Client
-var _ op.Client = (*mockClient)(nil)
-
-// Ensure mockPARStorage implements op.PushedAuthRequestStorage
-var _ op.PushedAuthRequestStorage = (*mockPARStorage)(nil)

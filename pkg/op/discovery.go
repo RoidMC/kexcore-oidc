@@ -49,6 +49,7 @@ func CreateDiscoveryConfig(ctx context.Context, config Configuration, storage Di
 		JwksURI:                                            config.KeysEndpoint().Absolute(issuer),
 		DeviceAuthorizationEndpoint:                        config.DeviceAuthorizationEndpoint().Absolute(issuer),
 		PushedAuthorizationRequestEndpoint:                 PushedAuthRequestEndpoint(config, issuer),
+		RequirePushedAuthorizationRequests:                 config.RequirePushedAuthorizationRequests(),
 		CheckSessionIframe:                                 config.CheckSessionIframe().Absolute(issuer),
 		ScopesSupported:                                    Scopes(config),
 		ResponseTypesSupported:                             ResponseTypes(config),
@@ -73,6 +74,7 @@ func CreateDiscoveryConfig(ctx context.Context, config Configuration, storage Di
 		BackChannelLogoutSessionSupported:                  config.BackChannelLogoutSessionSupported(),
 		JWEAlgValuesSupported:                              IDTokenEncryptionAlgValues(config),
 		JWEEncValuesSupported:                              IDTokenEncryptionEncValues(config),
+		RegistrationEndpoint:                               RegistrationEndpoint(config, issuer),
 	}
 }
 
@@ -89,6 +91,7 @@ func createDiscoveryConfigV2(ctx context.Context, config Configuration, storage 
 		JwksURI:                                            endpoints.JwksURI.Absolute(issuer),
 		DeviceAuthorizationEndpoint:                        endpoints.DeviceAuthorization.Absolute(issuer),
 		PushedAuthorizationRequestEndpoint:                 PushedAuthRequestEndpoint(config, issuer),
+		RequirePushedAuthorizationRequests:                 config.RequirePushedAuthorizationRequests(),
 		ScopesSupported:                                    Scopes(config),
 		ResponseTypesSupported:                             ResponseTypes(config),
 		GrantTypesSupported:                                GrantTypes(config),
@@ -112,6 +115,7 @@ func createDiscoveryConfigV2(ctx context.Context, config Configuration, storage 
 		BackChannelLogoutSessionSupported:                  config.BackChannelLogoutSessionSupported(),
 		JWEAlgValuesSupported:                              IDTokenEncryptionAlgValues(config),
 		JWEEncValuesSupported:                              IDTokenEncryptionEncValues(config),
+		RegistrationEndpoint:                               RegistrationEndpoint(config, issuer),
 	}
 }
 
@@ -321,6 +325,20 @@ func PushedAuthRequestEndpoint(c Configuration, issuer string) string {
 		return ""
 	}
 	endpoint := c.PushedAuthRequestEndpoint()
+	if endpoint == nil {
+		return ""
+	}
+	return endpoint.Absolute(issuer)
+}
+
+// RegistrationEndpoint returns the Dynamic Client Registration endpoint URL
+// if the provider supports DCR, otherwise an empty string.
+func RegistrationEndpoint(c Configuration, issuer string) string {
+	provider, ok := c.(*Provider)
+	if !ok || !provider.RegistrationSupported() {
+		return ""
+	}
+	endpoint := c.RegistrationEndpoint()
 	if endpoint == nil {
 		return ""
 	}

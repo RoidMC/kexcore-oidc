@@ -41,6 +41,7 @@ const (
 	defaultKeysEndpoint          = "keys"
 	defaultDeviceAuthzEndpoint   = "/device_authorization"
 	defaultPushedAuthEndpoint    = "pushed_authorization_request"
+	defaultRegistrationEndpoint  = "register"
 )
 
 var (
@@ -54,6 +55,8 @@ var (
 		JwksURI:                    NewEndpoint(defaultKeysEndpoint),
 		DeviceAuthorization:        NewEndpoint(defaultDeviceAuthzEndpoint),
 		PushedAuthorizationRequest: NewEndpoint(defaultPushedAuthEndpoint),
+		// Dynamic Client Registration (RFC 7591)
+		Registration: NewEndpoint(defaultRegistrationEndpoint),
 	}
 
 	DefaultSupportedClaims = []string{
@@ -152,8 +155,14 @@ func CreateRouter(o OpenIDProvider, interceptors ...HttpInterceptor) chi.Router 
 	router.HandleFunc(o.EndSessionEndpoint().Relative(), endSessionHandler(o))
 	router.HandleFunc(o.KeysEndpoint().Relative(), keysHandler(o.Storage()))
 	router.HandleFunc(o.DeviceAuthorizationEndpoint().Relative(), DeviceAuthorizationHandler(o))
-	if o.PushedAuthRequestSupported() {
-		router.Post(o.PushedAuthRequestEndpoint().Relative(), PushedAuthRequestHandler(o))
+	if o.RegistrationSupported() {
+		router.Post(o.RegistrationEndpoint().Relative(), RegisterClientHandler(o))
+		// RFC 7592 client configuration endpoint (GET, PUT, DELETE)
+		router.Route(o.RegistrationEndpoint().Relative()+"/{client_id}", func(r chi.Router) {
+			r.Get("/", ClientConfigurationHandler(o))
+			r.Put("/", UpdateClientConfigurationHandler(o))
+			r.Delete("/", DeleteClientConfigurationHandler(o))
+		})
 	}
 	return router
 }
@@ -186,6 +195,11 @@ type Config struct {
 	BackChannelLogoutSupported        bool
 	BackChannelLogoutSessionSupported bool
 	PushedAuthRequestSupported        bool
+	// RequirePushedAuthorizationRequests indicates that the authorization server
+	// accepts authorization requests only via PAR (RFC 9126 Section 10.2).
+	RequirePushedAuthorizationRequests bool
+	// Dynamic Client Registration (RFC 7591)
+	RegistrationSupported bool
 }
 
 // Endpoints defines endpoint routes.
@@ -201,6 +215,8 @@ type Endpoints struct {
 	JwksURI                    *Endpoint
 	DeviceAuthorization        *Endpoint
 	PushedAuthorizationRequest *Endpoint
+	// Dynamic Client Registration (RFC 7591)
+	Registration *Endpoint
 }
 
 // NewProvider creates a provider with a router on it's embedded http.Handler.
@@ -292,7 +308,7 @@ type Provider struct {
 	idTokenHinKeySet        oidc.KeySet
 	crypto                  Crypto
 	decoder                 *schema.Decoder
-	encoder                 *schema.Encoder
+	encoder                 httphelper.Encoder
 	interceptors            []HttpInterceptor
 	timer                   <-chan time.Time
 	accessTokenVerifierOpts []AccessTokenVerifierOpt
@@ -435,8 +451,22 @@ func (o *Provider) PushedAuthRequestSupported() bool {
 	return o.config.PushedAuthRequestSupported
 }
 
+func (o *Provider) RequirePushedAuthorizationRequests() bool {
+	return o.config.RequirePushedAuthorizationRequests
+}
+
 func (o *Provider) PushedAuthRequestEndpoint() *Endpoint {
 	return o.endpoints.PushedAuthorizationRequest
+}
+
+// RegistrationSupported returns true if Dynamic Client Registration is enabled.
+func (o *Provider) RegistrationSupported() bool {
+	return o.config.RegistrationSupported
+}
+
+// RegistrationEndpoint returns the registration endpoint.
+func (o *Provider) RegistrationEndpoint() *Endpoint {
+	return o.endpoints.Registration
 }
 
 func (o *Provider) Storage() Storage {
@@ -706,6 +736,27 @@ func WithCustomDeviceAuthorizationEndpoint(endpoint *Endpoint) Option {
 			return err
 		}
 		o.endpoints.DeviceAuthorization = endpoint
+		return nil
+	}
+}
+
+// WithCustomRegistrationEndpoint allows overriding the default registration endpoint.
+func WithCustomRegistrationEndpoint(endpoint *Endpoint) Option {
+	return func(o *Provider) error {
+		if err := endpoint.Validate(); err != nil {
+			return err
+		}
+		o.endpoints.Registration = endpoint
+		return nil
+	}
+}
+
+// WithRegistrationSupported enables Dynamic Client Registration (RFC 7591).
+// This will register the /register endpoint and advertise it in the Discovery document.
+// Note that this requires the Storage to implement [ClientRegistrationStorage].
+func WithRegistrationSupported() Option {
+	return func(o *Provider) error {
+		o.config.RegistrationSupported = true
 		return nil
 	}
 }

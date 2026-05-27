@@ -1,0 +1,139 @@
+// Package userinfo implements the OIDC UserInfo endpoint plugin.
+//
+// It handles GET/POST /userinfo (OIDC Core §5.3), returning claims
+// about the authenticated end-user.
+package userinfo
+
+import (
+	"context"
+	"net/http"
+	"reflect"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+)
+
+// Plugin implements the OIDC UserInfo endpoint.
+type Plugin struct {
+	store      storm.UserinfoStore
+	crypto     storm.Crypto
+	converters map[reflect.Type]codec.Converter
+}
+
+// Config holds the dependencies for the UserInfo plugin.
+type Config struct {
+	Store      storm.UserinfoStore
+	Crypto     storm.Crypto
+	Converters map[reflect.Type]codec.Converter
+}
+
+// New creates a new UserInfo plugin.
+func New(cfg Config) *Plugin {
+	return &Plugin{
+		store:      cfg.Store,
+		crypto:     cfg.Crypto,
+		converters: cfg.Converters,
+	}
+}
+
+// Name returns the plugin name.
+func (p *Plugin) Name() string { return "userinfo" }
+
+// Register installs the /userinfo route.
+//
+// OIDC standard endpoint: GET/POST /userinfo (OIDC Core §5.3)
+func (p *Plugin) Register(r chi.Router) {
+	r.Get("/userinfo", p.handle)
+	r.Post("/userinfo", p.handle)
+}
+
+// Contribute returns the discovery fields for the userinfo endpoint.
+func (p *Plugin) Contribute(ctx context.Context) map[string]any {
+	return map[string]any{
+		"userinfo_endpoint": shared.IssuerFromContext(ctx) + "/userinfo",
+	}
+}
+
+func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
+	// Extract access token from Authorization header or form body
+	accessToken := extractAccessToken(r)
+	if accessToken == "" {
+		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("access token is missing"), nil)
+		return
+	}
+
+	// Resolve the token to tokenID and subject
+	// Supports both standard encrypted tokens and GM/T JWE tokens.
+	tokenID, subject, ok := resolveAccessToken(r.Context(), p.crypto, accessToken)
+	if !ok {
+		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("invalid access token"), nil)
+		return
+	}
+
+	// Determine the origin for the userinfo response
+	origin := ""
+	if r.Header.Get("Origin") != "" {
+		origin = r.Header.Get("Origin")
+	}
+
+	userInfo := new(oidc.UserInfo)
+	if err := p.store.SetUserinfoFromToken(r.Context(), userInfo, tokenID, subject, origin); err != nil {
+		shared.WriteError(w, r, err, nil)
+		return
+	}
+
+	shared.JSONResponse(w, userInfo, http.StatusOK)
+}
+
+// extractAccessToken extracts the bearer token from the request.
+func extractAccessToken(r *http.Request) string {
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(auth, "Bearer ") {
+		return strings.TrimPrefix(auth, "Bearer ")
+	}
+	// Fallback to form body for POST requests
+	if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err == nil {
+			return r.Form.Get("access_token")
+		}
+	}
+	return ""
+}
+
+// resolveAccessToken resolves an opaque access token to its tokenID and subject.
+// It supports both standard encrypted tokens and GM/T JWE tokens.
+func resolveAccessToken(ctx context.Context, crypto storm.Crypto, accessToken string) (tokenID, subject string, ok bool) {
+	var plaintext []byte
+	var err error
+
+	// Try GM/T JWE decryption first (SM2+SM4-GCM per GM/T 0125.3)
+	if gm, ok := crypto.(storm.GMCrypto); ok {
+		plaintext, err = gm.SM2DecryptJWE(ctx, accessToken)
+		if err == nil {
+			return parseTokenParts(plaintext)
+		}
+		// Not a JWE token, fall through to standard decryption
+	}
+
+	// Standard opaque token decryption
+	plaintext, err = crypto.Decrypt(ctx, []byte(accessToken))
+	if err != nil {
+		return "", "", false
+	}
+
+	return parseTokenParts(plaintext)
+}
+
+// parseTokenParts splits "tokenID:subject" plaintext into its components.
+func parseTokenParts(plaintext []byte) (tokenID, subject string, ok bool) {
+	parts := strings.SplitN(string(plaintext), ":", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}

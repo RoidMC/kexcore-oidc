@@ -256,24 +256,32 @@ func CopyRequestObjectToAuthRequest(authReq *oidc.AuthRequest, requestObject *oi
 	authReq.RequestParam = ""
 }
 
+// ValidateAuthRequestParams validates the common authorization request parameters
+// (redirect_uri, prompt, scopes, response_type) against the client configuration.
+// This is shared by the authorization endpoint and the PAR endpoint.
+func ValidateAuthRequestParams(client Client, authReq *oidc.AuthRequest) error {
+	if err := ValidateAuthReqRedirectURI(client, authReq.RedirectURI, authReq.ResponseType); err != nil {
+		return err
+	}
+	var err error
+	authReq.MaxAge, err = ValidateAuthReqPrompt(authReq.Prompt, authReq.MaxAge)
+	if err != nil {
+		return err
+	}
+	authReq.Scopes, err = ValidateAuthReqScopes(client, authReq.Scopes)
+	if err != nil {
+		return err
+	}
+	return ValidateAuthReqResponseType(client, authReq.ResponseType)
+}
+
 // ValidateAuthRequestClient validates the Auth request against the passed client.
 // If id_token_hint is part of the request, the subject of the token is returned.
 func ValidateAuthRequestClient(ctx context.Context, authReq *oidc.AuthRequest, client Client, verifier *IDTokenHintVerifier) (sub string, err error) {
 	ctx, span := Tracer.Start(ctx, "ValidateAuthRequestClient")
 	defer span.End()
 
-	if err := ValidateAuthReqRedirectURI(client, authReq.RedirectURI, authReq.ResponseType); err != nil {
-		return "", err
-	}
-	authReq.MaxAge, err = ValidateAuthReqPrompt(authReq.Prompt, authReq.MaxAge)
-	if err != nil {
-		return "", err
-	}
-	authReq.Scopes, err = ValidateAuthReqScopes(client, authReq.Scopes)
-	if err != nil {
-		return "", err
-	}
-	if err := ValidateAuthReqResponseType(client, authReq.ResponseType); err != nil {
+	if err := ValidateAuthRequestParams(client, authReq); err != nil {
 		return "", err
 	}
 	return ValidateAuthReqIDTokenHint(ctx, authReq.IDTokenHint, verifier)

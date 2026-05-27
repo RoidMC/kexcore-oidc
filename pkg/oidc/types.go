@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/muhlemmer/gu"
-	"github.com/zitadel/schema"
 	"golang.org/x/text/language"
 )
 
@@ -261,17 +260,87 @@ func (s SpaceDelimitedArray) Value() (driver.Value, error) {
 	return strings.Join(s, " "), nil
 }
 
-// NewEncoder returns a schema Encoder with
-// a registered encoder for SpaceDelimitedArray.
-func NewEncoder() *schema.Encoder {
-	e := schema.NewEncoder()
-	e.RegisterEncoder(SpaceDelimitedArray{}, func(value reflect.Value) string {
-		return value.Interface().(SpaceDelimitedArray).String()
-	})
-	e.RegisterEncoder(Locales{}, func(value reflect.Value) string {
-		return value.Interface().(Locales).String()
-	})
-	return e
+// NewEncoder returns an Encoder that knows how to encode
+// SpaceDelimitedArray and Locales values into url.Values.
+// It replaces the former schema.Encoder dependency.
+func NewEncoder() *Encoder {
+	return &Encoder{
+		customEncoders: map[reflect.Type]func(reflect.Value) string{
+			reflect.TypeOf(SpaceDelimitedArray{}): func(v reflect.Value) string {
+				return v.Interface().(SpaceDelimitedArray).String()
+			},
+			reflect.TypeOf(Locales{}): func(v reflect.Value) string {
+				return v.Interface().(Locales).String()
+			},
+		},
+	}
+}
+
+// Encoder encodes structs into url.Values using "schema" struct tags.
+// It is a lightweight replacement for github.com/zitadel/schema.Encoder.
+type Encoder struct {
+	customEncoders map[reflect.Type]func(reflect.Value) string
+}
+
+// Encode encodes src (a struct or pointer to struct) into dst.
+// It reads "schema" struct tags for field names.
+func (e *Encoder) Encode(src any, dst map[string][]string) error {
+	v := reflect.ValueOf(src)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return fmt.Errorf("oidc: Encode expects struct, got %s", v.Kind())
+	}
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		tag, ok := field.Tag.Lookup("schema")
+		if !ok || tag == "" || tag == "-" {
+			continue
+		}
+		name := tag
+		if idx := strings.Index(name, ","); idx >= 0 {
+			name = name[:idx]
+		}
+		fv := v.Field(i)
+		s := e.fieldToString(fv)
+		if s != "" {
+			dst[name] = []string{s}
+		}
+	}
+	return nil
+}
+
+func (e *Encoder) fieldToString(fv reflect.Value) string {
+	// Custom encoder
+	if enc, ok := e.customEncoders[fv.Type()]; ok {
+		return enc(fv)
+	}
+	// Pointer unwrap
+	if fv.Kind() == reflect.Ptr {
+		if fv.IsNil() {
+			return ""
+		}
+		fv = fv.Elem()
+	}
+	switch fv.Kind() {
+	case reflect.String:
+		return fv.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return fmt.Sprintf("%d", fv.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return fmt.Sprintf("%d", fv.Uint())
+	case reflect.Bool:
+		return fmt.Sprintf("%t", fv.Bool())
+	case reflect.Float32, reflect.Float64:
+		return fmt.Sprintf("%f", fv.Float())
+	default:
+		return fmt.Sprintf("%v", fv.Interface())
+	}
 }
 
 type Time int64

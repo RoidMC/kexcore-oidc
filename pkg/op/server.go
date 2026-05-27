@@ -71,6 +71,14 @@ type Server interface {
 	// The recommended Response Data type is [oidc.DeviceAuthorizationResponse].
 	DeviceAuthorization(context.Context, *ClientRequest[oidc.DeviceAuthorizationRequest]) (*Response, error)
 
+	// PushedAuthorizationRequest handles a Pushed Authorization Request (PAR).
+	// The client is already authenticated by the framework via VerifyClient.
+	// The implementation must validate auth request parameters, store the request,
+	// and return a PushedAuthResponse with request_uri and expires_in.
+	// https://datatracker.ietf.org/doc/html/rfc9126
+	// The recommended Response Data type is [oidc.PushedAuthResponse].
+	PushedAuthorizationRequest(context.Context, *ClientRequest[oidc.AuthRequest]) (*Response, error)
+
 	// VerifyClient is called on most oauth/token handlers to authenticate,
 	// using either a secret (POST, Basic) or assertion (JWT).
 	// If no secrets are provided, the client must be public.
@@ -302,6 +310,10 @@ func (UnimplementedServer) Authorize(ctx context.Context, r *ClientRequest[oidc.
 }
 
 func (UnimplementedServer) DeviceAuthorization(ctx context.Context, r *ClientRequest[oidc.DeviceAuthorizationRequest]) (*Response, error) {
+	return nil, unimplementedError(r)
+}
+
+func (UnimplementedServer) PushedAuthorizationRequest(ctx context.Context, r *ClientRequest[oidc.AuthRequest]) (*Response, error) {
 	return nil, unimplementedError(r)
 }
 

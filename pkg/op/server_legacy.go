@@ -190,6 +190,47 @@ func (s *LegacyServer) DeviceAuthorization(ctx context.Context, r *ClientRequest
 	return NewResponse(response), nil
 }
 
+func (s *LegacyServer) PushedAuthorizationRequest(ctx context.Context, r *ClientRequest[oidc.AuthRequest]) (*Response, error) {
+	ctx, span := Tracer.Start(ctx, "LegacyServer.PushedAuthorizationRequest")
+	defer span.End()
+
+	authReq := r.Data
+	client := r.Client
+
+	if !s.provider.PushedAuthRequestSupported() {
+		return nil, oidc.ErrInvalidRequest().WithDescription("pushed authorization requests not supported")
+	}
+
+	parStorage, ok := s.provider.Storage().(PushedAuthRequestStorage)
+	if !ok {
+		return nil, oidc.ErrInvalidRequest().WithDescription("pushed authorization requests not supported")
+	}
+
+	if client.AuthMethod() == oidc.AuthMethodNone && authReq.ResponseType == oidc.ResponseTypeCode && authReq.CodeChallenge == "" {
+		return nil, oidc.ErrInvalidRequest().WithDescription("public clients must use PKCE (code_challenge) for pushed authorization requests with response_type=code")
+	}
+
+	if authReq.RedirectURI == "" {
+		return nil, oidc.ErrInvalidRequest().WithDescription("redirect_uri is required")
+	}
+
+	if err := ValidateAuthRequestParams(client, authReq); err != nil {
+		return nil, err
+	}
+
+	requestURI, err := parStorage.StorePushedAuthRequest(ctx, client.GetID(), authReq, DefaultPushedAuthRequestLifetime)
+	if err != nil {
+		return nil, oidc.ErrServerError().WithDescription("unable to store pushed authorization request").WithParent(err)
+	}
+
+	expiresIn := int(DefaultPushedAuthRequestLifetime / time.Second)
+
+	return NewResponse(&oidc.PushedAuthResponse{
+		RequestURI: requestURI,
+		ExpiresIn:  expiresIn,
+	}), nil
+}
+
 func (s *LegacyServer) VerifyClient(ctx context.Context, r *Request[ClientCredentials]) (Client, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.VerifyClient")
 	defer span.End()
