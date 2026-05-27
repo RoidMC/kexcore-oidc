@@ -29,7 +29,7 @@ func newTestProvider(config *op.Config) op.OpenIDProvider {
 
 func newTestProviderWithCrypto(config *op.Config, crypto op.Crypto) op.OpenIDProvider {
 	stor := storage.NewStorage(storage.NewUserStore(testIssuer))
-	keySet := &op.OpenIDKeySet{stor}
+	keySet := &op.OpenIDKeySet{Storage: stor}
 	opts := []op.Option{
 		op.WithAllowInsecure(),
 		op.WithAccessTokenKeySet(keySet),
