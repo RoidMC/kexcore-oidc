@@ -130,8 +130,8 @@ func TestDiscoveryConfiguration_UnmarshalJSON(t *testing.T) {
 		t.Errorf("token_endpoint = %q", doc.TokenEndpoint)
 	}
 
-	scopes, ok := doc.ScopesSupported.([]any)
-	if !ok {
+	scopes := doc.ScopesSupported
+	if scopes == nil {
 		t.Fatalf("scopes_supported type = %T", doc.ScopesSupported)
 	}
 	if len(scopes) == 0 {
