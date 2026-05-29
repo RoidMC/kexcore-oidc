@@ -24,6 +24,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type parTestServer struct {
@@ -35,17 +36,17 @@ func (s *parTestServer) VerifyClient(ctx context.Context, r *op.Request[op.Clien
 	creds := r.Data
 	clientID := creds.ClientID
 	if clientID == "" {
-		return nil, oidc.ErrInvalidClient().WithDescription("client_id is required")
+		return nil, protocol.ErrInvalidClient().WithDescription("client_id is required")
 	}
 
 	client, err := s.storage.GetClientByClientID(ctx, clientID)
 	if err != nil {
-		return nil, oidc.ErrInvalidClient().WithDescription("client not found").WithParent(err)
+		return nil, protocol.ErrInvalidClient().WithDescription("client not found").WithParent(err)
 	}
 
-	if client.AuthMethod() != oidc.AuthMethodNone {
+	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := s.storage.AuthorizeClientIDSecret(ctx, clientID, creds.ClientSecret); err != nil {
-			return nil, oidc.ErrInvalidClient().WithDescription("invalid client credentials").WithParent(err)
+			return nil, protocol.ErrInvalidClient().WithDescription("invalid client credentials").WithParent(err)
 		}
 	}
 	return client, nil
@@ -55,14 +56,14 @@ func (s *parTestServer) PushedAuthorizationRequest(ctx context.Context, r *op.Cl
 	authReq := r.Data
 	client := r.Client
 
-	if client.AuthMethod() == oidc.AuthMethodNone &&
+	if client.AuthMethod() == protocol.AuthMethodNone &&
 		authReq.ResponseType == oidc.ResponseTypeCode &&
 		authReq.CodeChallenge == "" {
-		return nil, oidc.ErrInvalidRequest().WithDescription("public clients must use PKCE (code_challenge) for pushed authorization requests with response_type=code")
+		return nil, protocol.ErrInvalidRequest().WithDescription("public clients must use PKCE (code_challenge) for pushed authorization requests with response_type=code")
 	}
 
 	if authReq.RedirectURI == "" {
-		return nil, oidc.ErrInvalidRequest().WithDescription("redirect_uri is required")
+		return nil, protocol.ErrInvalidRequest().WithDescription("redirect_uri is required")
 	}
 
 	if err := op.ValidateAuthRequestParams(client, authReq); err != nil {
@@ -71,12 +72,12 @@ func (s *parTestServer) PushedAuthorizationRequest(ctx context.Context, r *op.Cl
 
 	parStorage, ok := s.storage.(op.PushedAuthRequestStorage)
 	if !ok {
-		return nil, oidc.ErrServerError().WithDescription("pushed authorization requests not supported")
+		return nil, protocol.ErrServerError().WithDescription("pushed authorization requests not supported")
 	}
 
 	requestURI, err := parStorage.StorePushedAuthRequest(ctx, client.GetID(), authReq, op.DefaultPushedAuthRequestLifetime)
 	if err != nil {
-		return nil, oidc.ErrServerError().WithDescription("unable to store pushed authorization request").WithParent(err)
+		return nil, protocol.ErrServerError().WithDescription("unable to store pushed authorization request").WithParent(err)
 	}
 
 	return op.NewResponse(&oidc.PushedAuthResponse{
@@ -110,10 +111,10 @@ func (s *parStorageMock) StorePushedAuthRequest(_ context.Context, clientID stri
 func (s *parStorageMock) PushedAuthRequestByURI(_ context.Context, clientID string, requestURI string) (*oidc.AuthRequest, error) {
 	entry, ok := s.store[requestURI]
 	if !ok {
-		return nil, oidc.ErrInvalidRequest().WithDescription("invalid or expired request_uri")
+		return nil, protocol.ErrInvalidRequest().WithDescription("invalid or expired request_uri")
 	}
 	if entry.clientID != clientID {
-		return nil, oidc.ErrInvalidRequest().WithDescription("client_id mismatch")
+		return nil, protocol.ErrInvalidRequest().WithDescription("client_id mismatch")
 	}
 	return entry.authReq, nil
 }
@@ -128,7 +129,7 @@ func newPARTestSetup(t *testing.T) *parTestSetup {
 	ctrl := gomock.NewController(t)
 	baseStorage := mock.NewMockStorage(ctrl)
 
-	newMockClient := func(id string, appType op.ApplicationType, authMethod oidc.AuthMethod, uris []string, responseTypes []oidc.ResponseType) op.Client {
+	newMockClient := func(id string, appType op.ApplicationType, authMethod protocol.AuthMethod, uris []string, responseTypes []oidc.ResponseType) op.Client {
 		c := mock.NewMockClient(ctrl)
 		c.EXPECT().GetID().AnyTimes().Return(id)
 		c.EXPECT().AuthMethod().AnyTimes().Return(authMethod)
@@ -149,10 +150,10 @@ func newPARTestSetup(t *testing.T) *parTestSetup {
 		return c
 	}
 
-	webClient := newMockClient("web_client", op.ApplicationTypeWeb, oidc.AuthMethodBasic,
+	webClient := newMockClient("web_client", op.ApplicationTypeWeb, protocol.AuthMethodBasic,
 		[]string{"https://registered.com/callback", "http://registered.com/callback"},
 		[]oidc.ResponseType{oidc.ResponseTypeCode})
-	nativeClient := newMockClient("native_client", op.ApplicationTypeNative, oidc.AuthMethodNone,
+	nativeClient := newMockClient("native_client", op.ApplicationTypeNative, protocol.AuthMethodNone,
 		[]string{"custom://callback", "http://localhost:9999/callback"},
 		[]oidc.ResponseType{oidc.ResponseTypeCode})
 

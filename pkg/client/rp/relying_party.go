@@ -25,6 +25,7 @@ import (
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
@@ -277,9 +278,9 @@ func NewRelyingPartyOIDC(ctx context.Context, issuer, clientID, clientSecret, re
 	if rp.pkce == pkceFromDiscovery {
 		if slices.ContainsFunc(
 			discoveryConfiguration.CodeChallengeMethodsSupported,
-			func(method oidc.CodeChallengeMethod) bool {
-				return method == oidc.CodeChallengeMethodPlain ||
-					method == oidc.CodeChallengeMethodS256
+			func(method string) bool {
+				return method == string(oidc.CodeChallengeMethodPlain) ||
+					method == string(oidc.CodeChallengeMethodS256)
 			},
 		) {
 			rp.pkce = pkceEnabled
@@ -687,7 +688,7 @@ type Endpoints struct {
 	DeviceAuthorizationURL string
 }
 
-func GetEndpoints(discoveryConfig *oidc.DiscoveryConfiguration) Endpoints {
+func GetEndpoints(discoveryConfig *protocol.DiscoveryConfiguration) Endpoints {
 	return Endpoints{
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  discoveryConfig.AuthorizationEndpoint,
@@ -695,7 +696,7 @@ func GetEndpoints(discoveryConfig *oidc.DiscoveryConfiguration) Endpoints {
 		},
 		IntrospectURL:          discoveryConfig.IntrospectionEndpoint,
 		UserinfoURL:            discoveryConfig.UserinfoEndpoint,
-		JKWsURL:                discoveryConfig.JwksURI,
+		JKWsURL:                discoveryConfig.JWKSURI,
 		EndSessionURL:          discoveryConfig.EndSessionEndpoint,
 		RevokeURL:              discoveryConfig.RevocationEndpoint,
 		DeviceAuthorizationURL: discoveryConfig.DeviceAuthorizationEndpoint,

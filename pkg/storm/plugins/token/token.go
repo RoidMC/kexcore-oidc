@@ -25,6 +25,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -91,13 +92,13 @@ func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 
 func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		tokenError(w, r, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err))
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err))
 		return
 	}
 
 	grantType := r.Form.Get("grant_type")
 	if grantType == "" {
-		tokenError(w, r, oidc.ErrInvalidRequest().WithDescription("grant_type is missing"))
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("grant_type is missing"))
 		return
 	}
 
@@ -111,7 +112,7 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	case oidc.GrantTypeBearer:
 		p.handleJWTProfile(w, r)
 	default:
-		tokenError(w, r, oidc.ErrUnsupportedGrantType().WithDescription("unsupported grant_type: %s", grantType))
+		tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("unsupported grant_type: %s", grantType))
 	}
 }
 
@@ -120,19 +121,19 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request) {
 	tokenReq, err := parseAccessTokenRequest(r.Form, p.converters)
 	if err != nil {
-		tokenError(w, r, oidc.ErrInvalidRequest().WithDescription("cannot parse token request").WithParent(err))
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("cannot parse token request").WithParent(err))
 		return
 	}
 
 	if tokenReq.Code == "" {
-		tokenError(w, r, oidc.ErrInvalidRequest().WithDescription("code is missing"))
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("code is missing"))
 		return
 	}
 
 	// Retrieve the auth request by code
 	authReq, err := p.authStore.AuthRequestByCode(r.Context(), tokenReq.Code)
 	if err != nil {
-		tokenError(w, r, oidc.ErrInvalidGrant().WithDescription("invalid code").WithParent(err))
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("invalid code").WithParent(err))
 		return
 	}
 
@@ -145,19 +146,19 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 
 	// Validate client matches the auth request
 	if client.GetID() != authReq.GetClientID() {
-		tokenError(w, r, oidc.ErrInvalidGrant())
+		tokenError(w, r, protocol.ErrInvalidGrant())
 		return
 	}
 
 	// Validate grant type is allowed for this client
 	if !validateGrantType(client, oidc.GrantTypeCode) {
-		tokenError(w, r, oidc.ErrUnauthorizedClient().WithDescription("client missing grant_type authorization_code"))
+		tokenError(w, r, protocol.ErrUnauthorizedClient().WithDescription("client missing grant_type authorization_code"))
 		return
 	}
 
 	// Validate redirect_uri matches
 	if tokenReq.RedirectURI != "" && tokenReq.RedirectURI != authReq.GetRedirectURI() {
-		tokenError(w, r, oidc.ErrInvalidGrant().WithDescription("redirect_uri does not correspond"))
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("redirect_uri does not correspond"))
 		return
 	}
 
@@ -181,12 +182,12 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 	tokenReq, err := parseRefreshTokenRequest(r.Form, p.converters)
 	if err != nil {
-		tokenError(w, r, oidc.ErrInvalidRequest().WithDescription("cannot parse refresh token request").WithParent(err))
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("cannot parse refresh token request").WithParent(err))
 		return
 	}
 
 	if tokenReq.RefreshToken == "" {
-		tokenError(w, r, oidc.ErrInvalidRequest().WithDescription("refresh_token is missing"))
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("refresh_token is missing"))
 		return
 	}
 
@@ -198,20 +199,20 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !validateGrantType(client, oidc.GrantTypeRefreshToken) {
-		tokenError(w, r, oidc.ErrUnauthorizedClient())
+		tokenError(w, r, protocol.ErrUnauthorizedClient())
 		return
 	}
 
 	// Get the refresh token request data from storage
 	refreshReq, err := p.tokenStore.TokenRequestByRefreshToken(r.Context(), tokenReq.RefreshToken)
 	if err != nil {
-		tokenError(w, r, oidc.ErrInvalidGrant().WithParent(err))
+		tokenError(w, r, protocol.ErrInvalidGrant().WithParent(err))
 		return
 	}
 
 	// Validate client matches
 	if client.GetID() != refreshReq.GetClientID() {
-		tokenError(w, r, oidc.ErrInvalidGrant())
+		tokenError(w, r, protocol.ErrInvalidGrant())
 		return
 	}
 
@@ -235,7 +236,7 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 func (p *Plugin) handleClientCredentials(w http.ResponseWriter, r *http.Request) {
 	tokenReq, err := parseClientCredentialsRequest(r.Form, p.converters)
 	if err != nil {
-		tokenError(w, r, oidc.ErrInvalidRequest().WithDescription("cannot parse client credentials request").WithParent(err))
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("cannot parse client credentials request").WithParent(err))
 		return
 	}
 
@@ -247,7 +248,7 @@ func (p *Plugin) handleClientCredentials(w http.ResponseWriter, r *http.Request)
 	}
 
 	if !validateGrantType(client, oidc.GrantTypeClientCredentials) {
-		tokenError(w, r, oidc.ErrUnauthorizedClient())
+		tokenError(w, r, protocol.ErrUnauthorizedClient())
 		return
 	}
 
@@ -258,7 +259,7 @@ func (p *Plugin) handleClientCredentials(w http.ResponseWriter, r *http.Request)
 
 	ccs, ok := p.tokenStore.(clientCredentialsStore)
 	if !ok {
-		tokenError(w, r, oidc.ErrUnsupportedGrantType().WithDescription("client_credentials not supported"))
+		tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("client_credentials not supported"))
 		return
 	}
 
@@ -281,7 +282,7 @@ func (p *Plugin) handleClientCredentials(w http.ResponseWriter, r *http.Request)
 
 func (p *Plugin) handleJWTProfile(w http.ResponseWriter, r *http.Request) {
 	// TODO: JWT Profile grant requires JWT assertion verification
-	tokenError(w, r, oidc.ErrUnsupportedGrantType().WithDescription("jwt-bearer grant not yet implemented"))
+	tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("jwt-bearer grant not yet implemented"))
 }
 
 // --- parsing ---
@@ -320,28 +321,54 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 		var err error
 		clientID, err = url.QueryUnescape(id)
 		if err != nil {
-			return nil, oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return nil, protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 		clientSecret, err = url.QueryUnescape(secret)
 		if err != nil {
-			return nil, oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return nil, protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 	}
 
 	if clientID == "" {
-		return nil, oidc.ErrInvalidClient().WithDescription("client_id missing")
+		return nil, protocol.ErrInvalidClient().WithDescription("client_id missing")
 	}
 
 	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
 	if err != nil {
-		return nil, oidc.ErrInvalidClient().WithParent(err)
+		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
 	// If client uses client_secret_basic or client_secret_post, verify the secret
-	if client.AuthMethod() != oidc.AuthMethodNone {
+	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
 			return nil, err
 		}
+	}
+
+	return client, nil
+}
+
+// authenticatePrivateKeyJWT authenticates the client using a JWT assertion
+// signed with the client's private key (RFC 7523 §2.2, OIDC Core §9).
+func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (storm.Client, error) {
+	issuer := shared.IssuerFromContext(r.Context())
+	request, err := shared.VerifyJWTAssertion(r.Context(), assertion, issuer, storm.AdaptKeyStore(p.keyStore), 0)
+	if err != nil {
+		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
+	}
+
+	clientID := request.Issuer
+	if clientID == "" {
+		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion missing iss claim")
+	}
+
+	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
+	if err != nil {
+		return nil, protocol.ErrInvalidClient().WithParent(err)
+	}
+
+	if client.AuthMethod() != protocol.AuthMethodPrivateKeyJWT {
+		return nil, protocol.ErrInvalidClient().WithDescription("client not configured for private_key_jwt")
 	}
 
 	return client, nil
@@ -366,7 +393,7 @@ func validateRefreshScopes(requestedScopes []string, refreshReq storm.RefreshTok
 	}
 	for _, scope := range requestedScopes {
 		if !slices.Contains(refreshReq.GetScopes(), scope) {
-			return oidc.ErrInvalidScope()
+			return protocol.ErrInvalidScope()
 		}
 	}
 	refreshReq.SetCurrentScopes(requestedScopes)

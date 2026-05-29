@@ -8,6 +8,8 @@ import (
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+		
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -59,9 +61,9 @@ func TestNewIDTokenHintVerifier(t *testing.T) {
 }
 
 func Test_IDTokenHintExpiredError(t *testing.T) {
-	var err error = IDTokenHintExpiredError{oidc.ErrExpired}
-	assert.True(t, errors.Unwrap(err) == oidc.ErrExpired)
-	assert.ErrorIs(t, err, oidc.ErrExpired)
+	var err error = IDTokenHintExpiredError{protocol.ErrExpired}
+	assert.True(t, errors.Unwrap(err) == protocol.ErrExpired)
+	assert.ErrorIs(t, err, protocol.ErrExpired)
 	assert.ErrorAs(t, err, &IDTokenHintExpiredError{})
 }
 
@@ -90,12 +92,12 @@ func TestVerifyIDTokenHint(t *testing.T) {
 		{
 			name:        "parse err",
 			tokenClaims: func() (string, *oidc.IDTokenClaims) { return "~~~~", nil },
-			wantErr:     oidc.ErrParse,
+			wantErr:     protocol.ErrParse,
 		},
 		{
 			name:        "invalid signature",
 			tokenClaims: func() (string, *oidc.IDTokenClaims) { return tu.InvalidSignatureToken, nil },
-			wantErr:     oidc.ErrSignatureUnsupportedAlg,
+			wantErr:     protocol.ErrSignatureUnsupportedAlg,
 		},
 		{
 			name: "wrong issuer",
@@ -106,7 +108,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 					tu.ValidACR, tu.ValidAMR, tu.ValidClientID, tu.ValidSkew, "",
 				)
 			},
-			wantErr: oidc.ErrIssuerInvalid,
+			wantErr: protocol.ErrIssuerInvalid,
 		},
 		{
 			name: "wrong acr",
@@ -117,7 +119,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 					"else", tu.ValidAMR, tu.ValidClientID, tu.ValidSkew, "",
 				)
 			},
-			wantErr: oidc.ErrAcrInvalid,
+			wantErr: protocol.ErrAcrInvalid,
 		},
 		{
 			name: "expired",
@@ -129,7 +131,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 				)
 			},
 			wantClaims: true,
-			wantErr:    IDTokenHintExpiredError{oidc.ErrExpired},
+			wantErr:    IDTokenHintExpiredError{protocol.ErrExpired},
 		},
 		{
 			name: "IAT too old",
@@ -141,7 +143,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 				)
 			},
 			wantClaims: true,
-			wantErr:    IDTokenHintExpiredError{oidc.ErrIatToOld},
+			wantErr:    IDTokenHintExpiredError{protocol.ErrIatToOld},
 		},
 		{
 			name: "expired auth",
@@ -153,7 +155,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 				)
 			},
 			wantClaims: true,
-			wantErr:    IDTokenHintExpiredError{oidc.ErrAuthTimeToOld},
+			wantErr:    IDTokenHintExpiredError{protocol.ErrAuthTimeToOld},
 		},
 	}
 	for _, tt := range tests {

@@ -24,6 +24,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zitadel/schema"
@@ -141,22 +142,22 @@ func TestValidateAuthRequest(t *testing.T) {
 		{
 			"scope missing fails",
 			args{&oidc.AuthRequest{}, &mock.ConfClient{}, nil},
-			oidc.ErrInvalidRequest(),
+			protocol.ErrInvalidRequest(),
 		},
 		{
 			"response_type missing fails",
 			args{&oidc.AuthRequest{Scopes: []string{"openid"}}, &mock.ConfClient{}, nil},
-			oidc.ErrInvalidRequest(),
+			protocol.ErrInvalidRequest(),
 		},
 		{
 			"client_id missing fails",
 			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode}, &mock.ConfClient{}, nil},
-			oidc.ErrInvalidRequest(),
+			protocol.ErrInvalidRequest(),
 		},
 		{
 			"redirect_uri missing fails",
 			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode, ClientID: "client_id"}, &mock.ConfClient{}, nil},
-			oidc.ErrInvalidRequest(),
+			protocol.ErrInvalidRequest(),
 		},
 	}
 	for _, tt := range tests {
@@ -227,7 +228,7 @@ func TestValidateAuthReqPrompt(t *testing.T) {
 			},
 			res{
 				nil,
-				oidc.ErrInvalidRequest(),
+				protocol.ErrInvalidRequest(),
 			},
 		},
 		{
@@ -844,7 +845,7 @@ func TestAuthResponseURL(t *testing.T) {
 			},
 			res{
 				"",
-				oidc.ErrServerError(),
+				protocol.ErrServerError(),
 			},
 		},
 		{
@@ -1381,7 +1382,7 @@ func TestValidateAuthReqIDTokenHint(t *testing.T) {
 		{
 			name:        "verify err",
 			idTokenHint: "foo",
-			wantErr:     oidc.ErrLoginRequired(),
+			wantErr:     protocol.ErrLoginRequired(),
 		},
 		{
 			name:        "ok",

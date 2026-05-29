@@ -16,6 +16,7 @@ import (
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 func Test_verifyTokenResponse(t *testing.T) {
@@ -132,7 +133,7 @@ func Test_PKCEFromDiscovery(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if r.URL.Path != oidc.DiscoveryEndpoint {
+					if r.URL.Path != protocol.DiscoveryEndpoint {
 						w.WriteHeader(http.StatusNotFound)
 						return
 					}

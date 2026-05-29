@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -25,6 +25,7 @@ type Plugin struct {
 	store       storm.RevocationStore
 	clientStore storm.ClientStore
 	crypto      storm.Crypto
+	keyStore    shared.KeyStore
 	converters  map[reflect.Type]codec.Converter
 }
 
@@ -33,6 +34,7 @@ type Config struct {
 	Store       storm.RevocationStore
 	ClientStore storm.ClientStore
 	Crypto      storm.Crypto
+	KeyStore    shared.KeyStore
 	Converters  map[reflect.Type]codec.Converter
 }
 
@@ -42,6 +44,7 @@ func New(cfg Config) *Plugin {
 		store:       cfg.Store,
 		clientStore: cfg.ClientStore,
 		crypto:      cfg.Crypto,
+		keyStore:    cfg.KeyStore,
 		converters:  cfg.Converters,
 	}
 }
@@ -59,13 +62,13 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the revocation endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"revocation_endpoint": shared.IssuerFromContext(ctx) + "/revoke",
+		"revocation_endpoint": shared.IssuerURL(ctx, "/revoke"),
 	}
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
 		return
 	}
 
@@ -87,7 +90,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		userID, tokenID, err := p.store.GetRefreshTokenInfo(r.Context(), clientID, token)
 		if err != nil {
 			if !errors.Is(err, ErrInvalidRefreshToken) {
-				shared.WriteError(w, r, oidc.ErrServerError().WithParent(err), nil)
+				shared.WriteError(w, r, protocol.ErrServerError().WithParent(err), nil)
 				return
 			}
 			// Invalid refresh token, try as access token
@@ -99,7 +102,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if doDecrypt {
-		tokenID, userID, ok := resolveTokenForRevocation(r.Context(), p.crypto, token)
+		tokenID, userID, ok := resolveTokenForRevocation(r.Context(), p.crypto, p.keyStore, shared.IssuerFromContext(r.Context()), token)
 		if ok {
 			token = tokenID
 			subject = userID
@@ -123,24 +126,24 @@ func (p *Plugin) authenticateClient(r *http.Request) (string, error) {
 		var err error
 		clientID, err = url.QueryUnescape(id)
 		if err != nil {
-			return "", oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return "", protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 		clientSecret, err = url.QueryUnescape(secret)
 		if err != nil {
-			return "", oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return "", protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 	}
 
 	if clientID == "" {
-		return "", oidc.ErrInvalidClient().WithDescription("client authentication required")
+		return "", protocol.ErrInvalidClient().WithDescription("client authentication required")
 	}
 
 	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
 	if err != nil {
-		return "", oidc.ErrInvalidClient().WithParent(err)
+		return "", protocol.ErrInvalidClient().WithParent(err)
 	}
 
-	if client.AuthMethod() != oidc.AuthMethodNone {
+	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
 			return "", err
 		}
@@ -150,8 +153,8 @@ func (p *Plugin) authenticateClient(r *http.Request) (string, error) {
 }
 
 // resolveTokenForRevocation resolves an access token to its tokenID and subject.
-// It supports both standard encrypted tokens and GM/T JWE tokens.
-func resolveTokenForRevocation(ctx context.Context, crypto storm.Crypto, accessToken string) (tokenID, subject string, ok bool) {
+// Supports standard decrypted tokens, GM/T JWE tokens, and JWT access tokens.
+func resolveTokenForRevocation(ctx context.Context, crypto storm.Crypto, keyStore shared.KeyStore, issuer, accessToken string) (tokenID, subject string, ok bool) {
 	var plaintext []byte
 	var err error
 
@@ -161,16 +164,24 @@ func resolveTokenForRevocation(ctx context.Context, crypto storm.Crypto, accessT
 		if err == nil {
 			return parseTokenParts(plaintext)
 		}
-		// Not a JWE token, fall through to standard decryption
 	}
 
 	// Standard opaque token decryption
 	plaintext, err = crypto.Decrypt(ctx, []byte(accessToken))
-	if err != nil {
-		return "", "", false
+	if err == nil {
+		return parseTokenParts(plaintext)
 	}
 
-	return parseTokenParts(plaintext)
+	// Opaque decryption failed - try JWT access token verification (RFC 6750 §2.1)
+	if keyStore != nil {
+		v := &shared.AccessTokenVerifier{
+			Issuer:   issuer,
+			KeyStore: keyStore,
+		}
+		return shared.VerifyAccessToken(ctx, accessToken, v)
+	}
+
+	return "", "", false
 }
 
 // parseTokenParts splits "tokenID:subject" plaintext into its components.

@@ -10,6 +10,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	oidc "github.com/roidmc/kexcore-oidc/pkg/oidc"
+	protocol "github.com/roidmc/kexcore-oidc/pkg/protocol"
 	op "github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
@@ -65,10 +66,10 @@ func (mr *MockHasRedirectGlobsMockRecorder) ApplicationType() *gomock.Call {
 }
 
 // AuthMethod mocks base method.
-func (m *MockHasRedirectGlobs) AuthMethod() oidc.AuthMethod {
+func (m *MockHasRedirectGlobs) AuthMethod() protocol.AuthMethod {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AuthMethod")
-	ret0, _ := ret[0].(oidc.AuthMethod)
+	ret0, _ := ret[0].(protocol.AuthMethod)
 	return ret0
 }
 

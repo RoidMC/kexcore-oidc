@@ -10,6 +10,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 var (
@@ -29,7 +30,7 @@ type Client struct {
 	secret                         string
 	redirectURIs                   []string
 	applicationType                op.ApplicationType
-	authMethod                     oidc.AuthMethod
+	authMethod                     protocol.AuthMethod
 	loginURL                       func(string) string
 	responseTypes                  []oidc.ResponseType
 	grantTypes                     []oidc.GrantType
@@ -66,7 +67,7 @@ func (c *Client) ApplicationType() op.ApplicationType {
 }
 
 // AuthMethod must return the authentication method (client_secret_basic, client_secret_post, none, private_key_jwt)
-func (c *Client) AuthMethod() oidc.AuthMethod {
+func (c *Client) AuthMethod() protocol.AuthMethod {
 	return c.authMethod
 }
 
@@ -165,7 +166,7 @@ func NativeClient(id string, redirectURIs ...string) *Client {
 		secret:                         "", // no secret needed (due to PKCE)
 		redirectURIs:                   redirectURIs,
 		applicationType:                op.ApplicationTypeNative,
-		authMethod:                     oidc.AuthMethodNone,
+		authMethod:                     protocol.AuthMethodNone,
 		loginURL:                       defaultLoginURL,
 		responseTypes:                  []oidc.ResponseType{oidc.ResponseTypeCode},
 		grantTypes:                     []oidc.GrantType{oidc.GrantTypeCode, oidc.GrantTypeRefreshToken},
@@ -191,7 +192,7 @@ func WebClient(id, secret string, redirectURIs ...string) *Client {
 		secret:                         secret,
 		redirectURIs:                   redirectURIs,
 		applicationType:                op.ApplicationTypeWeb,
-		authMethod:                     oidc.AuthMethodBasic,
+		authMethod:                     protocol.AuthMethodBasic,
 		loginURL:                       defaultLoginURL,
 		responseTypes:                  []oidc.ResponseType{oidc.ResponseTypeCode, oidc.ResponseTypeIDTokenOnly, oidc.ResponseTypeIDToken},
 		grantTypes:                     []oidc.GrantType{oidc.GrantTypeCode, oidc.GrantTypeRefreshToken, oidc.GrantTypeTokenExchange},
@@ -227,7 +228,7 @@ func DeviceClient(id, secret string) *Client {
 		secret:                         secret,
 		redirectURIs:                   nil,
 		applicationType:                op.ApplicationTypeWeb,
-		authMethod:                     oidc.AuthMethodBasic,
+		authMethod:                     protocol.AuthMethodBasic,
 		loginURL:                       defaultLoginURL,
 		responseTypes:                  []oidc.ResponseType{oidc.ResponseTypeCode},
 		grantTypes:                     []oidc.GrantType{oidc.GrantTypeDeviceCode},

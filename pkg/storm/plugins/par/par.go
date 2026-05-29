@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -61,13 +62,13 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the PAR endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"pushed_authorization_request_endpoint": shared.IssuerFromContext(ctx) + "/par",
+		"pushed_authorization_request_endpoint": shared.IssuerURL(ctx, "/par"),
 	}
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
 		return
 	}
 
@@ -77,11 +78,11 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	// Authenticate the client
 	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
 	if err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
 		return
 	}
 
-	if client.AuthMethod() != oidc.AuthMethodNone {
+	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
 			shared.WriteError(w, r, err, nil)
 			return
@@ -91,14 +92,14 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	// Parse the authorization request parameters
 	authReq := new(oidc.AuthRequest)
 	if err := codec.Decode(authReq, r.Form, p.converters); err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error decoding auth request").WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding auth request").WithParent(err), nil)
 		return
 	}
 
 	// Store the pushed authorization request
 	requestURI, err := p.store.StorePushedAuthRequest(r.Context(), clientID, authReq, p.lifetime)
 	if err != nil {
-		shared.WriteError(w, r, oidc.DefaultToServerError(err, "error storing pushed auth request"), nil)
+		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error storing pushed auth request"), nil)
 		return
 	}
 

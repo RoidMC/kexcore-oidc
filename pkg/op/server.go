@@ -8,6 +8,7 @@ import (
 	"github.com/muhlemmer/gu"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // Server describes the interface that needs to be implemented to serve
@@ -42,7 +43,7 @@ type Server interface {
 
 	// Discovery returns the OpenID Provider Configuration Information for this server.
 	// https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig
-	// The recommended Response Data type is [oidc.DiscoveryConfiguration].
+	// The recommended Response Data type is [protocol.DiscoveryConfiguration].
 	Discovery(context.Context, *Request[struct{}]) (*Response, error)
 
 	// Keys serves the JWK set which the client can use verify signatures from the op.
@@ -271,12 +272,12 @@ type UnimplementedServer struct{}
 var UnimplementedStatusCode = http.StatusNotFound
 
 func unimplementedError(r interface{ path() string }) StatusError {
-	err := oidc.ErrServerError().WithDescription("%s not implemented on this server", r.path())
+	err := protocol.ErrServerError().WithDescription("%s not implemented on this server", r.path())
 	return NewStatusError(err, UnimplementedStatusCode)
 }
 
 func unimplementedGrantError(gt oidc.GrantType) StatusError {
-	err := oidc.ErrUnsupportedGrantType().WithDescription("%s not supported", gt)
+	err := protocol.ErrUnsupportedGrantType().WithDescription("%s not supported", gt)
 	return NewStatusError(err, http.StatusBadRequest) // https://datatracker.ietf.org/doc/html/rfc6749#section-5.2
 }
 
@@ -300,7 +301,7 @@ func (UnimplementedServer) Keys(ctx context.Context, r *Request[struct{}]) (*Res
 
 func (UnimplementedServer) VerifyAuthRequest(ctx context.Context, r *Request[oidc.AuthRequest]) (*ClientRequest[oidc.AuthRequest], error) {
 	if r.Data.RequestParam != "" {
-		return nil, oidc.ErrRequestNotSupported()
+		return nil, protocol.ErrRequestNotSupported()
 	}
 	return nil, unimplementedError(r)
 }

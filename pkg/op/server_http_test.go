@@ -17,6 +17,7 @@ import (
 	"github.com/muhlemmer/gu"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zitadel/schema"
@@ -46,7 +47,7 @@ func TestRegisterServer(t *testing.T) {
 type testClient struct {
 	id              string
 	appType         ApplicationType
-	authMethod      oidc.AuthMethod
+	authMethod      protocol.AuthMethod
 	accessTokenType AccessTokenType
 	responseTypes   []oidc.ResponseType
 	grantTypes      []oidc.GrantType
@@ -69,17 +70,17 @@ func newClient(kind clientType) *testClient {
 	switch kind {
 	case clientTypeWeb:
 		client.appType = ApplicationTypeWeb
-		client.authMethod = oidc.AuthMethodBasic
+		client.authMethod = protocol.AuthMethodBasic
 		client.accessTokenType = AccessTokenTypeBearer
 		client.responseTypes = []oidc.ResponseType{oidc.ResponseTypeCode}
 	case clientTypeNative:
 		client.appType = ApplicationTypeNative
-		client.authMethod = oidc.AuthMethodNone
+		client.authMethod = protocol.AuthMethodNone
 		client.accessTokenType = AccessTokenTypeBearer
 		client.responseTypes = []oidc.ResponseType{oidc.ResponseTypeCode}
 	case clientTypeUserAgent:
 		client.appType = ApplicationTypeUserAgent
-		client.authMethod = oidc.AuthMethodBasic
+		client.authMethod = protocol.AuthMethodBasic
 		client.accessTokenType = AccessTokenTypeJWT
 		client.responseTypes = []oidc.ResponseType{oidc.ResponseTypeIDToken}
 	default:
@@ -109,7 +110,7 @@ func (c *testClient) ApplicationType() ApplicationType {
 	return c.appType
 }
 
-func (c *testClient) AuthMethod() oidc.AuthMethod {
+func (c *testClient) AuthMethod() protocol.AuthMethod {
 	return c.authMethod
 }
 
@@ -176,7 +177,7 @@ type requestVerifier struct {
 
 func (s *requestVerifier) VerifyAuthRequest(ctx context.Context, r *Request[oidc.AuthRequest]) (*ClientRequest[oidc.AuthRequest], error) {
 	if s.client == nil {
-		return nil, oidc.ErrServerError()
+		return nil, protocol.ErrServerError()
 	}
 	return &ClientRequest[oidc.AuthRequest]{
 		Request: r,
@@ -186,7 +187,7 @@ func (s *requestVerifier) VerifyAuthRequest(ctx context.Context, r *Request[oidc
 
 func (s *requestVerifier) VerifyClient(ctx context.Context, r *Request[ClientCredentials]) (Client, error) {
 	if s.client == nil {
-		return nil, oidc.ErrServerError()
+		return nil, protocol.ErrServerError()
 	}
 	return s.client, nil
 }
@@ -276,13 +277,13 @@ func Test_webServer_verifyRequestClient(t *testing.T) {
 			name:    "parse form error",
 			decoder: testDecoder,
 			r:       httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(make([]byte, 11<<20))),
-			wantErr: oidc.ErrInvalidRequest().WithDescription("error parsing form"),
+			wantErr: protocol.ErrInvalidRequest().WithDescription("error parsing form"),
 		},
 		{
 			name:    "decoder error",
 			decoder: schema.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
-			wantErr: oidc.ErrInvalidRequest().WithDescription("error decoding form"),
+			wantErr: protocol.ErrInvalidRequest().WithDescription("error decoding form"),
 		},
 		{
 			name:    "basic auth, client_id error",
@@ -292,7 +293,7 @@ func Test_webServer_verifyRequestClient(t *testing.T) {
 				r.SetBasicAuth(`%%%`, "secret")
 				return r
 			}(),
-			wantErr: oidc.ErrInvalidClient().WithDescription("invalid basic auth header"),
+			wantErr: protocol.ErrInvalidClient().WithDescription("invalid basic auth header"),
 		},
 		{
 			name:    "basic auth, client_secret error",
@@ -302,26 +303,26 @@ func Test_webServer_verifyRequestClient(t *testing.T) {
 				r.SetBasicAuth("web", `%%%`)
 				return r
 			}(),
-			wantErr: oidc.ErrInvalidClient().WithDescription("invalid basic auth header"),
+			wantErr: protocol.ErrInvalidClient().WithDescription("invalid basic auth header"),
 		},
 		{
 			name:    "missing client id and assertion",
 			decoder: testDecoder,
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
-			wantErr: oidc.ErrInvalidRequest().WithDescription("client_id or client_assertion must be provided"),
+			wantErr: protocol.ErrInvalidRequest().WithDescription("client_id or client_assertion must be provided"),
 		},
 		{
 			name:    "wrong assertion type",
 			decoder: testDecoder,
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar&client_assertion=xxx&client_assertion_type=wrong")),
-			wantErr: oidc.ErrInvalidRequest().WithDescription("invalid client_assertion_type wrong"),
+			wantErr: protocol.ErrInvalidRequest().WithDescription("invalid client_assertion_type wrong"),
 		},
 		{
 			name:    "unimplemented verify client called",
 			decoder: testDecoder,
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar&client_id=web")),
 			wantErr: StatusError{
-				parent:     oidc.ErrServerError().WithDescription("/ not implemented on this server"),
+				parent:     protocol.ErrServerError().WithDescription("/ not implemented on this server"),
 				statusCode: UnimplementedStatusCode,
 			},
 		},
@@ -416,7 +417,7 @@ func Test_webServer_authorize(t *testing.T) {
 					},
 				},
 			},
-			wantErr: oidc.ErrServerError(),
+			wantErr: protocol.ErrServerError(),
 		},
 		{
 			name: "missing redirect",
@@ -454,7 +455,7 @@ func Test_webServer_authorize(t *testing.T) {
 					},
 				},
 			},
-			wantErr: oidc.ErrInvalidRequest().WithDescription("The prompt parameter `none` must only be used as a single value"),
+			wantErr: protocol.ErrInvalidRequest().WithDescription("The prompt parameter `none` must only be used as a single value"),
 		},
 		{
 			name: "missing scopes",
@@ -473,7 +474,7 @@ func Test_webServer_authorize(t *testing.T) {
 					},
 				},
 			},
-			wantErr: oidc.ErrInvalidRequest().
+			wantErr: protocol.ErrInvalidRequest().
 				WithDescription("The scope of your request is missing. Please ensure some scopes are requested. " +
 					"If you have any questions, you may contact the administrator of the application."),
 		},
@@ -495,7 +496,7 @@ func Test_webServer_authorize(t *testing.T) {
 					},
 				},
 			},
-			wantErr: oidc.ErrInvalidRequestRedirectURI().
+			wantErr: protocol.ErrInvalidRequestRedirectURI().
 				WithDescription("The requested redirect_uri is missing in the client configuration. " +
 					"If you have any questions, you may contact the administrator of the application."),
 		},
@@ -517,7 +518,7 @@ func Test_webServer_authorize(t *testing.T) {
 					},
 				},
 			},
-			wantErr: oidc.ErrUnauthorizedClient().WithDescription("The requested response type is missing in the client configuration. " +
+			wantErr: protocol.ErrUnauthorizedClient().WithDescription("The requested response type is missing in the client configuration. " +
 				"If you have any questions, you may contact the administrator of the application."),
 		},
 		{
@@ -542,7 +543,7 @@ func Test_webServer_authorize(t *testing.T) {
 				},
 			},
 			wantErr: StatusError{
-				parent:     oidc.ErrServerError().WithDescription("/authorize not implemented on this server"),
+				parent:     protocol.ErrServerError().WithDescription("/authorize not implemented on this server"),
 				statusCode: UnimplementedStatusCode,
 			},
 		},
@@ -1274,14 +1275,14 @@ func Test_decodeRequest(t *testing.T) {
 			args: args{
 				r: httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(make([]byte, 11<<20))),
 			},
-			wantErr: oidc.ErrInvalidRequest().WithDescription("error parsing form"),
+			wantErr: protocol.ErrInvalidRequest().WithDescription("error parsing form"),
 		},
 		{
 			name: "decode error",
 			args: args{
 				r: httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			},
-			wantErr: oidc.ErrInvalidRequest().WithDescription("error decoding form"),
+			wantErr: protocol.ErrInvalidRequest().WithDescription("error decoding form"),
 		},
 		{
 			name: "success, get",

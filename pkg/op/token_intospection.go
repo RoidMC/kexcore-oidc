@@ -7,6 +7,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type Introspector interface {
@@ -58,7 +59,7 @@ func ParseTokenIntrospectionRequest(r *http.Request, introspector Introspector) 
 		return "", "", err
 	}
 	if !authenticated {
-		return "", "", oidc.ErrInvalidClient().WithParent(ErrNoClientCredentials)
+		return "", "", protocol.ErrInvalidClient().WithParent(ErrNoClientCredentials)
 	}
 
 	req := new(oidc.IntrospectionRequest)

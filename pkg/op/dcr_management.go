@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // ClientConfigurationEndpoint handles RFC 7592 client management operations:
@@ -135,16 +135,16 @@ func (e *ClientConfigurationEndpoint) deleteClientConfiguration(w http.ResponseW
 func (e *ClientConfigurationEndpoint) authenticateRegistrationToken(r *http.Request) (string, error) {
 	auth := r.Header.Get("Authorization")
 	if auth == "" {
-		return "", oidc.ErrInvalidClient().WithDescription("authorization header required")
+		return "", protocol.ErrInvalidClient().WithDescription("authorization header required")
 	}
 
 	if !strings.HasPrefix(auth, "Bearer ") {
-		return "", oidc.ErrInvalidClient().WithDescription("bearer token required")
+		return "", protocol.ErrInvalidClient().WithDescription("bearer token required")
 	}
 
 	token := strings.TrimPrefix(auth, "Bearer ")
 	if token == "" {
-		return "", oidc.ErrInvalidClient().WithDescription("bearer token is empty")
+		return "", protocol.ErrInvalidClient().WithDescription("bearer token is empty")
 	}
 
 	return token, nil
@@ -156,10 +156,10 @@ func (e *ClientConfigurationEndpoint) authenticateRegistrationToken(r *http.Requ
 func (e *ClientConfigurationEndpoint) validateUpdateRequest(req *RegistrationUpdateRequest, currentClientID string) error {
 	// Validate client_id is present and matches
 	if req.ClientID == "" {
-		return oidc.ErrInvalidRequest().WithDescription("client_id is required in the update request")
+		return protocol.ErrInvalidRequest().WithDescription("client_id is required in the update request")
 	}
 	if req.ClientID != currentClientID {
-		return oidc.ErrInvalidRequest().WithDescription("client_id in request does not match the requested client")
+		return protocol.ErrInvalidRequest().WithDescription("client_id in request does not match the requested client")
 	}
 
 	// Validate redirect_uris if provided
@@ -169,13 +169,13 @@ func (e *ClientConfigurationEndpoint) validateUpdateRequest(req *RegistrationUpd
 		// We'll do a basic check - if response_types contains "code" or "token", redirect_uris is needed
 		for _, rt := range req.ResponseTypes {
 			if rt == "code" || rt == "token" {
-				return oidc.ErrInvalidRequest().WithDescription("redirect_uris is required for authorization_code or implicit flows")
+				return protocol.ErrInvalidRequest().WithDescription("redirect_uris is required for authorization_code or implicit flows")
 			}
 		}
 	}
 	for _, uri := range req.RedirectURIs {
 		if uri == "" {
-			return oidc.ErrInvalidRequest().WithDescription("redirect_uri cannot be empty")
+			return protocol.ErrInvalidRequest().WithDescription("redirect_uri cannot be empty")
 		}
 	}
 
@@ -185,7 +185,7 @@ func (e *ClientConfigurationEndpoint) validateUpdateRequest(req *RegistrationUpd
 		case "none", "client_secret_basic", "client_secret_post", "private_key_jwt":
 			// valid
 		default:
-			return oidc.ErrInvalidRequest().WithDescription("unsupported token_endpoint_auth_method")
+			return protocol.ErrInvalidRequest().WithDescription("unsupported token_endpoint_auth_method")
 		}
 	}
 

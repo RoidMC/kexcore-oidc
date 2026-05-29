@@ -9,6 +9,7 @@ import (
 	"github.com/golang/mock/gomock"
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
@@ -58,23 +59,23 @@ func ExpectValidClientID(s op.Storage) {
 	mockS.EXPECT().GetClientByClientID(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, id string) (op.Client, error) {
 			var appType op.ApplicationType
-			var authMethod oidc.AuthMethod
+			var authMethod protocol.AuthMethod
 			var accessTokenType op.AccessTokenType
 			var responseTypes []oidc.ResponseType
 			switch id {
 			case "web_client":
 				appType = op.ApplicationTypeWeb
-				authMethod = oidc.AuthMethodBasic
+				authMethod = protocol.AuthMethodBasic
 				accessTokenType = op.AccessTokenTypeBearer
 				responseTypes = []oidc.ResponseType{oidc.ResponseTypeCode}
 			case "native_client":
 				appType = op.ApplicationTypeNative
-				authMethod = oidc.AuthMethodNone
+				authMethod = protocol.AuthMethodNone
 				accessTokenType = op.AccessTokenTypeBearer
 				responseTypes = []oidc.ResponseType{oidc.ResponseTypeCode}
 			case "useragent_client":
 				appType = op.ApplicationTypeUserAgent
-				authMethod = oidc.AuthMethodBasic
+				authMethod = protocol.AuthMethodBasic
 				accessTokenType = op.AccessTokenTypeJWT
 				responseTypes = []oidc.ResponseType{oidc.ResponseTypeIDToken}
 			}
@@ -85,7 +86,7 @@ func ExpectValidClientID(s op.Storage) {
 type ConfClient struct {
 	id              string
 	appType         op.ApplicationType
-	authMethod      oidc.AuthMethod
+	authMethod      protocol.AuthMethod
 	accessTokenType op.AccessTokenType
 	responseTypes   []oidc.ResponseType
 	grantTypes      []oidc.GrantType
@@ -113,7 +114,7 @@ func (c *ConfClient) ApplicationType() op.ApplicationType {
 	return c.appType
 }
 
-func (c *ConfClient) AuthMethod() oidc.AuthMethod {
+func (c *ConfClient) AuthMethod() protocol.AuthMethod {
 	return c.authMethod
 }
 

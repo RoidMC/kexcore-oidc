@@ -20,6 +20,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type DeviceAuthorizationConfig struct {
@@ -106,7 +107,7 @@ func createDeviceAuthorization(ctx context.Context, req *oidc.DeviceAuthorizatio
 
 	var verification *url.URL
 	if verification, err = url.Parse(IssuerFromContext(ctx)); err != nil {
-		err = oidc.ErrServerError().WithParent(err).WithDescription("invalid URL for issuer")
+		err = protocol.ErrServerError().WithParent(err).WithDescription("invalid URL for issuer")
 		return nil, NewStatusError(err, http.StatusInternalServerError)
 	}
 	verification.Path = config.UserFormPath
@@ -138,12 +139,12 @@ func ParseDeviceCodeRequest(r *http.Request, o OpenIDProvider) (*oidc.DeviceAuth
 		return nil, err
 	}
 	if !ValidateGrantType(client, oidc.GrantTypeDeviceCode) {
-		return nil, oidc.ErrUnauthorizedClient().WithDescription("client missing grant type " + string(oidc.GrantTypeDeviceCode))
+		return nil, protocol.ErrUnauthorizedClient().WithDescription("client missing grant type " + string(oidc.GrantTypeDeviceCode))
 	}
 
 	req := new(oidc.DeviceAuthorizationRequest)
 	if err := o.Decoder().Decode(req, r.Form); err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("cannot parse device authentication request").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("cannot parse device authentication request").WithParent(err)
 	}
 	req.ClientID = clientID
 
@@ -227,7 +228,7 @@ func deviceAccessToken(w http.ResponseWriter, r *http.Request, exchanger Exchang
 		return err
 	}
 	if clientAuthenticated != IsConfidentialType(client) {
-		return oidc.ErrInvalidClient().WithParent(ErrNoClientCredentials).
+		return protocol.ErrInvalidClient().WithParent(ErrNoClientCredentials).
 			WithDescription("confidential client requires authentication")
 	}
 
@@ -303,21 +304,21 @@ func CheckDeviceAuthorizationState(ctx context.Context, clientID, deviceCode str
 
 	state, err := storage.GetDeviceAuthorizatonState(ctx, clientID, deviceCode)
 	if errors.Is(err, context.DeadlineExceeded) {
-		return nil, oidc.ErrSlowDown().WithParent(err)
+		return nil, protocol.ErrSlowDown().WithParent(err)
 	}
 	if err != nil {
-		return nil, oidc.ErrAccessDenied().WithParent(err)
+		return nil, protocol.ErrAccessDenied().WithParent(err)
 	}
 	if state.Denied {
-		return state, oidc.ErrAccessDenied()
+		return state, protocol.ErrAccessDenied()
 	}
 	if state.Done {
 		return state, nil
 	}
 	if time.Now().After(state.Expires) {
-		return state, oidc.ErrExpiredDeviceCode()
+		return state, protocol.ErrExpiredDeviceCode()
 	}
-	return state, oidc.ErrAuthorizationPending()
+	return state, protocol.ErrAuthorizationPending()
 }
 
 func CreateDeviceTokenResponse(ctx context.Context, tokenRequest TokenRequest, creator TokenCreator, client Client) (*oidc.AccessTokenResponse, error) {

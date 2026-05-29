@@ -19,6 +19,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const testIssuer = "https://localhost:9998/"
@@ -48,7 +49,7 @@ func newTestProviderWithCrypto(config *op.Config, crypto op.Crypto) op.OpenIDPro
 func TestDiscover(t *testing.T) {
 	type args struct {
 		w      http.ResponseWriter
-		config *oidc.DiscoveryConfiguration
+		config *protocol.DiscoveryConfiguration
 	}
 	tests := []struct {
 		name string
@@ -58,7 +59,7 @@ func TestDiscover(t *testing.T) {
 			"OK",
 			args{
 				httptest.NewRecorder(),
-				&oidc.DiscoveryConfiguration{Issuer: "https://issuer.com"},
+				&protocol.DiscoveryConfiguration{Issuer: "https://issuer.com"},
 			},
 		},
 	}
@@ -68,7 +69,7 @@ func TestDiscover(t *testing.T) {
 			rec := tt.args.w.(*httptest.ResponseRecorder)
 			require.Equal(t, http.StatusOK, rec.Code)
 			require.Equal(t,
-				`{"issuer":"https://issuer.com","request_uri_parameter_supported":false}
+				`{"issuer":"https://issuer.com"}
 `,
 				rec.Body.String())
 		})
@@ -84,7 +85,7 @@ func TestCreateDiscoveryConfig(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want *oidc.DiscoveryConfiguration
+		want *protocol.DiscoveryConfiguration
 	}{
 		// TODO: Add test cases.
 	}
@@ -154,7 +155,7 @@ func Test_GrantTypes(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want []oidc.GrantType
+		want []string
 	}{
 		{
 			"code and implicit flow",
@@ -169,9 +170,9 @@ func Test_GrantTypes(t *testing.T) {
 					return c
 				}(),
 			},
-			[]oidc.GrantType{
-				oidc.GrantTypeCode,
-				oidc.GrantTypeImplicit,
+			[]string{
+				string(oidc.GrantTypeCode),
+				string(oidc.GrantTypeImplicit),
 			},
 		},
 		{
@@ -187,13 +188,13 @@ func Test_GrantTypes(t *testing.T) {
 					return c
 				}(),
 			},
-			[]oidc.GrantType{
-				oidc.GrantTypeCode,
-				oidc.GrantTypeImplicit,
-				oidc.GrantTypeRefreshToken,
-				oidc.GrantTypeClientCredentials,
-				oidc.GrantTypeTokenExchange,
-				oidc.GrantTypeBearer,
+			[]string{
+				string(oidc.GrantTypeCode),
+				string(oidc.GrantTypeImplicit),
+				string(oidc.GrantTypeRefreshToken),
+				string(oidc.GrantTypeClientCredentials),
+				string(oidc.GrantTypeTokenExchange),
+				string(oidc.GrantTypeBearer),
 			},
 		},
 	}
@@ -307,7 +308,7 @@ func Test_AuthMethodsTokenEndpoint(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want []oidc.AuthMethod
+		want []string
 	}{
 		{
 			"none and basic",
@@ -317,7 +318,7 @@ func Test_AuthMethodsTokenEndpoint(t *testing.T) {
 				m.EXPECT().AuthMethodPrivateKeyJWTSupported().Return(false)
 				return m
 			}()},
-			[]oidc.AuthMethod{oidc.AuthMethodNone, oidc.AuthMethodBasic},
+			[]string{string(protocol.AuthMethodNone), string(protocol.AuthMethodBasic)},
 		},
 		{
 			"none, basic and post",
@@ -327,7 +328,7 @@ func Test_AuthMethodsTokenEndpoint(t *testing.T) {
 				m.EXPECT().AuthMethodPrivateKeyJWTSupported().Return(false)
 				return m
 			}()},
-			[]oidc.AuthMethod{oidc.AuthMethodNone, oidc.AuthMethodBasic, oidc.AuthMethodPost},
+			[]string{string(protocol.AuthMethodNone), string(protocol.AuthMethodBasic), string(protocol.AuthMethodPost)},
 		},
 		{
 			"none, basic, post and private_key_jwt",
@@ -337,7 +338,7 @@ func Test_AuthMethodsTokenEndpoint(t *testing.T) {
 				m.EXPECT().AuthMethodPrivateKeyJWTSupported().Return(true)
 				return m
 			}()},
-			[]oidc.AuthMethod{oidc.AuthMethodNone, oidc.AuthMethodBasic, oidc.AuthMethodPost, oidc.AuthMethodPrivateKeyJWT},
+			[]string{string(protocol.AuthMethodNone), string(protocol.AuthMethodBasic), string(protocol.AuthMethodPost), string(protocol.AuthMethodPrivateKeyJWT)},
 		},
 	}
 	for _, tt := range tests {
@@ -445,7 +446,7 @@ func Test_AuthMethodsIntrospectionEndpoint(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want []oidc.AuthMethod
+		want []string
 	}{
 		{
 			"basic only",
@@ -454,7 +455,7 @@ func Test_AuthMethodsIntrospectionEndpoint(t *testing.T) {
 				m.EXPECT().AuthMethodPrivateKeyJWTSupported().Return(false)
 				return m
 			}()},
-			[]oidc.AuthMethod{oidc.AuthMethodBasic},
+			[]string{string(protocol.AuthMethodBasic)},
 		},
 		{
 			"basic and private_key_jwt",
@@ -463,7 +464,7 @@ func Test_AuthMethodsIntrospectionEndpoint(t *testing.T) {
 				m.EXPECT().AuthMethodPrivateKeyJWTSupported().Return(true)
 				return m
 			}()},
-			[]oidc.AuthMethod{oidc.AuthMethodBasic, oidc.AuthMethodPrivateKeyJWT},
+			[]string{string(protocol.AuthMethodBasic), string(protocol.AuthMethodPrivateKeyJWT)},
 		},
 	}
 	for _, tt := range tests {
@@ -526,7 +527,7 @@ func Test_AuthMethodsRevocationEndpoint(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want []oidc.AuthMethod
+		want []string
 	}{
 		{
 			"none and basic",
@@ -536,7 +537,7 @@ func Test_AuthMethodsRevocationEndpoint(t *testing.T) {
 				m.EXPECT().AuthMethodPrivateKeyJWTSupported().Return(false)
 				return m
 			}()},
-			[]oidc.AuthMethod{oidc.AuthMethodNone, oidc.AuthMethodBasic},
+			[]string{string(protocol.AuthMethodNone), string(protocol.AuthMethodBasic)},
 		},
 		{
 			"none, basic and post",
@@ -546,7 +547,7 @@ func Test_AuthMethodsRevocationEndpoint(t *testing.T) {
 				m.EXPECT().AuthMethodPrivateKeyJWTSupported().Return(false)
 				return m
 			}()},
-			[]oidc.AuthMethod{oidc.AuthMethodNone, oidc.AuthMethodBasic, oidc.AuthMethodPost},
+			[]string{string(protocol.AuthMethodNone), string(protocol.AuthMethodBasic), string(protocol.AuthMethodPost)},
 		},
 		{
 			"none, basic, post and private_key_jwt",
@@ -556,7 +557,7 @@ func Test_AuthMethodsRevocationEndpoint(t *testing.T) {
 				m.EXPECT().AuthMethodPrivateKeyJWTSupported().Return(true)
 				return m
 			}()},
-			[]oidc.AuthMethod{oidc.AuthMethodNone, oidc.AuthMethodBasic, oidc.AuthMethodPost, oidc.AuthMethodPrivateKeyJWT},
+			[]string{string(protocol.AuthMethodNone), string(protocol.AuthMethodBasic), string(protocol.AuthMethodPost), string(protocol.AuthMethodPrivateKeyJWT)},
 		},
 	}
 	for _, tt := range tests {
@@ -622,7 +623,7 @@ func Test_CodeChallengeMethods(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want []oidc.CodeChallengeMethod
+		want []string
 	}{
 		{
 			"not supported",
@@ -631,7 +632,7 @@ func Test_CodeChallengeMethods(t *testing.T) {
 				m.EXPECT().CodeMethodS256Supported().Return(false)
 				return m
 			}()},
-			[]oidc.CodeChallengeMethod{},
+			[]string{},
 		},
 		{
 			"S256",
@@ -640,7 +641,7 @@ func Test_CodeChallengeMethods(t *testing.T) {
 				m.EXPECT().CodeMethodS256Supported().Return(true)
 				return m
 			}()},
-			[]oidc.CodeChallengeMethod{oidc.CodeChallengeMethodS256},
+			[]string{string(oidc.CodeChallengeMethodS256)},
 		},
 	}
 	for _, tt := range tests {

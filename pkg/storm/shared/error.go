@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // WriteError writes an OIDC error response to the response writer.
@@ -21,15 +21,15 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error, logger *slog.
 	}
 
 	statusCode := http.StatusBadRequest
-	oidcErr := oidc.DefaultToServerError(err, err.Error())
+	oidcErr := protocol.DefaultToServerError(err, err.Error())
 
 	var se StatusError
 	if errors.As(err, &se) {
 		statusCode = se.statusCode
-		oidcErr = oidc.DefaultToServerError(se.parent, se.parent.Error())
+		oidcErr = protocol.DefaultToServerError(se.parent, se.parent.Error())
 	}
 
-	if oidcErr.ErrorType == oidc.ServerError {
+	if oidcErr.ErrorType == protocol.ServerError {
 		statusCode = http.StatusInternalServerError
 	}
 

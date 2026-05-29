@@ -10,6 +10,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 func TestNewJWTProfileVerifier(t *testing.T) {
@@ -22,11 +23,11 @@ func TestNewJWTProfileVerifier(t *testing.T) {
 		Storage: tu.JWTProfileKeyStorage{},
 	}
 	got := op.NewJWTProfileVerifier(tu.JWTProfileKeyStorage{}, tu.ValidIssuer, time.Minute, time.Second, op.SubjectCheck(func(request *oidc.JWTTokenRequest) error {
-		return oidc.ErrSubjectMissing
+		return protocol.ErrSubjectMissing
 	}))
 	assert.Equal(t, want.Verifier, got.Verifier)
 	assert.Equal(t, want.Storage, got.Storage)
-	assert.ErrorIs(t, got.CheckSubject(nil), oidc.ErrSubjectMissing)
+	assert.ErrorIs(t, got.CheckSubject(nil), protocol.ErrSubjectMissing)
 }
 
 func TestVerifyJWTAssertion(t *testing.T) {
@@ -44,7 +45,7 @@ func TestVerifyJWTAssertion(t *testing.T) {
 			name:     "parse error",
 			ctx:      context.Background(),
 			newToken: func() (string, *oidc.JWTTokenRequest) { return "!", nil },
-			wantErr:  oidc.ErrParse,
+			wantErr:  protocol.ErrParse,
 		},
 		{
 			name: "wrong audience",
@@ -55,7 +56,7 @@ func TestVerifyJWTAssertion(t *testing.T) {
 					time.Now(), tu.ValidExpiration,
 				)
 			},
-			wantErr: oidc.ErrAudience,
+			wantErr: protocol.ErrAudience,
 		},
 		{
 			name: "expired",
@@ -66,7 +67,7 @@ func TestVerifyJWTAssertion(t *testing.T) {
 					time.Now(), time.Now().Add(-time.Hour),
 				)
 			},
-			wantErr: oidc.ErrExpired,
+			wantErr: protocol.ErrExpired,
 		},
 		{
 			name: "invalid iat",
@@ -77,7 +78,7 @@ func TestVerifyJWTAssertion(t *testing.T) {
 					time.Now().Add(time.Hour), tu.ValidExpiration,
 				)
 			},
-			wantErr: oidc.ErrIatInFuture,
+			wantErr: protocol.ErrIatInFuture,
 		},
 		{
 			name: "invalid subject",
@@ -88,7 +89,7 @@ func TestVerifyJWTAssertion(t *testing.T) {
 					time.Now(), tu.ValidExpiration,
 				)
 			},
-			wantErr: oidc.ErrSubjectInvalid,
+			wantErr: protocol.ErrSubjectInvalid,
 		},
 		{
 			name:     "check signature fail",

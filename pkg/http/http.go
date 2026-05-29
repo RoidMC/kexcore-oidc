@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 var DefaultHTTPClient = &http.Client{
@@ -103,7 +103,7 @@ func HttpRequest(client *http.Client, req *http.Request, response any) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		var oidcErr oidc.Error
+		var oidcErr protocol.Error
 		err = json.Unmarshal(body, &oidcErr)
 		if err != nil || oidcErr.ErrorType == "" {
 			log.Printf("[kexcore-oidc/http] http status not ok: %s (body omitted for security)", resp.Status)

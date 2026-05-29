@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -62,13 +63,13 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the device authorization endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"device_authorization_endpoint": shared.IssuerFromContext(ctx) + "/device_authorization",
+		"device_authorization_endpoint": shared.IssuerURL(ctx, "/device_authorization"),
 	}
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
 		return
 	}
 
@@ -78,11 +79,11 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	// Authenticate the client
 	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
 	if err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
 		return
 	}
 
-	if client.AuthMethod() != oidc.AuthMethodNone {
+	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
 			shared.WriteError(w, r, err, nil)
 			return
@@ -94,7 +95,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	userCode := generateRandomUserCode(8)
 
 	if err := p.store.StoreDeviceAuthorization(r.Context(), clientID, deviceCode, userCode, time.Now().Add(p.lifetime), scopes); err != nil {
-		shared.WriteError(w, r, oidc.DefaultToServerError(err, "error storing device authorization"), nil)
+		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error storing device authorization"), nil)
 		return
 	}
 

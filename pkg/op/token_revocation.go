@@ -9,6 +9,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type Revoker interface {
@@ -48,7 +49,7 @@ func Revoke(w http.ResponseWriter, r *http.Request, revoker Revoker) {
 		if err != nil {
 			// An invalid refresh token means that we'll try other things (leaving doDecrypt==true)
 			if !errors.Is(err, ErrInvalidRefreshToken) {
-				RevocationRequestError(w, r, oidc.ErrServerError().WithParent(err))
+				RevocationRequestError(w, r, protocol.ErrServerError().WithParent(err))
 				return
 			}
 		} else {
@@ -78,7 +79,7 @@ func ParseTokenRevocationRequest(r *http.Request, revoker Revoker) (token, token
 
 	err = r.ParseForm()
 	if err != nil {
-		return "", "", "", oidc.ErrInvalidRequest().WithDescription("unable to parse request").WithParent(err)
+		return "", "", "", protocol.ErrInvalidRequest().WithDescription("unable to parse request").WithParent(err)
 	}
 	req := new(struct {
 		oidc.RevocationRequest
@@ -88,12 +89,12 @@ func ParseTokenRevocationRequest(r *http.Request, revoker Revoker) (token, token
 	})
 	err = revoker.Decoder().Decode(req, r.Form)
 	if err != nil {
-		return "", "", "", oidc.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
+		return "", "", "", protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
 	}
 	if req.ClientAssertionType == oidc.ClientAssertionTypeJWTAssertion {
 		revokerJWTProfile, ok := revoker.(RevokerJWTProfile)
 		if !ok || !revoker.AuthMethodPrivateKeyJWTSupported() {
-			return "", "", "", oidc.ErrInvalidClient().WithDescription("auth_method private_key_jwt not supported")
+			return "", "", "", protocol.ErrInvalidClient().WithDescription("auth_method private_key_jwt not supported")
 		}
 		profile, err := VerifyJWTAssertion(r.Context(), req.ClientAssertion, revokerJWTProfile.JWTProfileVerifier(r.Context()))
 		if err == nil {
@@ -105,11 +106,11 @@ func ParseTokenRevocationRequest(r *http.Request, revoker Revoker) (token, token
 	if ok {
 		clientID, err = url.QueryUnescape(clientID)
 		if err != nil {
-			return "", "", "", oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return "", "", "", protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 		clientSecret, err = url.QueryUnescape(clientSecret)
 		if err != nil {
-			return "", "", "", oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return "", "", "", protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 		if err = AuthorizeClientIDSecret(r.Context(), clientID, clientSecret, revoker.Storage()); err != nil {
 			return "", "", "", err
@@ -117,20 +118,20 @@ func ParseTokenRevocationRequest(r *http.Request, revoker Revoker) (token, token
 		return req.Token, req.TokenTypeHint, clientID, nil
 	}
 	if req.ClientID == "" {
-		return "", "", "", oidc.ErrInvalidClient().WithDescription("invalid authorization")
+		return "", "", "", protocol.ErrInvalidClient().WithDescription("invalid authorization")
 	}
 	client, err := revoker.Storage().GetClientByClientID(r.Context(), req.ClientID)
 	if err != nil {
-		return "", "", "", oidc.ErrInvalidClient().WithParent(err)
+		return "", "", "", protocol.ErrInvalidClient().WithParent(err)
 	}
 	if req.ClientSecret == "" {
-		if client.AuthMethod() != oidc.AuthMethodNone {
-			return "", "", "", oidc.ErrInvalidClient().WithDescription("invalid authorization")
+		if client.AuthMethod() != protocol.AuthMethodNone {
+			return "", "", "", protocol.ErrInvalidClient().WithDescription("invalid authorization")
 		}
 		return req.Token, req.TokenTypeHint, req.ClientID, nil
 	}
-	if client.AuthMethod() == oidc.AuthMethodPost && !revoker.AuthMethodPostSupported() {
-		return "", "", "", oidc.ErrInvalidClient().WithDescription("auth_method post not supported")
+	if client.AuthMethod() == protocol.AuthMethodPost && !revoker.AuthMethodPostSupported() {
+		return "", "", "", protocol.ErrInvalidClient().WithDescription("auth_method post not supported")
 	}
 	if err = AuthorizeClientIDSecret(r.Context(), req.ClientID, req.ClientSecret, revoker.Storage()); err != nil {
 		return "", "", "", err
@@ -144,12 +145,12 @@ func RevocationRequestError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func RevocationError(err error) StatusError {
-	e := oidc.DefaultToServerError(err, err.Error())
+	e := protocol.DefaultToServerError(err, err.Error())
 	status := http.StatusBadRequest
 	switch e.ErrorType {
-	case oidc.InvalidClient:
+	case protocol.InvalidClient:
 		status = 401
-	case oidc.ServerError:
+	case protocol.ServerError:
 		status = 500
 	}
 	return NewStatusError(e, status)

@@ -7,7 +7,10 @@ package shared
 import (
 	"context"
 	"net/http"
+	"strings"
 )
+
+// IssuerFromRequest extracts the issuer string from an HTTP request.
 
 // IssuerFromRequest extracts the issuer string from an HTTP request.
 // Implementations may use the request host, a forwarded header, or a static value.
@@ -61,4 +64,16 @@ func IssuerFromHost(path string) IssuerFromRequest {
 		}
 		return scheme + "://" + r.Host + path
 	}
+}
+
+// IssuerURL safely joins an issuer and a URL path, stripping trailing
+// slashes from the issuer to avoid double-slashes.
+//
+// Example:
+//
+//	IssuerURL(ctx, "/token")    → "http://localhost:9998/token"
+//	IssuerURL(ctx, "/register/abc") → "http://localhost:9998/register/abc"
+func IssuerURL(ctx context.Context, path string) string {
+	issuer := strings.TrimRight(IssuerFromContext(ctx), "/")
+	return issuer + path
 }

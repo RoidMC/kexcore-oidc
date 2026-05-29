@@ -8,6 +8,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type Exchanger interface {
@@ -72,10 +73,10 @@ func Exchange(w http.ResponseWriter, r *http.Request, exchanger Exchanger) {
 			return
 		}
 	case "":
-		RequestError(w, r, oidc.ErrInvalidRequest().WithDescription("grant_type missing"), exchanger.Logger())
+		RequestError(w, r, protocol.ErrInvalidRequest().WithDescription("grant_type missing"), exchanger.Logger())
 		return
 	}
-	RequestError(w, r, oidc.ErrUnsupportedGrantType().WithDescription("%s not supported", grantType), exchanger.Logger())
+	RequestError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("%s not supported", grantType), exchanger.Logger())
 }
 
 // AuthenticatedTokenRequest is a helper interface for ParseAuthenticatedTokenRequest
@@ -94,11 +95,11 @@ func ParseAuthenticatedTokenRequest(r *http.Request, decoder httphelper.Decoder,
 
 	err := r.ParseForm()
 	if err != nil {
-		return oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
+		return protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 	err = decoder.Decode(request, r.Form)
 	if err != nil {
-		return oidc.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
+		return protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
 	}
 	clientID, clientSecret, ok := r.BasicAuth()
 	if !ok {
@@ -106,11 +107,11 @@ func ParseAuthenticatedTokenRequest(r *http.Request, decoder httphelper.Decoder,
 	}
 	clientID, err = url.QueryUnescape(clientID)
 	if err != nil {
-		return oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+		return protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 	}
 	clientSecret, err = url.QueryUnescape(clientSecret)
 	if err != nil {
-		return oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+		return protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 	}
 	request.SetClientID(clientID)
 	request.SetClientSecret(clientSecret)
@@ -124,7 +125,7 @@ func AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string,
 
 	err := storage.AuthorizeClientIDSecret(ctx, clientID, clientSecret)
 	if err != nil {
-		return oidc.ErrInvalidClient().WithDescription("invalid client_id / client_secret").WithParent(err)
+		return protocol.ErrInvalidClient().WithDescription("invalid client_id / client_secret").WithParent(err)
 	}
 	return nil
 }
@@ -134,17 +135,17 @@ func AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string,
 func AuthorizeCodeChallenge(codeVerifier string, challenge *oidc.CodeChallenge) error {
 	if challenge == nil {
 		if codeVerifier != "" {
-			return oidc.ErrInvalidRequest().WithDescription("code_verifier unexpectedly provided")
+			return protocol.ErrInvalidRequest().WithDescription("code_verifier unexpectedly provided")
 		}
 
 		return nil
 	}
 
 	if codeVerifier == "" {
-		return oidc.ErrInvalidRequest().WithDescription("code_verifier required")
+		return protocol.ErrInvalidRequest().WithDescription("code_verifier required")
 	}
 	if !oidc.VerifyCodeChallenge(challenge, codeVerifier) {
-		return oidc.ErrInvalidGrant().WithDescription("invalid code_verifier")
+		return protocol.ErrInvalidGrant().WithDescription("invalid code_verifier")
 	}
 	return nil
 }
@@ -163,8 +164,8 @@ func AuthorizePrivateJWTKey(ctx context.Context, clientAssertion string, exchang
 	if err != nil {
 		return nil, err
 	}
-	if client.AuthMethod() != oidc.AuthMethodPrivateKeyJWT {
-		return nil, oidc.ErrInvalidClient()
+	if client.AuthMethod() != protocol.AuthMethodPrivateKeyJWT {
+		return nil, protocol.ErrInvalidClient()
 	}
 	return client, nil
 }

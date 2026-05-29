@@ -15,6 +15,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type AuthStorage interface {
@@ -64,7 +65,7 @@ type AuthStorage interface {
 	// tokenOrTokenID will be the refresh token, not its ID.  RevokeToken depends upon GetRefreshTokenInfo
 	// to get information from refresh tokens that are not either "<tokenID>:<userID>" strings
 	// nor JWTs.
-	RevokeToken(ctx context.Context, tokenOrTokenID string, userID string, clientID string) *oidc.Error
+	RevokeToken(ctx context.Context, tokenOrTokenID string, userID string, clientID string) *protocol.Error
 
 	// GetRefreshTokenInfo must return ErrInvalidRefreshToken when presented
 	// with a token that is not a refresh token.
@@ -208,7 +209,7 @@ type DeviceAuthorizationStorage interface {
 func assertDeviceStorage(s Storage) (DeviceAuthorizationStorage, error) {
 	storage, ok := s.(DeviceAuthorizationStorage)
 	if !ok {
-		return nil, oidc.ErrUnsupportedGrantType().WithDescription("device_code grant not supported")
+		return nil, protocol.ErrUnsupportedGrantType().WithDescription("device_code grant not supported")
 	}
 	return storage, nil
 }

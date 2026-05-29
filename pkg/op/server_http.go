@@ -16,6 +16,7 @@ import (
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/rs/cors"
 	"github.com/zitadel/schema"
 )
@@ -116,7 +117,7 @@ func (s *webServer) getLogger(ctx context.Context) *slog.Logger {
 func (s *webServer) createRouter() {
 	s.router.HandleFunc(healthEndpoint, simpleHandler(s, s.server.Health))
 	s.router.HandleFunc(readinessEndpoint, simpleHandler(s, s.server.Ready))
-	s.router.HandleFunc(oidc.DiscoveryEndpoint, simpleHandler(s, s.server.Discovery))
+	s.router.HandleFunc(protocol.DiscoveryEndpoint, simpleHandler(s, s.server.Discovery))
 
 	s.endpointRoute(s.endpoints.Authorization, s.authorizeHandler)
 	s.endpointRoute(s.endpoints.DeviceAuthorization, s.withClient(s.deviceAuthorizationHandler))
@@ -160,7 +161,7 @@ func (s *webServer) withClient(handler clientHandler) http.HandlerFunc {
 		}
 		if grantType := oidc.GrantType(r.Form.Get("grant_type")); grantType != "" {
 			if !ValidateGrantType(client, grantType) {
-				WriteError(w, r, oidc.ErrUnauthorizedClient().WithDescription("grant_type %q not allowed", grantType), s.getLogger(r.Context()))
+				WriteError(w, r, protocol.ErrUnauthorizedClient().WithDescription("grant_type %q not allowed", grantType), s.getLogger(r.Context()))
 				return
 			}
 		}
@@ -184,28 +185,28 @@ func (s *webServer) verifyRequestClient(r *http.Request) (_ Client, err error) {
 
 func (s *webServer) parseClientCredentials(r *http.Request) (_ *ClientCredentials, err error) {
 	if err := r.ParseForm(); err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 	cc := new(ClientCredentials)
 	if err = s.decoder.Decode(cc, r.Form); err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
 	}
 	// Basic auth takes precedence, so if set it overwrites the form data.
 	if clientID, clientSecret, ok := r.BasicAuth(); ok {
 		cc.ClientID, err = url.QueryUnescape(clientID)
 		if err != nil {
-			return nil, oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return nil, protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 		cc.ClientSecret, err = url.QueryUnescape(clientSecret)
 		if err != nil {
-			return nil, oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return nil, protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 	}
 	if cc.ClientID == "" && cc.ClientAssertion == "" {
-		return nil, oidc.ErrInvalidRequest().WithDescription("client_id or client_assertion must be provided")
+		return nil, protocol.ErrInvalidRequest().WithDescription("client_id or client_assertion must be provided")
 	}
 	if cc.ClientAssertion != "" && cc.ClientAssertionType != oidc.ClientAssertionTypeJWTAssertion {
-		return nil, oidc.ErrInvalidRequest().WithDescription("invalid client_assertion_type %s", cc.ClientAssertionType)
+		return nil, protocol.ErrInvalidRequest().WithDescription("invalid client_assertion_type %s", cc.ClientAssertionType)
 	}
 	return cc, nil
 }
@@ -271,7 +272,7 @@ func (s *webServer) pushedAuthRequestHandler(w http.ResponseWriter, r *http.Requ
 
 func (s *webServer) tokensHandler(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), s.getLogger(r.Context()))
 		return
 	}
 
@@ -289,7 +290,7 @@ func (s *webServer) tokensHandler(w http.ResponseWriter, r *http.Request) {
 	case oidc.GrantTypeDeviceCode:
 		s.withClient(s.deviceTokenHandler)(w, r)
 	case "":
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("grant_type missing"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("grant_type missing"), s.getLogger(r.Context()))
 	default:
 		WriteError(w, r, unimplementedGrantError(grantType), s.getLogger(r.Context()))
 	}
@@ -302,7 +303,7 @@ func (s *webServer) jwtProfileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.Assertion == "" {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("assertion missing"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("assertion missing"), s.getLogger(r.Context()))
 		return
 	}
 	resp, err := s.server.JWTProfile(r.Context(), newRequest(r, request))
@@ -320,11 +321,11 @@ func (s *webServer) codeExchangeHandler(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if request.Code == "" {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("code missing"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("code missing"), s.getLogger(r.Context()))
 		return
 	}
 	if request.RedirectURI == "" {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("redirect_uri missing"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("redirect_uri missing"), s.getLogger(r.Context()))
 		return
 	}
 	resp, err := s.server.CodeExchange(r.Context(), newClientRequest(r, request, client))
@@ -342,7 +343,7 @@ func (s *webServer) refreshTokenHandler(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if request.RefreshToken == "" {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("refresh_token missing"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("refresh_token missing"), s.getLogger(r.Context()))
 		return
 	}
 	resp, err := s.server.RefreshToken(r.Context(), newClientRequest(r, request, client))
@@ -360,23 +361,23 @@ func (s *webServer) tokenExchangeHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if request.SubjectToken == "" {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("subject_token missing"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("subject_token missing"), s.getLogger(r.Context()))
 		return
 	}
 	if request.SubjectTokenType == "" {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("subject_token_type missing"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("subject_token_type missing"), s.getLogger(r.Context()))
 		return
 	}
 	if !request.SubjectTokenType.IsSupported() {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("subject_token_type is not supported"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("subject_token_type is not supported"), s.getLogger(r.Context()))
 		return
 	}
 	if request.RequestedTokenType != "" && !request.RequestedTokenType.IsSupported() {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("requested_token_type is not supported"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("requested_token_type is not supported"), s.getLogger(r.Context()))
 		return
 	}
 	if request.ActorTokenType != "" && !request.ActorTokenType.IsSupported() {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("actor_token_type is not supported"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("actor_token_type is not supported"), s.getLogger(r.Context()))
 		return
 	}
 	resp, err := s.server.TokenExchange(r.Context(), newClientRequest(r, request, client))
@@ -388,8 +389,8 @@ func (s *webServer) tokenExchangeHandler(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *webServer) clientCredentialsHandler(w http.ResponseWriter, r *http.Request, client Client) {
-	if client.AuthMethod() == oidc.AuthMethodNone {
-		WriteError(w, r, oidc.ErrInvalidClient().WithDescription("client must be authenticated"), s.getLogger(r.Context()))
+	if client.AuthMethod() == protocol.AuthMethodNone {
+		WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client must be authenticated"), s.getLogger(r.Context()))
 		return
 	}
 
@@ -413,7 +414,7 @@ func (s *webServer) deviceTokenHandler(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 	if request.DeviceCode == "" {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("device_code missing"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("device_code missing"), s.getLogger(r.Context()))
 		return
 	}
 	resp, err := s.server.DeviceToken(r.Context(), newClientRequest(r, request, client))
@@ -431,7 +432,7 @@ func (s *webServer) introspectionHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if cc.ClientSecret == "" && cc.ClientAssertion == "" {
-		WriteError(w, r, oidc.ErrInvalidClient().WithDescription("client must be authenticated"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client must be authenticated"), s.getLogger(r.Context()))
 		return
 	}
 	request, err := decodeRequest[oidc.IntrospectionRequest](s.decoder, r, false)
@@ -440,7 +441,7 @@ func (s *webServer) introspectionHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if request.Token == "" {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("token missing"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("token missing"), s.getLogger(r.Context()))
 		return
 	}
 	resp, err := s.server.Introspect(r.Context(), newRequest(r, &IntrospectionRequest{cc, request}))
@@ -462,7 +463,7 @@ func (s *webServer) userInfoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if request.AccessToken == "" {
 		err = NewStatusError(
-			oidc.ErrInvalidRequest().WithDescription("access token missing"),
+			protocol.ErrInvalidRequest().WithDescription("access token missing"),
 			http.StatusUnauthorized,
 		)
 		WriteError(w, r, err, s.getLogger(r.Context()))
@@ -483,7 +484,7 @@ func (s *webServer) revocationHandler(w http.ResponseWriter, r *http.Request, cl
 		return
 	}
 	if request.Token == "" {
-		WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("token missing"), s.getLogger(r.Context()))
+		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("token missing"), s.getLogger(r.Context()))
 		return
 	}
 	resp, err := s.server.Revocation(r.Context(), newClientRequest(r, request, client))
@@ -511,7 +512,7 @@ func (s *webServer) endSessionHandler(w http.ResponseWriter, r *http.Request) {
 func simpleHandler(s *webServer, method func(context.Context, *Request[struct{}]) (*Response, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
-			WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), s.getLogger(r.Context()))
+			WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), s.getLogger(r.Context()))
 			return
 		}
 		resp, err := method(r.Context(), newRequest(r, &struct{}{}))
@@ -526,14 +527,14 @@ func simpleHandler(s *webServer, method func(context.Context, *Request[struct{}]
 func decodeRequest[R any](decoder httphelper.Decoder, r *http.Request, postOnly bool) (*R, error) {
 	dst := new(R)
 	if err := r.ParseForm(); err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 	form := r.Form
 	if postOnly {
 		form = r.PostForm
 	}
 	if err := decoder.Decode(dst, form); err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
 	}
 	return dst, nil
 }

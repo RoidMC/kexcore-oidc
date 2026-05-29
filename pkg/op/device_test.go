@@ -23,6 +23,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/example/server/storage"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -364,7 +365,7 @@ func TestCheckDeviceAuthorizationState(t *testing.T) {
 				Scopes:   []string{"foo"},
 				Expires:  now.Add(time.Minute),
 			},
-			wantErr: oidc.ErrAuthorizationPending(),
+			wantErr: protocol.ErrAuthorizationPending(),
 		},
 		{
 			name: "slow down",
@@ -373,7 +374,7 @@ func TestCheckDeviceAuthorizationState(t *testing.T) {
 				clientID:   "native",
 				deviceCode: "ok",
 			},
-			wantErr: oidc.ErrSlowDown(),
+			wantErr: protocol.ErrSlowDown(),
 		},
 		{
 			name: "wrong client",
@@ -382,7 +383,7 @@ func TestCheckDeviceAuthorizationState(t *testing.T) {
 				clientID:   "foo",
 				deviceCode: "ok",
 			},
-			wantErr: oidc.ErrAccessDenied(),
+			wantErr: protocol.ErrAccessDenied(),
 		},
 		{
 			name: "denied",
@@ -397,7 +398,7 @@ func TestCheckDeviceAuthorizationState(t *testing.T) {
 				Expires:  now.Add(time.Minute),
 				Denied:   true,
 			},
-			wantErr: oidc.ErrAccessDenied(),
+			wantErr: protocol.ErrAccessDenied(),
 		},
 		{
 			name: "completed",
@@ -426,7 +427,7 @@ func TestCheckDeviceAuthorizationState(t *testing.T) {
 				Scopes:   []string{"foo"},
 				Expires:  now.Add(-time.Minute),
 			},
-			wantErr: oidc.ErrExpiredDeviceCode(),
+			wantErr: protocol.ErrExpiredDeviceCode(),
 		},
 	}
 	for _, tt := range tests {

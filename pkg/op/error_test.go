@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zitadel/schema"
@@ -59,25 +60,25 @@ func TestAuthRequestError(t *testing.T) {
 					State:        "state1",
 					ResponseMode: oidc.ResponseModeQuery,
 				},
-				err: oidc.ErrInteractionRequired().WithDescription("sign in"),
+				err: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
 			wantCode: http.StatusBadRequest,
 			wantBody: "sign in\n",
 			wantLog: `{
-				"level":"WARN",
-				"msg":"auth request: not redirecting",
-				"time":"not",
-				"auth_request":{
-					"client_id":"123",
-					"redirect_uri":"",
-					"response_type":"responseType",
-					"scopes":"a b"
-				},
-				"oidc_error":{
-					"description":"sign in",
-					"type":"interaction_required"
-				}
-			}`,
+			"level":"WARN",
+			"msg":"auth request: not redirecting",
+			"time":"not",
+			"auth_request":{
+				"client_id":"123",
+				"redirect_uri":"",
+				"response_type":"responseType",
+				"scopes":"a b"
+			},
+			"oidc_error":{
+				"description":"sign in",
+				"type":"interaction_required"
+			}
+		}`,
 		},
 		{
 			name: "auth request, redirect disabled",
@@ -90,7 +91,7 @@ func TestAuthRequestError(t *testing.T) {
 					State:        "state1",
 					ResponseMode: oidc.ResponseModeQuery,
 				},
-				err: oidc.ErrInvalidRequestRedirectURI().WithDescription("oops"),
+				err: protocol.ErrInvalidRequestRedirectURI().WithDescription("oops"),
 			},
 			wantCode: http.StatusBadRequest,
 			wantBody: "oops\n",
@@ -122,7 +123,7 @@ func TestAuthRequestError(t *testing.T) {
 					State:        "state1",
 					ResponseMode: oidc.ResponseModeQuery,
 				},
-				err: oidc.ErrInteractionRequired().WithDescription("sign in"),
+				err: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
 			wantCode: http.StatusBadRequest,
 			wantBody: "ErrorType=server_error Parent=parse \"can't parse this!\\n\": net/url: invalid control character in URL\n",
@@ -157,7 +158,7 @@ func TestAuthRequestError(t *testing.T) {
 					State:        "state1",
 					ResponseMode: oidc.ResponseModeQuery,
 				},
-				err: oidc.ErrInteractionRequired().WithDescription("sign in"),
+				err: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
 			wantCode:    http.StatusFound,
 			wantHeaders: map[string]string{"Location": "http://example.com/callback?error=interaction_required&error_description=sign+in&state=state1"},
@@ -238,7 +239,7 @@ func TestRequestError(t *testing.T) {
 		},
 		{
 			name:     "invalid request",
-			err:      oidc.ErrInvalidRequest().WithDescription("missing param"),
+			err:      protocol.ErrInvalidRequest().WithDescription("missing param"),
 			wantCode: http.StatusBadRequest,
 			wantBody: `{"error":"invalid_request", "error_description":"missing param"}`,
 			wantLog: `{
@@ -252,7 +253,7 @@ func TestRequestError(t *testing.T) {
 		},
 		{
 			name:     "invalid client",
-			err:      oidc.ErrInvalidClient().WithDescription("not good"),
+			err:      protocol.ErrInvalidClient().WithDescription("not good"),
 			wantCode: http.StatusUnauthorized,
 			wantBody: `{"error":"invalid_client", "error_description":"not good"}`,
 			wantLog: `{
@@ -336,9 +337,9 @@ func TestTryErrorRedirect(t *testing.T) {
 					State:        "state1",
 					ResponseMode: oidc.ResponseModeQuery,
 				},
-				parent: oidc.ErrInteractionRequired().WithDescription("sign in"),
+				parent: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
-			wantErr: NewStatusError(oidc.ErrInteractionRequired().WithDescription("sign in"), http.StatusBadRequest),
+			wantErr: NewStatusError(protocol.ErrInteractionRequired().WithDescription("sign in"), http.StatusBadRequest),
 			wantLog: `{
 				"level":"WARN",
 				"msg":"auth request: not redirecting",
@@ -367,9 +368,9 @@ func TestTryErrorRedirect(t *testing.T) {
 					State:        "state1",
 					ResponseMode: oidc.ResponseModeQuery,
 				},
-				parent: oidc.ErrInvalidRequestRedirectURI().WithDescription("oops"),
+				parent: protocol.ErrInvalidRequestRedirectURI().WithDescription("oops"),
 			},
-			wantErr: NewStatusError(oidc.ErrInvalidRequestRedirectURI().WithDescription("oops"), http.StatusBadRequest),
+			wantErr: NewStatusError(protocol.ErrInvalidRequestRedirectURI().WithDescription("oops"), http.StatusBadRequest),
 			wantLog: `{
 				"level":"WARN",
 				"msg":"auth request: not redirecting",
@@ -399,12 +400,12 @@ func TestTryErrorRedirect(t *testing.T) {
 					State:        "state1",
 					ResponseMode: oidc.ResponseModeQuery,
 				},
-				parent: oidc.ErrInteractionRequired().WithDescription("sign in"),
+				parent: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
 			wantErr: func() error {
 				//lint:ignore SA1007 just recreating the error for testing
 				_, err := url.Parse("can't parse this!\n")
-				err = oidc.ErrServerError().WithParent(err)
+				err = protocol.ErrServerError().WithParent(err)
 				return NewStatusError(err, http.StatusBadRequest)
 			}(),
 			wantLog: `{
@@ -439,7 +440,7 @@ func TestTryErrorRedirect(t *testing.T) {
 					State:        "state1",
 					ResponseMode: oidc.ResponseModeQuery,
 				},
-				parent: oidc.ErrInteractionRequired().WithDescription("sign in"),
+				parent: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
 			want: &Redirect{
 				Header: make(http.Header),
@@ -633,7 +634,7 @@ func TestWriteError(t *testing.T) {
 		},
 		{
 			name:       "oidc error w/o status",
-			err:        oidc.ErrInvalidRequest().WithDescription("oops"),
+			err:        protocol.ErrInvalidRequest().WithDescription("oops"),
 			wantStatus: http.StatusBadRequest,
 			wantBody: `{
 				"error":"invalid_request",
@@ -652,10 +653,10 @@ func TestWriteError(t *testing.T) {
 		},
 		{
 			name: "status with oidc error",
-			err: NewStatusError(
-				oidc.ErrUnauthorizedClient().WithDescription("oops"),
-				http.StatusUnauthorized,
-			),
+		err: NewStatusError(
+			protocol.ErrUnauthorizedClient().WithDescription("oops"),
+			http.StatusUnauthorized,
+		),
 			wantStatus: http.StatusUnauthorized,
 			wantBody: `{
 				"error":"unauthorized_client",

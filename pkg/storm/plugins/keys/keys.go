@@ -33,7 +33,7 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the JWKS endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"jwks_uri": shared.IssuerFromContext(ctx) + "/.well-known/jwks.json",
+		"jwks_uri": shared.IssuerURL(ctx, "/.well-known/jwks.json"),
 	}
 }
 

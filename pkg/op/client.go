@@ -14,6 +14,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 //go:generate go get github.com/dmarkham/enumer
@@ -42,7 +43,7 @@ type Client interface {
 	RedirectURIs() []string
 	PostLogoutRedirectURIs() []string
 	ApplicationType() ApplicationType
-	AuthMethod() oidc.AuthMethod
+	AuthMethod() protocol.AuthMethod
 	ResponseTypes() []oidc.ResponseType
 	GrantTypes() []oidc.GrantType
 	LoginURL(string) string
@@ -143,12 +144,12 @@ func ClientJWTAuth(ctx context.Context, ca oidc.ClientAssertionParams, verifier 
 	defer span.End()
 
 	if ca.ClientAssertion == "" {
-		return "", oidc.ErrInvalidClient().WithParent(ErrNoClientCredentials)
+		return "", protocol.ErrInvalidClient().WithParent(ErrNoClientCredentials)
 	}
 
 	profile, err := VerifyJWTAssertion(ctx, ca.ClientAssertion, verifier.JWTProfileVerifier(ctx))
 	if err != nil {
-		return "", oidc.ErrUnauthorizedClient().WithParent(err).WithDescription("JWT assertion failed")
+		return "", protocol.ErrUnauthorizedClient().WithParent(err).WithDescription("JWT assertion failed")
 	}
 	return profile.Issuer, nil
 }
@@ -160,18 +161,18 @@ func ClientBasicAuth(r *http.Request, storage Storage) (clientID string, err err
 
 	clientID, clientSecret, ok := r.BasicAuth()
 	if !ok {
-		return "", oidc.ErrInvalidClient().WithParent(ErrNoClientCredentials)
+		return "", protocol.ErrInvalidClient().WithParent(ErrNoClientCredentials)
 	}
 	clientID, err = url.QueryUnescape(clientID)
 	if err != nil {
-		return "", oidc.ErrInvalidClient().WithParent(ErrInvalidAuthHeader)
+		return "", protocol.ErrInvalidClient().WithParent(ErrInvalidAuthHeader)
 	}
 	clientSecret, err = url.QueryUnescape(clientSecret)
 	if err != nil {
-		return "", oidc.ErrInvalidClient().WithParent(ErrInvalidAuthHeader)
+		return "", protocol.ErrInvalidClient().WithParent(ErrInvalidAuthHeader)
 	}
 	if err := storage.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
-		return "", oidc.ErrUnauthorizedClient().WithParent(err)
+		return "", protocol.ErrUnauthorizedClient().WithParent(err)
 	}
 	return clientID, nil
 }
@@ -202,7 +203,7 @@ type clientData struct {
 func ClientIDFromRequest(r *http.Request, p ClientProvider) (clientID string, authenticated bool, err error) {
 	err = r.ParseForm()
 	if err != nil {
-		return "", false, oidc.ErrInvalidRequest().WithDescription("cannot parse form").WithParent(err)
+		return "", false, protocol.ErrInvalidRequest().WithDescription("cannot parse form").WithParent(err)
 	}
 
 	ctx, span := Tracer.Start(r.Context(), "ClientIDFromRequest")
@@ -235,7 +236,7 @@ func ClientIDFromRequest(r *http.Request, p ClientProvider) (clientID string, au
 
 	// if the client did not authenticate (public clients) it must at least send a client_id
 	if data.ClientID == "" {
-		return "", false, oidc.ErrInvalidClient().WithParent(ErrMissingClientID)
+		return "", false, protocol.ErrInvalidClient().WithParent(ErrMissingClientID)
 	}
 	return data.ClientID, false, nil
 }

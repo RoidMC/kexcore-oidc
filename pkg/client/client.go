@@ -17,6 +17,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/internal/otel"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"golang.org/x/oauth2"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
@@ -35,11 +36,11 @@ type ClientSecretBasicAuthRequest interface {
 
 // Discover calls the discovery endpoint of the provided issuer and returns its configuration
 // It accepts an optional argument "wellknownUrl" which can be used to override the discovery endpoint url
-func Discover(ctx context.Context, issuer string, httpClient *http.Client, wellKnownUrl ...string) (*oidc.DiscoveryConfiguration, error) {
+func Discover(ctx context.Context, issuer string, httpClient *http.Client, wellKnownUrl ...string) (*protocol.DiscoveryConfiguration, error) {
 	ctx, span := Tracer.Start(ctx, "Discover")
 	defer span.End()
 
-	wellKnown := strings.TrimSuffix(issuer, "/") + oidc.DiscoveryEndpoint
+	wellKnown := strings.TrimSuffix(issuer, "/") + protocol.DiscoveryEndpoint
 	if len(wellKnownUrl) == 1 && wellKnownUrl[0] != "" {
 		wellKnown = wellKnownUrl[0]
 	}
@@ -47,17 +48,17 @@ func Discover(ctx context.Context, issuer string, httpClient *http.Client, wellK
 	if err != nil {
 		return nil, err
 	}
-	discoveryConfig := new(oidc.DiscoveryConfiguration)
+	discoveryConfig := new(protocol.DiscoveryConfiguration)
 	err = httphelper.HttpRequest(httpClient, req, &discoveryConfig)
 	if err != nil {
-		return nil, errors.Join(oidc.ErrDiscoveryFailed, err)
+		return nil, errors.Join(protocol.ErrDiscoveryFailed, err)
 	}
 	if logger, ok := logctx.FromContext(ctx); ok {
 		logger.Debug("discover", "config", discoveryConfig)
 	}
 
 	if discoveryConfig.Issuer != issuer {
-		return nil, oidc.ErrIssuerInvalid
+		return nil, protocol.ErrIssuerInvalid
 	}
 	return discoveryConfig, nil
 }
@@ -317,14 +318,14 @@ func PollDeviceAccessTokenEndpoint(ctx context.Context, interval time.Duration, 
 		if errors.Is(err, context.DeadlineExceeded) {
 			interval += 5 * time.Second
 		}
-		var target *oidc.Error
+		var target *protocol.Error
 		if !errors.As(err, &target) {
 			return nil, err
 		}
 		switch target.ErrorType {
-		case oidc.AuthorizationPending:
+		case protocol.AuthorizationPending:
 			continue
-		case oidc.SlowDown:
+		case protocol.SlowDown:
 			interval += 5 * time.Second
 			continue
 		default:

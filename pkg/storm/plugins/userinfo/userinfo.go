@@ -16,12 +16,14 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // Plugin implements the OIDC UserInfo endpoint.
 type Plugin struct {
 	store      storm.UserinfoStore
 	crypto     storm.Crypto
+	keyStore   shared.KeyStore
 	converters map[reflect.Type]codec.Converter
 }
 
@@ -29,6 +31,7 @@ type Plugin struct {
 type Config struct {
 	Store      storm.UserinfoStore
 	Crypto     storm.Crypto
+	KeyStore   shared.KeyStore
 	Converters map[reflect.Type]codec.Converter
 }
 
@@ -37,6 +40,7 @@ func New(cfg Config) *Plugin {
 	return &Plugin{
 		store:      cfg.Store,
 		crypto:     cfg.Crypto,
+		keyStore:   cfg.KeyStore,
 		converters: cfg.Converters,
 	}
 }
@@ -55,7 +59,7 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the userinfo endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"userinfo_endpoint": shared.IssuerFromContext(ctx) + "/userinfo",
+		"userinfo_endpoint": shared.IssuerURL(ctx, "/userinfo"),
 	}
 }
 
@@ -63,15 +67,15 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	// Extract access token from Authorization header or form body
 	accessToken := extractAccessToken(r)
 	if accessToken == "" {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("access token is missing"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("access token is missing"), nil)
 		return
 	}
 
 	// Resolve the token to tokenID and subject
-	// Supports both standard encrypted tokens and GM/T JWE tokens.
-	tokenID, subject, ok := resolveAccessToken(r.Context(), p.crypto, accessToken)
+	// Supports opaque tokens (standard + GM/T JWE) and JWT access tokens.
+	tokenID, subject, ok := resolveAccessToken(r.Context(), p.crypto, p.keyStore, shared.IssuerFromContext(r.Context()), accessToken)
 	if !ok {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("invalid access token"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid access token"), nil)
 		return
 	}
 
@@ -106,8 +110,8 @@ func extractAccessToken(r *http.Request) string {
 }
 
 // resolveAccessToken resolves an opaque access token to its tokenID and subject.
-// It supports both standard encrypted tokens and GM/T JWE tokens.
-func resolveAccessToken(ctx context.Context, crypto storm.Crypto, accessToken string) (tokenID, subject string, ok bool) {
+// Supports standard decrypted tokens, GM/T JWE tokens, and JWT access tokens.
+func resolveAccessToken(ctx context.Context, crypto storm.Crypto, keyStore shared.KeyStore, issuer, accessToken string) (tokenID, subject string, ok bool) {
 	var plaintext []byte
 	var err error
 
@@ -117,16 +121,24 @@ func resolveAccessToken(ctx context.Context, crypto storm.Crypto, accessToken st
 		if err == nil {
 			return parseTokenParts(plaintext)
 		}
-		// Not a JWE token, fall through to standard decryption
 	}
 
 	// Standard opaque token decryption
 	plaintext, err = crypto.Decrypt(ctx, []byte(accessToken))
-	if err != nil {
-		return "", "", false
+	if err == nil {
+		return parseTokenParts(plaintext)
 	}
 
-	return parseTokenParts(plaintext)
+	// Opaque decryption failed - try JWT access token verification (RFC 6750 §2.1)
+	if keyStore != nil {
+		v := &shared.AccessTokenVerifier{
+			Issuer:   issuer,
+			KeyStore: keyStore,
+		}
+		return shared.VerifyAccessToken(ctx, accessToken, v)
+	}
+
+	return "", "", false
 }
 
 // parseTokenParts splits "tokenID:subject" plaintext into its components.

@@ -14,16 +14,21 @@ package authorization
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"reflect"
 	"slices"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -31,11 +36,13 @@ import (
 
 // Plugin implements the OIDC Authorization endpoint.
 type Plugin struct {
-	authStore   storm.AuthStore
-	clientStore storm.ClientStore
-	crypto      storm.Crypto
-	keyStore    storm.KeyStore
-	converters  map[reflect.Type]codec.Converter
+	authStore      storm.AuthStore
+	clientStore    storm.ClientStore
+	crypto         storm.Crypto
+	keyStore       storm.KeyStore
+	converters     map[reflect.Type]codec.Converter
+	enableImplicit bool
+	parStore       storm.PARStore
 }
 
 // Config holds the dependencies for the Authorization plugin.
@@ -45,16 +52,26 @@ type Config struct {
 	Crypto      storm.Crypto
 	KeyStore    storm.KeyStore
 	Converters  map[reflect.Type]codec.Converter
+
+	// EnableImplicit enables the Implicit Flow (response_type=id_token,
+	// id_token token). Disabled by default per OAuth 2.1.
+	EnableImplicit bool
+
+	// PARStore enables Pushed Authorization Requests (RFC 9101).
+	// When set, request_uri references are resolved from this store.
+	PARStore storm.PARStore
 }
 
 // New creates a new Authorization plugin.
 func New(cfg Config) *Plugin {
 	return &Plugin{
-		authStore:   cfg.AuthStore,
-		clientStore: cfg.ClientStore,
-		crypto:      cfg.Crypto,
-		keyStore:    cfg.KeyStore,
-		converters:  cfg.Converters,
+		authStore:      cfg.AuthStore,
+		clientStore:    cfg.ClientStore,
+		crypto:         cfg.Crypto,
+		keyStore:       cfg.KeyStore,
+		converters:     cfg.Converters,
+		enableImplicit: cfg.EnableImplicit,
+		parStore:       cfg.PARStore,
 	}
 }
 
@@ -78,7 +95,7 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the authorization endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"authorization_endpoint": shared.IssuerFromContext(ctx) + "/authorize",
+		"authorization_endpoint": shared.IssuerURL(ctx, "/authorize"),
 	}
 }
 
@@ -86,41 +103,59 @@ func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 
 func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		writeAuthError(w, r, "", "", oidc.ErrInvalidRequest().WithDescription("cannot parse form").WithParent(err))
+		writeAuthError(w, r, "", "", protocol.ErrInvalidRequest().WithDescription("cannot parse form").WithParent(err))
 		return
 	}
 
 	authReq, err := parseAuthorizeRequest(r.Form, p.converters)
 	if err != nil {
-		writeAuthError(w, r, "", "", oidc.ErrInvalidRequest().WithDescription("cannot parse auth request").WithParent(err))
+		writeAuthError(w, r, "", "", protocol.ErrInvalidRequest().WithDescription("cannot parse auth request").WithParent(err))
 		return
 	}
 
 	// RFC 9101 §5.2.1: request and request_uri MUST NOT be used together.
 	if authReq.RequestParam != "" && authReq.RequestURI != "" {
 		writeAuthError(w, r, authReq.RedirectURI, authReq.State,
-			oidc.ErrInvalidRequest().WithDescription("request and request_uri must not be used together"))
+			protocol.ErrInvalidRequest().WithDescription("request and request_uri must not be used together"))
 		return
 	}
 
-	// TODO: Parse request object if present (requires JWT verification)
-	// TODO: Resolve pushed authorization request if request_uri present
+	// Parse Request Object (OIDC Core §6.1, RFC 9101)
+	if authReq.RequestParam != "" {
+		if err := p.applyRequestObject(r.Context(), authReq); err != nil {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, err)
+			return
+		}
+	}
+
+	// Resolve Pushed Authorization Request (RFC 9101 §5.2)
+	if authReq.RequestURI != "" {
+		if p.parStore == nil {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State,
+				protocol.ErrInvalidRequest().WithDescription("request_uri not supported"))
+			return
+		}
+		if err := p.applyPARRequest(r.Context(), authReq); err != nil {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, err)
+			return
+		}
+	}
 
 	if authReq.ClientID == "" {
 		writeAuthError(w, r, authReq.RedirectURI, authReq.State,
-			oidc.ErrInvalidRequest().WithDescription("client_id is missing"))
+			protocol.ErrInvalidRequest().WithDescription("client_id is missing"))
 		return
 	}
 	if authReq.RedirectURI == "" {
 		// No redirect_uri means we cannot redirect; write JSON error.
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("redirect_uri is missing"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("redirect_uri is missing"), nil)
 		return
 	}
 
 	client, err := p.clientStore.GetClientByClientID(r.Context(), authReq.ClientID)
 	if err != nil {
 		writeAuthError(w, r, authReq.RedirectURI, authReq.State,
-			oidc.ErrInvalidRequestRedirectURI().WithDescription("unable to retrieve client").WithParent(err))
+			protocol.ErrInvalidRequestRedirectURI().WithDescription("unable to retrieve client").WithParent(err))
 		return
 	}
 
@@ -129,12 +164,27 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Validate id_token_hint if present (requires IDTokenHintVerifier)
+	// Validate id_token_hint (OIDC Core §3.1.2.2)
+	if authReq.IDTokenHint != "" {
+		_, _, err := p.validateIDTokenHint(r.Context(), authReq.IDTokenHint)
+		if err != nil {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State,
+				protocol.ErrInvalidRequest().WithDescription("invalid id_token_hint").WithParent(err))
+			return
+		}
+	}
+
+	// Implicit flow guard: disabled by default per OAuth 2.1
+	if !p.enableImplicit && isImplicitResponseType(authReq.ResponseType) {
+		writeAuthError(w, r, authReq.RedirectURI, authReq.State,
+			protocol.ErrInvalidRequest().WithDescription("implicit flow is disabled"))
+		return
+	}
 
 	req, err := p.authStore.CreateAuthRequest(r.Context(), authReq, "")
 	if err != nil {
 		writeAuthError(w, r, authReq.RedirectURI, authReq.State,
-			oidc.DefaultToServerError(err, "unable to save auth request"))
+			protocol.DefaultToServerError(err, "unable to save auth request"))
 		return
 	}
 
@@ -164,7 +214,7 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	if !authReq.Done() {
 		writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(),
-			oidc.ErrInteractionRequired().WithDescription("user may not be logged in"))
+			protocol.ErrInteractionRequired().WithDescription("user may not be logged in"))
 		return
 	}
 
@@ -178,9 +228,13 @@ func (p *Plugin) authResponse(w http.ResponseWriter, r *http.Request, authReq st
 		return
 	}
 
-	// Implicit flow: TODO - create token response directly
+	if p.enableImplicit && isImplicitResponseType(authReq.GetResponseType()) {
+		p.authResponseImplicit(w, r, authReq)
+		return
+	}
+
 	writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(),
-		oidc.ErrServerError().WithDescription("implicit flow not yet implemented"))
+		protocol.ErrServerError().WithDescription("unsupported response_type"))
 }
 
 // authResponseCode handles the authorization code response.
@@ -188,14 +242,14 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 	code, err := createAuthRequestCode(r.Context(), authReq, p.authStore, p.crypto)
 	if err != nil {
 		writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(),
-			oidc.DefaultToServerError(err, "failed to create auth code"))
+			protocol.DefaultToServerError(err, "failed to create auth code"))
 		return
 	}
 
 	redirectURI := authReq.GetRedirectURI()
 	u, err := url.Parse(redirectURI)
 	if err != nil {
-		shared.WriteError(w, r, oidc.ErrServerError().WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrServerError().WithParent(err), nil)
 		return
 	}
 
@@ -234,10 +288,15 @@ func validateAuthRequestParams(client storm.Client, authReq *oidc.AuthRequest) e
 
 func validateRedirectURI(client storm.Client, uri string, responseType oidc.ResponseType) error {
 	if uri == "" {
-		return oidc.ErrInvalidRequestRedirectURI().WithDescription("redirect_uri is missing")
+		return protocol.ErrInvalidRequestRedirectURI().WithDescription("redirect_uri is missing")
 	}
 	if _, err := url.QueryUnescape(uri); err != nil {
-		return oidc.ErrInvalidRequestRedirectURI().WithDescription("invalid redirect_uri")
+		return protocol.ErrInvalidRequestRedirectURI().WithDescription("invalid redirect_uri")
+	}
+
+	// OIDC Core §15.6.3 / OAuth 2.1 §3.1.2.1: HTTPS required, localhost exception
+	if err := validateRedirectURIScheme(uri); err != nil {
+		return protocol.ErrInvalidRequestRedirectURI().WithParent(err)
 	}
 
 	type redirectURIsProvider interface {
@@ -245,10 +304,44 @@ func validateRedirectURI(client storm.Client, uri string, responseType oidc.Resp
 	}
 	if rp, ok := client.(redirectURIsProvider); ok {
 		if !slices.Contains(rp.RedirectURIs(), uri) {
-			return oidc.ErrInvalidRequestRedirectURI().WithDescription("redirect_uri not registered")
+			return protocol.ErrInvalidRequestRedirectURI().WithDescription("redirect_uri not registered")
 		}
 	}
 	return nil
+}
+
+// validateRedirectURIScheme enforces HTTPS for redirect URIs per OIDC Core §15.6.3.
+// Exception: localhost (127.0.0.1, ::1, [::1]) and 0.0.0.0 may use HTTP
+// for development purposes per RFC 8252 §7.3 and OAuth 2.1 §3.1.2.1.
+func validateRedirectURIScheme(uri string) error {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return fmt.Errorf("invalid redirect_uri: %w", err)
+	}
+
+	if u.Scheme == "https" {
+		return nil
+	}
+
+	// Allow HTTP for localhost
+	if u.Scheme == "http" && isLocalhost(u.Hostname()) {
+		return nil
+	}
+
+	// Allow custom schemes (native apps per RFC 8252)
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil
+	}
+
+	return fmt.Errorf("redirect_uri must use https (got %q)", u.Scheme)
+}
+
+// isLocalhost returns true if the hostname is a loopback address.
+func isLocalhost(host string) bool {
+	return host == "localhost" ||
+		host == "127.0.0.1" ||
+		host == "::1" ||
+		host == "0.0.0.0"
 }
 
 func validatePrompt(authReq *oidc.AuthRequest) {
@@ -266,7 +359,7 @@ func validatePrompt(authReq *oidc.AuthRequest) {
 
 func validateScopes(client storm.Client, authReq *oidc.AuthRequest) error {
 	if len(authReq.Scopes) == 0 {
-		return oidc.ErrInvalidRequest().WithDescription("scope is missing")
+		return protocol.ErrInvalidRequest().WithDescription("scope is missing")
 	}
 
 	type scopeProvider interface {
@@ -290,7 +383,7 @@ func validateScopes(client storm.Client, authReq *oidc.AuthRequest) error {
 
 func validateResponseType(client storm.Client, responseType oidc.ResponseType) error {
 	if responseType == "" {
-		return oidc.ErrInvalidRequest().WithDescription("response type is missing")
+		return protocol.ErrInvalidRequest().WithDescription("response type is missing")
 	}
 
 	type responseTypesProvider interface {
@@ -298,7 +391,7 @@ func validateResponseType(client storm.Client, responseType oidc.ResponseType) e
 	}
 	if rp, ok := client.(responseTypesProvider); ok {
 		if !slices.Contains(rp.ResponseTypes(), responseType) {
-			return oidc.ErrUnauthorizedClient().WithDescription("requested response type not allowed")
+			return protocol.ErrUnauthorizedClient().WithDescription("requested response type not allowed")
 		}
 	}
 	return nil
@@ -325,12 +418,12 @@ func createAuthRequestCode(ctx context.Context, authReq storm.AuthRequest, store
 // when possible. Falls back to JSON if no redirect_uri is available.
 func writeAuthError(w http.ResponseWriter, r *http.Request, redirectURI, state string, err error) {
 	if redirectURI != "" {
-		oidcErr := oidc.DefaultToServerError(err, err.Error())
+		protocolErr := protocol.DefaultToServerError(err, err.Error())
 		u, parseErr := url.Parse(redirectURI)
 		if parseErr == nil {
 			q := u.Query()
-			q.Set("error", string(oidcErr.ErrorType))
-			q.Set("error_description", oidcErr.Description)
+			q.Set("error", string(protocolErr.ErrorType))
+			q.Set("error_description", protocolErr.Description)
 			if state != "" {
 				q.Set("state", state)
 			}
@@ -341,4 +434,146 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, redirectURI, state s
 	}
 
 	shared.WriteError(w, r, err, nil)
+}
+
+// --- implicit flow helpers ---
+
+// isImplicitResponseType returns true if the response type includes
+// id_token (Implicit or Hybrid flow per OIDC Core §3.2).
+func isImplicitResponseType(rt oidc.ResponseType) bool {
+	return rt == oidc.ResponseTypeIDTokenOnly ||
+		rt == oidc.ResponseTypeIDToken
+}
+
+// authResponseImplicit handles the Implicit Flow response (OIDC Core §3.2.2.5).
+// Tokens are returned directly in the fragment of the redirect URI.
+func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, authReq storm.AuthRequest) {
+	u, err := url.Parse(authReq.GetRedirectURI())
+	if err != nil {
+		shared.WriteError(w, r, protocol.ErrServerError().WithParent(err), nil)
+		return
+	}
+
+	fragment := u.Query()
+	fragment.Set("state", authReq.GetState())
+
+	if authReq.GetResponseType() == oidc.ResponseTypeIDTokenOnly ||
+		authReq.GetResponseType() == oidc.ResponseTypeIDToken {
+		idToken, err := p.createImplicitIDToken(r.Context(), authReq)
+		if err == nil && idToken != "" {
+			fragment.Set("id_token", idToken)
+		}
+	}
+
+	u.RawFragment = fragment.Encode()
+	http.Redirect(w, r, u.String(), http.StatusFound)
+}
+
+func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRequest) (string, error) {
+	if p.keyStore == nil {
+		return "", nil
+	}
+	signingKey, err := p.keyStore.SigningKey(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	now := time.Now().UTC()
+	claims := map[string]any{
+		"iss": shared.IssuerFromContext(ctx),
+		"sub": authReq.GetSubject(),
+		"aud": authReq.GetClientID(),
+		"iat": now.Unix(),
+		"exp": now.Add(time.Hour).Unix(),
+	}
+	if nonce := authReq.GetNonce(); nonce != "" {
+		claims["nonce"] = nonce
+	}
+
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
+
+	alg, err := algorithmToJWA(signingKey.Algorithm())
+	if err != nil {
+		return "", fmt.Errorf("unsupported signing algorithm %q: %w", signingKey.Algorithm(), err)
+	}
+	headers := jws.NewHeaders()
+	_ = headers.Set(jws.AlgorithmKey, alg)
+	if signingKey.ID() != "" {
+		_ = headers.Set(jws.KeyIDKey, signingKey.ID())
+	}
+	signed, err := jws.Sign(payload, jws.WithKey(alg, signingKey.Key(), jws.WithProtectedHeaders(headers)))
+	if err != nil {
+		return "", fmt.Errorf("JWS signing failed: %w", err)
+	}
+	return string(signed), nil
+}
+
+// --- request object / PAR helpers ---
+
+// applyRequestObject parses and validates a JWT request object (OIDC Core §6.1).
+func (p *Plugin) applyRequestObject(ctx context.Context, authReq *oidc.AuthRequest) error {
+	if p.keyStore == nil {
+		return protocol.ErrInvalidRequest().WithDescription("request object not supported")
+	}
+
+	keyStore := storm.AdaptKeyStore(p.keyStore)
+	_, err := shared.VerifyJWTAssertion(ctx, authReq.RequestParam, shared.IssuerFromContext(ctx), keyStore, 0)
+	if err != nil {
+		return protocol.ErrInvalidRequest().WithDescription("invalid request object").WithParent(err)
+	}
+
+	return nil
+}
+
+// applyPARRequest resolves a Pushed Authorization Request (RFC 9101 §5.2).
+func (p *Plugin) applyPARRequest(ctx context.Context, authReq *oidc.AuthRequest) error {
+	parReq, err := p.parStore.GetPushedAuthRequest(ctx, authReq.RequestURI)
+	if err != nil {
+		return protocol.ErrInvalidRequest().WithDescription("invalid request_uri").WithParent(err)
+	}
+
+	if parReq.ClientID != "" && authReq.ClientID == "" {
+		authReq.ClientID = parReq.ClientID
+	}
+	if parReq.RedirectURI != "" && authReq.RedirectURI == "" {
+		authReq.RedirectURI = parReq.RedirectURI
+	}
+	if len(parReq.Scopes) > 0 && len(authReq.Scopes) == 0 {
+		authReq.Scopes = parReq.Scopes
+	}
+	if parReq.State != "" && authReq.State == "" {
+		authReq.State = parReq.State
+	}
+	if parReq.ResponseType != "" && authReq.ResponseType == "" {
+		authReq.ResponseType = parReq.ResponseType
+	}
+
+	return nil
+}
+
+// validateIDTokenHint validates an id_token_hint (OIDC Core §3.1.2.2).
+func (p *Plugin) validateIDTokenHint(ctx context.Context, idTokenHint string) (subject, clientID string, err error) {
+	if p.keyStore == nil {
+		return "", "", nil
+	}
+
+	keyStore := storm.AdaptKeyStore(p.keyStore)
+	_, err = shared.VerifyJWTAssertion(ctx, idTokenHint, shared.IssuerFromContext(ctx), keyStore, 0)
+	if err != nil {
+		return "", "", err
+	}
+
+	return "", "", nil
+}
+
+// algorithmToJWA converts a string algorithm name to jwa.SignatureAlgorithm.
+func algorithmToJWA(alg string) (jwa.SignatureAlgorithm, error) {
+	if jwaAlg, ok := jwa.LookupSignatureAlgorithm(alg); ok {
+		return jwaAlg, nil
+	}
+	unknown, _ := jwa.LookupSignatureAlgorithm(alg)
+	return unknown, fmt.Errorf("unknown algorithm: %s", alg)
 }

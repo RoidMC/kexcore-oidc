@@ -9,6 +9,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type ErrAuthRequest interface {
@@ -27,7 +28,7 @@ type LogAuthRequest interface {
 }
 
 func AuthRequestError(w http.ResponseWriter, r *http.Request, authReq ErrAuthRequest, err error, authorizer Authorizer) {
-	e := oidc.DefaultToServerError(err, err.Error())
+	e := protocol.DefaultToServerError(err, err.Error())
 	logger := authorizer.Logger().With("oidc_error", e)
 
 	if authReq == nil {
@@ -67,12 +68,12 @@ func AuthRequestError(w http.ResponseWriter, r *http.Request, authReq ErrAuthReq
 }
 
 func RequestError(w http.ResponseWriter, r *http.Request, err error, logger *slog.Logger) {
-	e := oidc.DefaultToServerError(err, err.Error())
+	e := protocol.DefaultToServerError(err, err.Error())
 	status := http.StatusBadRequest
-	if e.ErrorType == oidc.InvalidClient {
+	if e.ErrorType == protocol.InvalidClient {
 		status = http.StatusUnauthorized
 	}
-	if e.ErrorType == oidc.ServerError {
+	if e.ErrorType == protocol.ServerError {
 		status = http.StatusInternalServerError
 	}
 	logger.Log(r.Context(), e.LogLevel(), "request error", "oidc_error", e)
@@ -83,7 +84,7 @@ func RequestError(w http.ResponseWriter, r *http.Request, err error, logger *slo
 // If this attempt fails, an error is returned that must be returned
 // to the client instead.
 func TryErrorRedirect(ctx context.Context, authReq ErrAuthRequest, parent error, encoder httphelper.Encoder, logger *slog.Logger) (*Redirect, error) {
-	e := oidc.DefaultToServerError(parent, parent.Error())
+	e := protocol.DefaultToServerError(parent, parent.Error())
 	logger = logger.With("oidc_error", e)
 
 	if authReq == nil {
@@ -128,14 +129,14 @@ type StatusError struct {
 }
 
 // NewStatusError sets the parent and statusCode to a new StatusError.
-// It is recommended for parent to be an [oidc.Error].
+// It is recommended for parent to be a [protocol.Error].
 //
 // Typically, implementations should only use this to signal something
 // very specific, like an internal server error.
 // If a returned error is not a StatusError, the framework
 // will set a statusCode based on what the standard specifies,
 // which is [http.StatusBadRequest] for most of the time.
-// If the encountered error can be clearly described by an [oidc.Error],
+// If the encountered error can be clearly described by a [protocol.Error],
 // do not use this function, as it might break standard rules!
 func NewStatusError(parent error, statusCode int) StatusError {
 	return StatusError{
@@ -172,29 +173,29 @@ func (e StatusError) Is(err error) bool {
 		e.statusCode == target.statusCode
 }
 
-// WriteError asserts for a [StatusError] containing an [oidc.Error].
+// WriteError asserts for a [StatusError] containing a [protocol.Error].
 // If no `StatusError` is found, the status code will default to [http.StatusBadRequest].
-// If no `oidc.Error` was found in the parent, the error type defaults to [oidc.ServerError].
-// When there was no `StatusError` and the `oidc.Error` is of type `oidc.ServerError`,
+// If no `protocol.Error` was found in the parent, the error type defaults to [protocol.ServerError].
+// When there was no `StatusError` and the `protocol.Error` is of type [protocol.ServerError],
 // the status code will be set to [http.StatusInternalServerError]
 func WriteError(w http.ResponseWriter, r *http.Request, err error, logger *slog.Logger) {
 	var statusError StatusError
 	if errors.As(err, &statusError) {
 		writeError(w, r,
-			oidc.DefaultToServerError(statusError.parent, statusError.parent.Error()),
+			protocol.DefaultToServerError(statusError.parent, statusError.parent.Error()),
 			statusError.statusCode, logger,
 		)
 		return
 	}
 	statusCode := http.StatusBadRequest
-	e := oidc.DefaultToServerError(err, err.Error())
-	if e.ErrorType == oidc.ServerError {
+	e := protocol.DefaultToServerError(err, err.Error())
+	if e.ErrorType == protocol.ServerError {
 		statusCode = http.StatusInternalServerError
 	}
 	writeError(w, r, e, statusCode, logger)
 }
 
-func writeError(w http.ResponseWriter, r *http.Request, err *oidc.Error, statusCode int, logger *slog.Logger) {
+func writeError(w http.ResponseWriter, r *http.Request, err *protocol.Error, statusCode int, logger *slog.Logger) {
 	logger.Log(r.Context(), err.LogLevel(), "request error", "oidc_error", err, "status_code", statusCode)
 	httphelper.MarshalJSONWithStatus(w, err, statusCode)
 }

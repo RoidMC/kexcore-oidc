@@ -6,12 +6,15 @@ package endsession
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"reflect"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -21,7 +24,11 @@ import (
 type Plugin struct {
 	store            storm.SessionStore
 	clientStore      storm.ClientStore
+	keyStore         shared.KeyStore
 	defaultLogoutURI string
+	offset           time.Duration
+	maxAgeIAT        time.Duration
+	maxAge           time.Duration
 	converters       map[reflect.Type]codec.Converter
 }
 
@@ -29,8 +36,18 @@ type Plugin struct {
 type Config struct {
 	Store            storm.SessionStore
 	ClientStore      storm.ClientStore
+	KeyStore         shared.KeyStore
 	DefaultLogoutURI string
-	Converters       map[reflect.Type]codec.Converter
+	// Offset is the clock skew tolerance for token validation (default: 0).
+	Offset time.Duration
+	// MaxAgeIAT is the maximum allowed age of the id_token_hint's iat claim.
+	// Per OIDC Session Management §5, expired tokens can still be trusted for logout.
+	// Set to 0 to disable iat_max_age checking.
+	MaxAgeIAT time.Duration
+	// MaxAge is the maximum allowed time since auth_time.
+	// Set to 0 to disable auth_time max_age checking.
+	MaxAge     time.Duration
+	Converters map[reflect.Type]codec.Converter
 }
 
 // New creates a new EndSession plugin.
@@ -38,7 +55,11 @@ func New(cfg Config) *Plugin {
 	return &Plugin{
 		store:            cfg.Store,
 		clientStore:      cfg.ClientStore,
+		keyStore:         cfg.KeyStore,
 		defaultLogoutURI: cfg.DefaultLogoutURI,
+		offset:           cfg.Offset,
+		maxAgeIAT:        cfg.MaxAgeIAT,
+		maxAge:           cfg.MaxAge,
 		converters:       cfg.Converters,
 	}
 }
@@ -57,23 +78,23 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the end_session endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"end_session_endpoint": shared.IssuerFromContext(ctx) + "/end_session",
+		"end_session_endpoint": shared.IssuerURL(ctx, "/end_session"),
 	}
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
 		return
 	}
 
 	req, err := parseEndSessionRequest(r.Form, p.converters)
 	if err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err), nil)
 		return
 	}
 
-	session, err := validateEndSessionRequest(r.Context(), req)
+	session, err := validateEndSessionRequest(r.Context(), req, p)
 	if err != nil {
 		shared.WriteError(w, r, err, nil)
 		return
@@ -81,7 +102,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 	// Terminate the session
 	if err := p.store.TerminateSession(r.Context(), session.UserID, session.ClientID); err != nil {
-		shared.WriteError(w, r, oidc.DefaultToServerError(err, "error terminating session"), nil)
+		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error terminating session"), nil)
 		return
 	}
 
@@ -102,16 +123,80 @@ func parseEndSessionRequest(form map[string][]string, converters map[reflect.Typ
 	return req, nil
 }
 
-func validateEndSessionRequest(ctx context.Context, req *oidc.EndSessionRequest) (*storm.EndSessionRequest, error) {
+func validateEndSessionRequest(ctx context.Context, req *oidc.EndSessionRequest, p *Plugin) (*storm.EndSessionRequest, error) {
 	session := &storm.EndSessionRequest{}
 
-	// TODO: Validate id_token_hint if present (requires IDTokenHintVerifier)
-	// TODO: Validate post_logout_redirect_uri against client configuration
-	// TODO: Extract client_id and validate
+	// Validate id_token_hint per OIDC Session Management §5.
+	// If present, extract the subject and validate client binding.
+	// Expired tokens are treated as non-fatal - the claims can still
+	// be trusted for logout purposes if signature validation passes.
+	if req.IdTokenHint != "" {
+		if p.keyStore == nil {
+			return nil, protocol.ErrInvalidRequest().WithDescription("id_token_hint provided but IdTokenHintVerifier not configured")
+		}
+
+		v := &shared.IDTokenHintVerifier{
+			Issuer:    shared.IssuerFromContext(ctx),
+			KeyStore:  p.keyStore,
+			Offset:    p.offset,
+			MaxAgeIAT: p.maxAgeIAT,
+			MaxAge:    p.maxAge,
+		}
+		claims, err := shared.VerifyIDTokenHint(ctx, req.IdTokenHint, v)
+		if err != nil {
+			var expired *shared.IDTokenHintExpiredError
+			if !errors.As(err, &expired) {
+				return nil, protocol.ErrInvalidRequest().WithDescription("invalid id_token_hint").WithParent(err)
+			}
+		}
+
+		if claims != nil {
+			session.UserID = claims.Subject
+			session.ClientID = claims.ClientID
+			session.IDTokenHintClaims = claims
+		}
+	}
+
+	// Validate requested client_id binding.
+	if req.ClientID != "" {
+		if session.ClientID != "" && req.ClientID != session.ClientID {
+			return nil, protocol.ErrInvalidRequest().WithDescription("client_id does not match id_token_hint aud")
+		}
+		session.ClientID = req.ClientID
+	}
+
+	// Validate post_logout_redirect_uri against client configuration.
+	if req.PostLogoutRedirectURI != "" && session.ClientID != "" {
+		if p.clientStore != nil {
+			client, err := p.clientStore.GetClientByClientID(ctx, session.ClientID)
+			if err != nil {
+				return nil, protocol.ErrInvalidRequest().WithDescription("invalid client_id").WithParent(err)
+			}
+			session.RedirectURI = validatePostLogoutRedirectURI(client, req.PostLogoutRedirectURI)
+		} else {
+			session.RedirectURI = req.PostLogoutRedirectURI
+		}
+	}
 
 	if req.State != "" {
 		// State will be included in the redirect
 	}
 
 	return session, nil
+}
+
+// validatePostLogoutRedirectURI checks if the given URI is valid for the client.
+// Returns the validated URI or empty string if validation fails.
+func validatePostLogoutRedirectURI(client storm.Client, uri string) string {
+	type postLogoutRedirectURIsProvider interface {
+		PostLogoutRedirectURIs() []string
+	}
+	if p, ok := client.(postLogoutRedirectURIsProvider); ok {
+		for _, u := range p.PostLogoutRedirectURIs() {
+			if u == uri {
+				return uri
+			}
+		}
+	}
+	return ""
 }

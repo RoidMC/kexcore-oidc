@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 func TestDCR_RegistrationEndpoint(t *testing.T) {
@@ -197,7 +197,7 @@ func TestDCR_Discovery_RegistrationEndpoint(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var discovery oidc.DiscoveryConfiguration
+	var discovery protocol.DiscoveryConfiguration
 	err := json.Unmarshal(w.Body.Bytes(), &discovery)
 	require.NoError(t, err)
 

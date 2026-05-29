@@ -17,6 +17,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // Plugin implements the Token Introspection endpoint.
@@ -24,6 +25,7 @@ type Plugin struct {
 	store       storm.IntrospectStore
 	clientStore storm.ClientStore
 	crypto      storm.Crypto
+	keyStore    shared.KeyStore
 	converters  map[reflect.Type]codec.Converter
 }
 
@@ -32,6 +34,7 @@ type Config struct {
 	Store       storm.IntrospectStore
 	ClientStore storm.ClientStore
 	Crypto      storm.Crypto
+	KeyStore    shared.KeyStore
 	Converters  map[reflect.Type]codec.Converter
 }
 
@@ -41,6 +44,7 @@ func New(cfg Config) *Plugin {
 		store:       cfg.Store,
 		clientStore: cfg.ClientStore,
 		crypto:      cfg.Crypto,
+		keyStore:    cfg.KeyStore,
 		converters:  cfg.Converters,
 	}
 }
@@ -58,13 +62,13 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the introspection endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"introspection_endpoint": shared.IssuerFromContext(ctx) + "/introspect",
+		"introspection_endpoint": shared.IssuerURL(ctx, "/introspect"),
 	}
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
 		return
 	}
 
@@ -74,18 +78,18 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		var err error
 		clientID, err = url.QueryUnescape(id)
 		if err != nil {
-			shared.WriteError(w, r, oidc.ErrInvalidClient().WithDescription("invalid basic auth header"), nil)
+			shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("invalid basic auth header"), nil)
 			return
 		}
 		clientSecret, err = url.QueryUnescape(secret)
 		if err != nil {
-			shared.WriteError(w, r, oidc.ErrInvalidClient().WithDescription("invalid basic auth header"), nil)
+			shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("invalid basic auth header"), nil)
 			return
 		}
 	}
 
 	if clientID == "" {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithDescription("client authentication required"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client authentication required"), nil)
 		return
 	}
 
@@ -96,13 +100,13 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 	token := r.Form.Get("token")
 	if token == "" {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("token is missing"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("token is missing"), nil)
 		return
 	}
 
 	// Resolve token to tokenID and subject
-	// Supports both standard encrypted tokens and GM/T JWE tokens.
-	tokenID, subject, ok := resolveToken(r.Context(), p.crypto, token)
+	// Supports opaque tokens (standard + GM/T JWE) and JWT access tokens.
+	tokenID, subject, ok := resolveToken(r.Context(), p.crypto, p.keyStore, shared.IssuerFromContext(r.Context()), token)
 	if !ok {
 		// Return inactive token response per RFC 7662 §2.2
 		shared.JSONResponse(w, &oidc.IntrospectionResponse{Active: false}, http.StatusOK)
@@ -119,8 +123,8 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveToken resolves an opaque token to its tokenID and subject.
-// It supports both standard encrypted tokens and GM/T JWE tokens.
-func resolveToken(ctx context.Context, crypto storm.Crypto, token string) (tokenID, subject string, ok bool) {
+// Supports standard decrypted tokens, GM/T JWE tokens, and JWT access tokens.
+func resolveToken(ctx context.Context, crypto storm.Crypto, keyStore shared.KeyStore, issuer, token string) (tokenID, subject string, ok bool) {
 	var plaintext []byte
 	var err error
 
@@ -130,16 +134,24 @@ func resolveToken(ctx context.Context, crypto storm.Crypto, token string) (token
 		if err == nil {
 			return parseTokenParts(plaintext)
 		}
-		// Not a JWE token, fall through to standard decryption
 	}
 
 	// Standard opaque token decryption
 	plaintext, err = crypto.Decrypt(ctx, []byte(token))
-	if err != nil {
-		return "", "", false
+	if err == nil {
+		return parseTokenParts(plaintext)
 	}
 
-	return parseTokenParts(plaintext)
+	// Opaque decryption failed - try JWT access token verification (RFC 6750 §2.1)
+	if keyStore != nil {
+		v := &shared.AccessTokenVerifier{
+			Issuer:   issuer,
+			KeyStore: keyStore,
+		}
+		return shared.VerifyAccessToken(ctx, token, v)
+	}
+
+	return "", "", false
 }
 
 // parseTokenParts splits "tokenID:subject" plaintext into its components.

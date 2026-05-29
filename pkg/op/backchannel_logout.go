@@ -18,6 +18,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // BackChannelLogoutHandler receives and processes back-channel logout requests.
@@ -64,7 +65,7 @@ func BackChannelLogout(w http.ResponseWriter, r *http.Request, handler BackChann
 
 	// Validate that at least one of sub or sid is present.
 	if req.Subject == "" && req.SessionID == "" {
-		RequestError(w, r, oidc.ErrInvalidRequest().WithDescription("either sub or sid is required"), handler.Logger())
+		RequestError(w, r, protocol.ErrInvalidRequest().WithDescription("either sub or sid is required"), handler.Logger())
 		return
 	}
 
@@ -77,7 +78,7 @@ func BackChannelLogout(w http.ResponseWriter, r *http.Request, handler BackChann
 	// Terminate the session.
 	if err := handler.Storage().TerminateSession(ctx, req.Subject, ""); err != nil {
 		handler.Logger().ErrorContext(ctx, "failed to terminate session", "error", err)
-		RequestError(w, r, oidc.DefaultToServerError(err, "error terminating session"), handler.Logger())
+		RequestError(w, r, protocol.DefaultToServerError(err, "error terminating session"), handler.Logger())
 		return
 	}
 
@@ -97,12 +98,12 @@ type BackChannelLogoutRequest struct {
 func parseBackChannelLogoutRequest(r *http.Request, decoder httphelper.Decoder) (*BackChannelLogoutRequest, error) {
 	err := r.ParseForm()
 	if err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 	req := new(BackChannelLogoutRequest)
 	err = decoder.Decode(req, r.Form)
 	if err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
 	}
 	return req, nil
 }

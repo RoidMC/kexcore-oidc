@@ -20,9 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 func TestKeys(t *testing.T) {
@@ -63,7 +63,7 @@ func TestKeys(t *testing.T) {
 
 	t.Run("error", func(t *testing.T) {
 		m := mock.NewMockKeyProvider(gomock.NewController(t))
-		m.EXPECT().KeySet(gomock.Any()).Return(nil, oidc.ErrServerError())
+		m.EXPECT().KeySet(gomock.Any()).Return(nil, protocol.ErrServerError())
 
 		w := httptest.NewRecorder()
 		op.Keys(w, httptest.NewRequest("GET", "/keys", nil), m)

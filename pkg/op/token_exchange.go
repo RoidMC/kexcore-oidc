@@ -9,6 +9,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type TokenExchangeRequest interface {
@@ -161,25 +162,25 @@ func TokenExchange(w http.ResponseWriter, r *http.Request, exchanger Exchanger) 
 func ParseTokenExchangeRequest(r *http.Request, decoder httphelper.Decoder) (_ *oidc.TokenExchangeRequest, clientID, clientSecret string, err error) {
 	err = r.ParseForm()
 	if err != nil {
-		return nil, "", "", oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
+		return nil, "", "", protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 
 	request := new(oidc.TokenExchangeRequest)
 	err = decoder.Decode(request, r.Form)
 	if err != nil {
-		return nil, "", "", oidc.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
+		return nil, "", "", protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
 	}
 
 	var ok bool
 	if clientID, clientSecret, ok = r.BasicAuth(); ok {
 		clientID, err = url.QueryUnescape(clientID)
 		if err != nil {
-			return nil, "", "", oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return nil, "", "", protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 
 		clientSecret, err = url.QueryUnescape(clientSecret)
 		if err != nil {
-			return nil, "", "", oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return nil, "", "", protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 	}
 
@@ -198,11 +199,11 @@ func ValidateTokenExchangeRequest(
 	defer span.End()
 
 	if oidcTokenExchangeRequest.SubjectToken == "" {
-		return nil, nil, oidc.ErrInvalidRequest().WithDescription("subject_token missing")
+		return nil, nil, protocol.ErrInvalidRequest().WithDescription("subject_token missing")
 	}
 
 	if oidcTokenExchangeRequest.SubjectTokenType == "" {
-		return nil, nil, oidc.ErrInvalidRequest().WithDescription("subject_token_type missing")
+		return nil, nil, protocol.ErrInvalidRequest().WithDescription("subject_token_type missing")
 	}
 
 	client, err := AuthorizeTokenExchangeClient(ctx, clientID, clientSecret, exchanger)
@@ -211,15 +212,15 @@ func ValidateTokenExchangeRequest(
 	}
 
 	if oidcTokenExchangeRequest.RequestedTokenType != "" && !oidcTokenExchangeRequest.RequestedTokenType.IsSupported() {
-		return nil, nil, oidc.ErrInvalidRequest().WithDescription("requested_token_type is not supported")
+		return nil, nil, protocol.ErrInvalidRequest().WithDescription("requested_token_type is not supported")
 	}
 
 	if !oidcTokenExchangeRequest.SubjectTokenType.IsSupported() {
-		return nil, nil, oidc.ErrInvalidRequest().WithDescription("subject_token_type is not supported")
+		return nil, nil, protocol.ErrInvalidRequest().WithDescription("subject_token_type is not supported")
 	}
 
 	if oidcTokenExchangeRequest.ActorTokenType != "" && !oidcTokenExchangeRequest.ActorTokenType.IsSupported() {
-		return nil, nil, oidc.ErrInvalidRequest().WithDescription("actor_token_type is not supported")
+		return nil, nil, protocol.ErrInvalidRequest().WithDescription("actor_token_type is not supported")
 	}
 
 	req, err := CreateTokenExchangeRequest(ctx, oidcTokenExchangeRequest, client, exchanger)
@@ -246,7 +247,7 @@ func CreateTokenExchangeRequest(
 	exchangeSubjectTokenIDOrToken, exchangeSubject, exchangeSubjectTokenClaims, ok := GetTokenIDAndSubjectFromToken(ctx, exchanger,
 		oidcTokenExchangeRequest.SubjectToken, oidcTokenExchangeRequest.SubjectTokenType, false)
 	if !ok {
-		return nil, oidc.ErrInvalidRequest().WithDescription("subject_token is invalid")
+		return nil, protocol.ErrInvalidRequest().WithDescription("subject_token is invalid")
 	}
 
 	var (
@@ -257,7 +258,7 @@ func CreateTokenExchangeRequest(
 		exchangeActorTokenIDOrToken, exchangeActor, exchangeActorTokenClaims, ok = GetTokenIDAndSubjectFromToken(ctx, exchanger,
 			oidcTokenExchangeRequest.ActorToken, oidcTokenExchangeRequest.ActorTokenType, true)
 		if !ok {
-			return nil, oidc.ErrInvalidRequest().WithDescription("actor_token is invalid")
+			return nil, protocol.ErrInvalidRequest().WithDescription("actor_token is invalid")
 		}
 	}
 
@@ -360,7 +361,7 @@ func AuthorizeTokenExchangeClient(ctx context.Context, clientID, clientSecret st
 
 	client, err = exchanger.Storage().GetClientByClientID(ctx, clientID)
 	if err != nil {
-		return nil, oidc.ErrInvalidClient().WithParent(err)
+		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
 	return client, nil
@@ -400,7 +401,7 @@ func CreateTokenExchangeResponse(
 		// oidc.JWTTokenType and other custom token types are not supported for issuing.
 		// In the future it can be considered to have custom tokens generation logic injected via op configuration
 		// or via expanding Storage interface
-		oidc.ErrInvalidRequest().WithDescription("requested_token_type is invalid")
+		protocol.ErrInvalidRequest().WithDescription("requested_token_type is invalid")
 	}
 
 	exp := uint64(validity.Seconds())

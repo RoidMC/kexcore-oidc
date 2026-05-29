@@ -7,6 +7,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // ClientCredentialsExchange handles the OAuth 2.0 client_credentials grant, including
@@ -41,24 +42,24 @@ func ClientCredentialsExchange(w http.ResponseWriter, r *http.Request, exchanger
 func ParseClientCredentialsRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.ClientCredentialsRequest, error) {
 	err := r.ParseForm()
 	if err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 
 	request := new(oidc.ClientCredentialsRequest)
 	err = decoder.Decode(request, r.Form)
 	if err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
 	}
 
 	if clientID, clientSecret, ok := r.BasicAuth(); ok {
 		clientID, err = url.QueryUnescape(clientID)
 		if err != nil {
-			return nil, oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return nil, protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 
 		clientSecret, err = url.QueryUnescape(clientSecret)
 		if err != nil {
-			return nil, oidc.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
+			return nil, protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
 		}
 
 		request.ClientID = clientID
@@ -76,7 +77,7 @@ func ValidateClientCredentialsRequest(ctx context.Context, request *oidc.ClientC
 
 	storage, ok := exchanger.Storage().(ClientCredentialsStorage)
 	if !ok {
-		return nil, nil, oidc.ErrUnsupportedGrantType().WithDescription("client_credentials grant not supported")
+		return nil, nil, protocol.ErrUnsupportedGrantType().WithDescription("client_credentials grant not supported")
 	}
 
 	client, err := AuthorizeClientCredentialsClient(ctx, request, storage)
@@ -98,11 +99,11 @@ func AuthorizeClientCredentialsClient(ctx context.Context, request *oidc.ClientC
 
 	client, err := storage.ClientCredentials(ctx, request.ClientID, request.ClientSecret)
 	if err != nil {
-		return nil, oidc.ErrInvalidClient().WithParent(err)
+		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
 	if !ValidateGrantType(client, oidc.GrantTypeClientCredentials) {
-		return nil, oidc.ErrUnauthorizedClient()
+		return nil, protocol.ErrUnauthorizedClient()
 	}
 
 	return client, nil

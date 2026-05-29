@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // Ensure LegacyServer implements BackChannelLogoutHandler.
@@ -143,7 +144,7 @@ func (s *LegacyServer) VerifyAuthRequest(ctx context.Context, r *Request[oidc.Au
 
 	if r.Data.RequestParam != "" {
 		if !s.provider.RequestObjectSupported() {
-			return nil, oidc.ErrRequestNotSupported()
+			return nil, protocol.ErrRequestNotSupported()
 		}
 		err := ParseRequestObject(ctx, r.Data, s.provider.Storage(), IssuerFromContext(ctx))
 		if err != nil {
@@ -151,11 +152,11 @@ func (s *LegacyServer) VerifyAuthRequest(ctx context.Context, r *Request[oidc.Au
 		}
 	}
 	if r.Data.ClientID == "" {
-		return nil, oidc.ErrInvalidRequest().WithParent(ErrAuthReqMissingClientID).WithDescription(authReqMissingClientID)
+		return nil, protocol.ErrInvalidRequest().WithParent(ErrAuthReqMissingClientID).WithDescription(authReqMissingClientID)
 	}
 	client, err := s.provider.Storage().GetClientByClientID(ctx, r.Data.ClientID)
 	if err != nil {
-		return nil, oidc.DefaultToServerError(err, "unable to retrieve client by id")
+		return nil, protocol.DefaultToServerError(err, "unable to retrieve client by id")
 	}
 
 	return &ClientRequest[oidc.AuthRequest]{
@@ -174,7 +175,7 @@ func (s *LegacyServer) Authorize(ctx context.Context, r *ClientRequest[oidc.Auth
 	}
 	req, err := s.provider.Storage().CreateAuthRequest(ctx, r.Data, userID)
 	if err != nil {
-		return TryErrorRedirect(ctx, r.Data, oidc.DefaultToServerError(err, "unable to save auth request"), s.provider.Encoder(), s.provider.Logger())
+		return TryErrorRedirect(ctx, r.Data, protocol.DefaultToServerError(err, "unable to save auth request"), s.provider.Encoder(), s.provider.Logger())
 	}
 	return NewRedirect(r.Client.LoginURL(req.GetID())), nil
 }
@@ -198,20 +199,20 @@ func (s *LegacyServer) PushedAuthorizationRequest(ctx context.Context, r *Client
 	client := r.Client
 
 	if !s.provider.PushedAuthRequestSupported() {
-		return nil, oidc.ErrInvalidRequest().WithDescription("pushed authorization requests not supported")
+		return nil, protocol.ErrInvalidRequest().WithDescription("pushed authorization requests not supported")
 	}
 
 	parStorage, ok := s.provider.Storage().(PushedAuthRequestStorage)
 	if !ok {
-		return nil, oidc.ErrInvalidRequest().WithDescription("pushed authorization requests not supported")
+		return nil, protocol.ErrInvalidRequest().WithDescription("pushed authorization requests not supported")
 	}
 
-	if client.AuthMethod() == oidc.AuthMethodNone && authReq.ResponseType == oidc.ResponseTypeCode && authReq.CodeChallenge == "" {
-		return nil, oidc.ErrInvalidRequest().WithDescription("public clients must use PKCE (code_challenge) for pushed authorization requests with response_type=code")
+	if client.AuthMethod() == protocol.AuthMethodNone && authReq.ResponseType == oidc.ResponseTypeCode && authReq.CodeChallenge == "" {
+		return nil, protocol.ErrInvalidRequest().WithDescription("public clients must use PKCE (code_challenge) for pushed authorization requests with response_type=code")
 	}
 
 	if authReq.RedirectURI == "" {
-		return nil, oidc.ErrInvalidRequest().WithDescription("redirect_uri is required")
+		return nil, protocol.ErrInvalidRequest().WithDescription("redirect_uri is required")
 	}
 
 	if err := ValidateAuthRequestParams(client, authReq); err != nil {
@@ -220,7 +221,7 @@ func (s *LegacyServer) PushedAuthorizationRequest(ctx context.Context, r *Client
 
 	requestURI, err := parStorage.StorePushedAuthRequest(ctx, client.GetID(), authReq, DefaultPushedAuthRequestLifetime)
 	if err != nil {
-		return nil, oidc.ErrServerError().WithDescription("unable to store pushed authorization request").WithParent(err)
+		return nil, protocol.ErrServerError().WithDescription("unable to store pushed authorization request").WithParent(err)
 	}
 
 	expiresIn := int(DefaultPushedAuthRequestLifetime / time.Second)
@@ -238,7 +239,7 @@ func (s *LegacyServer) VerifyClient(ctx context.Context, r *Request[ClientCreden
 	if oidc.GrantType(r.Form.Get("grant_type")) == oidc.GrantTypeClientCredentials {
 		storage, ok := s.provider.Storage().(ClientCredentialsStorage)
 		if !ok {
-			return nil, oidc.ErrUnsupportedGrantType().WithDescription("client_credentials grant not supported")
+			return nil, protocol.ErrUnsupportedGrantType().WithDescription("client_credentials grant not supported")
 		}
 		return storage.ClientCredentials(ctx, r.Data.ClientID, r.Data.ClientSecret)
 	}
@@ -246,23 +247,23 @@ func (s *LegacyServer) VerifyClient(ctx context.Context, r *Request[ClientCreden
 	if r.Data.ClientAssertionType == oidc.ClientAssertionTypeJWTAssertion {
 		jwtExchanger, ok := s.provider.(JWTAuthorizationGrantExchanger)
 		if !ok || !s.provider.AuthMethodPrivateKeyJWTSupported() {
-			return nil, oidc.ErrInvalidClient().WithDescription("auth_method private_key_jwt not supported")
+			return nil, protocol.ErrInvalidClient().WithDescription("auth_method private_key_jwt not supported")
 		}
 		return AuthorizePrivateJWTKey(ctx, r.Data.ClientAssertion, jwtExchanger)
 	}
 	client, err := s.provider.Storage().GetClientByClientID(ctx, r.Data.ClientID)
 	if err != nil {
-		return nil, oidc.ErrInvalidClient().WithParent(err)
+		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
 	switch client.AuthMethod() {
-	case oidc.AuthMethodNone:
+	case protocol.AuthMethodNone:
 		return client, nil
-	case oidc.AuthMethodPrivateKeyJWT:
-		return nil, oidc.ErrInvalidClient().WithDescription("private_key_jwt not allowed for this client")
-	case oidc.AuthMethodPost:
+	case protocol.AuthMethodPrivateKeyJWT:
+		return nil, protocol.ErrInvalidClient().WithDescription("private_key_jwt not allowed for this client")
+	case protocol.AuthMethodPost:
 		if !s.provider.AuthMethodPostSupported() {
-			return nil, oidc.ErrInvalidClient().WithDescription("auth_method post not supported")
+			return nil, protocol.ErrInvalidClient().WithDescription("auth_method post not supported")
 		}
 	}
 
@@ -282,13 +283,13 @@ func (s *LegacyServer) CodeExchange(ctx context.Context, r *ClientRequest[oidc.A
 	if err != nil {
 		return nil, err
 	}
-	if r.Client.AuthMethod() == oidc.AuthMethodNone || r.Data.CodeVerifier != "" {
+	if r.Client.AuthMethod() == protocol.AuthMethodNone || r.Data.CodeVerifier != "" {
 		if err = AuthorizeCodeChallenge(r.Data.CodeVerifier, authReq.GetCodeChallenge()); err != nil {
 			return nil, err
 		}
 	}
 	if r.Data.RedirectURI != authReq.GetRedirectURI() {
-		return nil, oidc.ErrInvalidGrant().WithDescription("redirect_uri does not correspond")
+		return nil, protocol.ErrInvalidGrant().WithDescription("redirect_uri does not correspond")
 	}
 	resp, err := CreateTokenResponse(ctx, authReq, r.Client, s.provider, true, r.Data.Code, "")
 	if err != nil {
@@ -309,7 +310,7 @@ func (s *LegacyServer) RefreshToken(ctx context.Context, r *ClientRequest[oidc.R
 		return nil, err
 	}
 	if r.Client.GetID() != request.GetClientID() {
-		return nil, oidc.ErrInvalidGrant()
+		return nil, protocol.ErrInvalidGrant()
 	}
 	if err = ValidateRefreshTokenScopes(r.Data.Scopes, request); err != nil {
 		return nil, err
@@ -331,7 +332,7 @@ func (s *LegacyServer) JWTProfile(ctx context.Context, r *Request[oidc.JWTProfil
 	}
 	tokenRequest, err := VerifyJWTAssertion(ctx, r.Data.Assertion, exchanger.JWTProfileVerifier(ctx))
 	if err != nil {
-		return nil, oidc.ErrInvalidRequest().WithParent(err).WithDescription("assertion invalid")
+		return nil, protocol.ErrInvalidRequest().WithParent(err).WithDescription("assertion invalid")
 	}
 
 	tokenRequest.Scopes, err = exchanger.Storage().ValidateJWTProfileScopes(ctx, tokenRequest.Issuer, r.Data.Scope)
@@ -413,10 +414,10 @@ func (s *LegacyServer) authenticateResourceClient(ctx context.Context, cc *Clien
 		if jp, ok := s.provider.(ClientJWTProfile); ok {
 			return ClientJWTAuth(ctx, oidc.ClientAssertionParams{ClientAssertion: cc.ClientAssertion}, jp)
 		}
-		return "", oidc.ErrInvalidClient().WithDescription("client_assertion not supported")
+		return "", protocol.ErrInvalidClient().WithDescription("client_assertion not supported")
 	}
 	if err := s.provider.Storage().AuthorizeClientIDSecret(ctx, cc.ClientID, cc.ClientSecret); err != nil {
-		return "", oidc.ErrUnauthorizedClient().WithParent(err)
+		return "", protocol.ErrUnauthorizedClient().WithParent(err)
 	}
 	return cc.ClientID, nil
 }
@@ -448,7 +449,7 @@ func (s *LegacyServer) UserInfo(ctx context.Context, r *Request[oidc.UserInfoReq
 
 	tokenID, subject, ok := getTokenIDAndSubject(ctx, s.provider, r.Data.AccessToken)
 	if !ok {
-		return nil, NewStatusError(oidc.ErrAccessDenied().WithDescription("access token invalid"), http.StatusUnauthorized)
+		return nil, NewStatusError(protocol.ErrAccessDenied().WithDescription("access token invalid"), http.StatusUnauthorized)
 	}
 	info := new(oidc.UserInfo)
 	err := s.provider.Storage().SetUserinfoFromToken(ctx, info, tokenID, subject, r.Header.Get("origin"))
@@ -469,7 +470,7 @@ func (s *LegacyServer) Revocation(ctx context.Context, r *ClientRequest[oidc.Rev
 		if err != nil {
 			// An invalid refresh token means that we'll try other things (leaving doDecrypt==true)
 			if !errors.Is(err, ErrInvalidRefreshToken) {
-				return nil, RevocationError(oidc.ErrServerError().WithParent(err))
+				return nil, RevocationError(protocol.ErrServerError().WithParent(err))
 			}
 		} else {
 			r.Data.Token = tokenID

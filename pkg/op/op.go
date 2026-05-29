@@ -19,6 +19,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/roidmc/kexcore-oidc/internal/otel"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/rs/cors"
 	"github.com/zitadel/schema"
 	"golang.org/x/text/language"
@@ -145,7 +146,7 @@ func CreateRouter(o OpenIDProvider, interceptors ...HttpInterceptor) chi.Router 
 	router.Use(intercept(o.IssuerFromRequest, interceptors...))
 	router.HandleFunc(healthEndpoint, healthHandler)
 	router.HandleFunc(readinessEndpoint, readyHandler(o.Probes()))
-	router.HandleFunc(oidc.DiscoveryEndpoint, discoveryHandler(o, o.Storage()))
+	router.HandleFunc(protocol.DiscoveryEndpoint, discoveryHandler(o, o.Storage()))
 	router.HandleFunc(o.AuthorizationEndpoint().Relative(), authorizeHandler(o))
 	router.HandleFunc(authCallbackPath(o), AuthorizeCallbackHandler(o))
 	router.HandleFunc(o.TokenEndpoint().Relative(), tokenHandler(o))

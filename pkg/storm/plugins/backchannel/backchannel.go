@@ -6,10 +6,16 @@ package backchannel
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
@@ -78,14 +84,98 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 // PushLogoutTokens sends logout tokens to all RPs that have sessions
-// for the given subject and session ID.
-func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, subject, sid string) error {
+// for the given subject and session ID (OIDC Back-Channel Logout §2.5).
+func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer string, signingKey storm.SigningKey, subject, sid string) error {
 	clients, err := store.ClientsForSession(ctx, subject, sid)
 	if err != nil {
 		return err
 	}
 
-	// TODO: Create and send logout tokens to each client's backchannel_logout_uri
-	_ = clients
+	for _, client := range clients {
+		type backchannelURIProvider interface {
+			BackChannelLogoutURI() string
+		}
+		bc, ok := client.(backchannelURIProvider)
+		if !ok {
+			continue
+		}
+		uri := bc.BackChannelLogoutURI()
+		if uri == "" {
+			continue
+		}
+
+		logoutToken, err := createLogoutToken(issuer, subject, client.GetID(), sid, signingKey)
+		if err != nil {
+			continue
+		}
+
+		go sendLogoutToken(uri, logoutToken)
+	}
+
 	return nil
+}
+
+// createLogoutToken creates a logout token JWT (OIDC Back-Channel Logout §2.4).
+func createLogoutToken(issuer, subject, audience, sid string, signingKey storm.SigningKey) (string, error) {
+	if signingKey == nil {
+		return "", fmt.Errorf("no signing key available")
+	}
+
+	now := time.Now().UTC()
+	claims := map[string]any{
+		"iss": issuer,
+		"sub": subject,
+		"aud": audience,
+		"iat": now.Unix(),
+		"exp": now.Add(5 * time.Minute).Unix(),
+		"jti": fmt.Sprintf("lt_%d", now.UnixNano()),
+		"events": map[string]any{
+			"http://schemas.openid.net/event/backchannel-logout": map[string]any{},
+		},
+	}
+	if sid != "" {
+		claims["sid"] = sid
+	}
+
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
+
+	alg, err := algorithmToJWA(signingKey.Algorithm())
+	if err != nil {
+		return "", fmt.Errorf("unsupported signing algorithm %q: %w", signingKey.Algorithm(), err)
+	}
+	headers := jws.NewHeaders()
+	_ = headers.Set(jws.AlgorithmKey, alg)
+	if signingKey.ID() != "" {
+		_ = headers.Set(jws.KeyIDKey, signingKey.ID())
+	}
+	signed, err := jws.Sign(payload, jws.WithKey(alg, signingKey.Key(), jws.WithProtectedHeaders(headers)))
+	if err != nil {
+		return "", fmt.Errorf("JWS signing failed: %w", err)
+	}
+	return string(signed), nil
+}
+
+// sendLogoutToken sends a logout token to a client's backchannel_logout_uri.
+func sendLogoutToken(uri, logoutToken string) {
+	form := url.Values{}
+	form.Set("logout_token", logoutToken)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.PostForm(uri, form)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+}
+
+// algorithmToJWA converts a string algorithm name to jwa.SignatureAlgorithm.
+func algorithmToJWA(alg string) (jwa.SignatureAlgorithm, error) {
+	if jwaAlg, ok := jwa.LookupSignatureAlgorithm(alg); ok {
+		return jwaAlg, nil
+	}
+	unknown, _ := jwa.LookupSignatureAlgorithm(alg)
+	return unknown, fmt.Errorf("unknown algorithm: %s", alg)
 }

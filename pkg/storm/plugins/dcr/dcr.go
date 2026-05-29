@@ -6,13 +6,15 @@ package dcr
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"reflect"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -55,27 +57,26 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the registration endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"registration_endpoint": shared.IssuerFromContext(ctx) + "/register",
+		"registration_endpoint": shared.IssuerURL(ctx, "/register"),
 	}
 }
 
 func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var req storm.RegistrationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error decoding request body").WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding request body").WithParent(err), nil)
 		return
 	}
 
 	// Generate client credentials
-	// TODO: Use crypto for generating client_id and client_secret
 	clientID := generateClientID()
 	clientSecret := generateClientSecret()
 	accessToken := generateAccessToken()
-	uri := shared.IssuerFromContext(r.Context()) + "/register/" + clientID
+	uri := shared.IssuerURL(r.Context(), "/register/"+clientID)
 
 	reg, err := p.store.CreateClient(r.Context(), &req, clientID, clientSecret, accessToken, uri)
 	if err != nil {
-		shared.WriteError(w, r, oidc.DefaultToServerError(err, "error creating client"), nil)
+		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error creating client"), nil)
 		return
 	}
 
@@ -92,18 +93,18 @@ func (p *Plugin) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if token == "" {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithDescription("registration access token required"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("registration access token required"), nil)
 		return
 	}
 
 	reg, err := p.store.GetClientRegistrationByToken(r.Context(), token)
 	if err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
 		return
 	}
 
 	if reg.ClientID != clientID {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithDescription("client_id mismatch"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client_id mismatch"), nil)
 		return
 	}
 
@@ -119,30 +120,30 @@ func (p *Plugin) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if token == "" {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithDescription("registration access token required"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("registration access token required"), nil)
 		return
 	}
 
 	reg, err := p.store.GetClientRegistrationByToken(r.Context(), token)
 	if err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
 		return
 	}
 
 	if reg.ClientID != clientID {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithDescription("client_id mismatch"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client_id mismatch"), nil)
 		return
 	}
 
 	var req storm.RegistrationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidRequest().WithDescription("error decoding request body").WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding request body").WithParent(err), nil)
 		return
 	}
 
 	updated, err := p.store.UpdateClientRegistration(r.Context(), clientID, &req)
 	if err != nil {
-		shared.WriteError(w, r, oidc.DefaultToServerError(err, "error updating client"), nil)
+		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error updating client"), nil)
 		return
 	}
 
@@ -158,35 +159,35 @@ func (p *Plugin) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if token == "" {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithDescription("registration access token required"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("registration access token required"), nil)
 		return
 	}
 
 	reg, err := p.store.GetClientRegistrationByToken(r.Context(), token)
 	if err != nil {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithParent(err), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
 		return
 	}
 
 	if reg.ClientID != clientID {
-		shared.WriteError(w, r, oidc.ErrInvalidClient().WithDescription("client_id mismatch"), nil)
+		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client_id mismatch"), nil)
 		return
 	}
 
 	if err := p.store.DeleteClientRegistration(r.Context(), clientID); err != nil {
-		shared.WriteError(w, r, oidc.DefaultToServerError(err, "error deleting client"), nil)
+		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error deleting client"), nil)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// TODO: Replace with proper crypto-based generation
 func generateClientID() string     { return "client_" + randomHex(16) }
 func generateClientSecret() string { return "secret_" + randomHex(32) }
 func generateAccessToken() string  { return "token_" + randomHex(32) }
 
 func randomHex(n int) string {
-	// Placeholder - in production use crypto/rand
-	return "placeholder"
+	b := make([]byte, n)
+	rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
 }

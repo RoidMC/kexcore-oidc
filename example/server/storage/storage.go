@@ -27,6 +27,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // serviceKey1 is a public key which will be used for the JWT Profile Authorization Grant
@@ -373,7 +374,7 @@ func (s *Storage) CreateAuthRequest(ctx context.Context, authReq *oidc.AuthReque
 	if len(authReq.Prompt) == 1 && authReq.Prompt[0] == "none" {
 		// With prompt=none, there is no way for the user to log in
 		// so return error right away.
-		return nil, oidc.ErrLoginRequired()
+		return nil, protocol.ErrLoginRequired()
 	}
 
 	// typically, you'll fill your storage / storage model with the information of the passed object
@@ -567,14 +568,14 @@ func (s *Storage) GetRefreshTokenInfo(ctx context.Context, clientID string, toke
 
 // RevokeToken implements the op.Storage interface
 // it will be called after parsing and validation of the token revocation request
-func (s *Storage) RevokeToken(ctx context.Context, tokenIDOrToken string, userID string, clientID string) *oidc.Error {
+func (s *Storage) RevokeToken(ctx context.Context, tokenIDOrToken string, userID string, clientID string) *protocol.Error {
 	// a single token was requested to be removed
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	accessToken, ok := s.tokens[tokenIDOrToken] // tokenID
 	if ok {
 		if accessToken.ApplicationID != clientID {
-			return oidc.ErrInvalidClient().WithDescription("token was not issued for this client")
+			return protocol.ErrInvalidClient().WithDescription("token was not issued for this client")
 		}
 		// if it is an access token, just remove it
 		// you could also remove the corresponding refresh token if really necessary
@@ -588,7 +589,7 @@ func (s *Storage) RevokeToken(ctx context.Context, tokenIDOrToken string, userID
 		return nil
 	}
 	if refreshToken.ApplicationID != clientID {
-		return oidc.ErrInvalidClient().WithDescription("token was not issued for this client")
+		return protocol.ErrInvalidClient().WithDescription("token was not issued for this client")
 	}
 	delete(s.refreshTokens, refreshToken.ID)
 	// if it is a refresh token, you will have to remove the access token as well
@@ -1251,7 +1252,7 @@ func (s *Storage) CreateClient(ctx context.Context, req *op.RegistrationRequest,
 		secret:                         clientSecret,
 		redirectURIs:                   req.RedirectURIs,
 		applicationType:                op.ApplicationTypeWeb,
-		authMethod:                     oidc.AuthMethod(resolveAuthMethod(req.TokenEndpointAuthMethod)),
+		authMethod:                     protocol.AuthMethod(resolveAuthMethod(req.TokenEndpointAuthMethod)),
 		loginURL:                       defaultLoginURL,
 		responseTypes:                  convertResponseTypes(resolveResponseTypes(req.ResponseTypes)),
 		grantTypes:                     convertGrantTypes(resolveGrantTypes(req.GrantTypes)),
@@ -1372,7 +1373,7 @@ func (s *Storage) UpdateClientRegistration(ctx context.Context, clientID string,
 		client.postLogoutRedirectURIs = update.PostLogoutRedirectURIs
 		client.backChannelLogoutURI = update.BackChannelLogoutURI
 		if update.TokenEndpointAuthMethod != "" {
-			client.authMethod = oidc.AuthMethod(update.TokenEndpointAuthMethod)
+			client.authMethod = protocol.AuthMethod(update.TokenEndpointAuthMethod)
 		}
 	} else {
 		// If it doesn't exist, create it
@@ -1381,7 +1382,7 @@ func (s *Storage) UpdateClientRegistration(ctx context.Context, clientID string,
 			secret:                         registration.ClientSecret,
 			redirectURIs:                   update.RedirectURIs,
 			applicationType:                op.ApplicationTypeWeb,
-			authMethod:                     oidc.AuthMethod(resolveAuthMethod(update.TokenEndpointAuthMethod)),
+			authMethod:                     protocol.AuthMethod(resolveAuthMethod(update.TokenEndpointAuthMethod)),
 			loginURL:                       defaultLoginURL,
 			responseTypes:                  convertResponseTypes(resolveResponseTypes(update.ResponseTypes)),
 			grantTypes:                     convertGrantTypes(resolveGrantTypes(update.GrantTypes)),

@@ -8,6 +8,8 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
 // Storage is the minimal storage contract required by StormEngine.
@@ -36,7 +38,7 @@ type ClientStore interface {
 // Client is the minimal client interface.
 type Client interface {
 	GetID() string
-	AuthMethod() oidc.AuthMethod
+	AuthMethod() protocol.AuthMethod
 	LoginURL(id string) string
 }
 
@@ -171,7 +173,7 @@ type UserinfoStore interface {
 
 // RevocationStore is required by the Revocation plugin.
 type RevocationStore interface {
-	RevokeToken(ctx context.Context, tokenOrTokenID, userID, clientID string) *oidc.Error
+	RevokeToken(ctx context.Context, tokenOrTokenID, userID, clientID string) *protocol.Error
 	GetRefreshTokenInfo(ctx context.Context, clientID, token string) (userID, tokenID string, err error)
 }
 
@@ -287,6 +289,7 @@ type BackChannelStore interface {
 // PARStore is required by the Pushed Authorization Request plugin.
 type PARStore interface {
 	StorePushedAuthRequest(ctx context.Context, clientID string, req *oidc.AuthRequest, lifetime time.Duration) (requestURI string, err error)
+	GetPushedAuthRequest(ctx context.Context, requestURI string) (*oidc.AuthRequest, error)
 }
 
 // Crypto provides cryptographic operations for token encryption and signing.
@@ -344,3 +347,42 @@ type EndSessionRequest struct {
 	LogoutHint        string
 	UILocales         []language.Tag
 }
+
+// AdaptKeyStore converts a storm.KeyStore to a shared.KeyStore
+// for use in shared verifier functions. Both return slices of
+// different Key types, so each element must be adapted individually.
+func AdaptKeyStore(ks KeyStore) shared.KeyStore {
+	if ks == nil {
+		return nil
+	}
+	return &keyStoreBridge{inner: ks}
+}
+
+type keyStoreBridge struct {
+	inner KeyStore
+}
+
+func (b *keyStoreBridge) KeySet(ctx context.Context) ([]shared.Key, error) {
+	keys, err := b.inner.KeySet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]shared.Key, len(keys))
+	for i, k := range keys {
+		out[i] = &keyBridge{inner: k}
+	}
+	return out, nil
+}
+
+func (b *keyStoreBridge) SignatureAlgorithms(ctx context.Context) ([]string, error) {
+	return b.inner.SignatureAlgorithms(ctx)
+}
+
+type keyBridge struct {
+	inner Key
+}
+
+func (b *keyBridge) ID() string        { return b.inner.ID() }
+func (b *keyBridge) Algorithm() string { return b.inner.Algorithm() }
+func (b *keyBridge) Use() string       { return b.inner.Use() }
+func (b *keyBridge) Key() jwk.Key      { return b.inner.Key() }

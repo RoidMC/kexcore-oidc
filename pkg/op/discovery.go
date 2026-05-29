@@ -11,6 +11,8 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"golang.org/x/text/language"
 )
 
 type DiscoverStorage interface {
@@ -32,13 +34,13 @@ func discoveryHandler(c Configuration, s DiscoverStorage) func(http.ResponseWrit
 	}
 }
 
-func Discover(w http.ResponseWriter, config *oidc.DiscoveryConfiguration) {
+func Discover(w http.ResponseWriter, config *protocol.DiscoveryConfiguration) {
 	httphelper.MarshalJSON(w, config)
 }
 
-func CreateDiscoveryConfig(ctx context.Context, config Configuration, storage DiscoverStorage) *oidc.DiscoveryConfiguration {
+func CreateDiscoveryConfig(ctx context.Context, config Configuration, storage DiscoverStorage) *protocol.DiscoveryConfiguration {
 	issuer := IssuerFromContext(ctx)
-	return &oidc.DiscoveryConfiguration{
+	return &protocol.DiscoveryConfiguration{
 		Issuer:                                             issuer,
 		AuthorizationEndpoint:                              config.AuthorizationEndpoint().Absolute(issuer),
 		TokenEndpoint:                                      config.TokenEndpoint().Absolute(issuer),
@@ -46,7 +48,7 @@ func CreateDiscoveryConfig(ctx context.Context, config Configuration, storage Di
 		UserinfoEndpoint:                                   config.UserinfoEndpoint().Absolute(issuer),
 		RevocationEndpoint:                                 config.RevocationEndpoint().Absolute(issuer),
 		EndSessionEndpoint:                                 config.EndSessionEndpoint().Absolute(issuer),
-		JwksURI:                                            config.KeysEndpoint().Absolute(issuer),
+		JWKSURI:                                            config.KeysEndpoint().Absolute(issuer),
 		DeviceAuthorizationEndpoint:                        config.DeviceAuthorizationEndpoint().Absolute(issuer),
 		PushedAuthorizationRequestEndpoint:                 PushedAuthRequestEndpoint(config, issuer),
 		RequirePushedAuthorizationRequests:                 config.RequirePushedAuthorizationRequests(),
@@ -67,7 +69,7 @@ func CreateDiscoveryConfig(ctx context.Context, config Configuration, storage Di
 		RevocationEndpointAuthMethodsSupported:             AuthMethodsRevocationEndpoint(config),
 		ClaimsSupported:                                    SupportedClaims(config),
 		CodeChallengeMethodsSupported:                      CodeChallengeMethods(config),
-		UILocalesSupported:                                 config.SupportedUILocales(),
+		UILocalesSupported:                                 languageTagsToStrings(config.SupportedUILocales()),
 		RequestParameterSupported:                          config.RequestObjectSupported(),
 		RequestURIParameterSupported:                       config.PushedAuthRequestSupported(),
 		BackChannelLogoutSupported:                         config.BackChannelLogoutSupported(),
@@ -78,9 +80,9 @@ func CreateDiscoveryConfig(ctx context.Context, config Configuration, storage Di
 	}
 }
 
-func createDiscoveryConfigV2(ctx context.Context, config Configuration, storage DiscoverStorage, endpoints *Endpoints) *oidc.DiscoveryConfiguration {
+func createDiscoveryConfigV2(ctx context.Context, config Configuration, storage DiscoverStorage, endpoints *Endpoints) *protocol.DiscoveryConfiguration {
 	issuer := IssuerFromContext(ctx)
-	return &oidc.DiscoveryConfiguration{
+	return &protocol.DiscoveryConfiguration{
 		Issuer:                                             issuer,
 		AuthorizationEndpoint:                              endpoints.Authorization.Absolute(issuer),
 		TokenEndpoint:                                      endpoints.Token.Absolute(issuer),
@@ -88,7 +90,7 @@ func createDiscoveryConfigV2(ctx context.Context, config Configuration, storage 
 		UserinfoEndpoint:                                   endpoints.Userinfo.Absolute(issuer),
 		RevocationEndpoint:                                 endpoints.Revocation.Absolute(issuer),
 		EndSessionEndpoint:                                 endpoints.EndSession.Absolute(issuer),
-		JwksURI:                                            endpoints.JwksURI.Absolute(issuer),
+		JWKSURI:                                            endpoints.JwksURI.Absolute(issuer),
 		DeviceAuthorizationEndpoint:                        endpoints.DeviceAuthorization.Absolute(issuer),
 		PushedAuthorizationRequestEndpoint:                 PushedAuthRequestEndpoint(config, issuer),
 		RequirePushedAuthorizationRequests:                 config.RequirePushedAuthorizationRequests(),
@@ -108,7 +110,7 @@ func createDiscoveryConfigV2(ctx context.Context, config Configuration, storage 
 		RevocationEndpointAuthMethodsSupported:             AuthMethodsRevocationEndpoint(config),
 		ClaimsSupported:                                    SupportedClaims(config),
 		CodeChallengeMethodsSupported:                      CodeChallengeMethods(config),
-		UILocalesSupported:                                 config.SupportedUILocales(),
+		UILocalesSupported:                                 languageTagsToStrings(config.SupportedUILocales()),
 		RequestParameterSupported:                          config.RequestObjectSupported(),
 		RequestURIParameterSupported:                       config.PushedAuthRequestSupported(),
 		BackChannelLogoutSupported:                         config.BackChannelLogoutSupported(),
@@ -135,25 +137,25 @@ func ResponseTypes(c Configuration) []string {
 	} // TODO: ok for now, check later if dynamic needed
 }
 
-func GrantTypes(c Configuration) []oidc.GrantType {
-	grantTypes := []oidc.GrantType{
-		oidc.GrantTypeCode,
-		oidc.GrantTypeImplicit,
+func GrantTypes(c Configuration) []string {
+	grantTypes := []string{
+		string(oidc.GrantTypeCode),
+		string(oidc.GrantTypeImplicit),
 	}
 	if c.GrantTypeRefreshTokenSupported() {
-		grantTypes = append(grantTypes, oidc.GrantTypeRefreshToken)
+		grantTypes = append(grantTypes, string(oidc.GrantTypeRefreshToken))
 	}
 	if c.GrantTypeClientCredentialsSupported() {
-		grantTypes = append(grantTypes, oidc.GrantTypeClientCredentials)
+		grantTypes = append(grantTypes, string(oidc.GrantTypeClientCredentials))
 	}
 	if c.GrantTypeTokenExchangeSupported() {
-		grantTypes = append(grantTypes, oidc.GrantTypeTokenExchange)
+		grantTypes = append(grantTypes, string(oidc.GrantTypeTokenExchange))
 	}
 	if c.GrantTypeJWTAuthorizationSupported() {
-		grantTypes = append(grantTypes, oidc.GrantTypeBearer)
+		grantTypes = append(grantTypes, string(oidc.GrantTypeBearer))
 	}
 	if c.GrantTypeDeviceCodeSupported() {
-		grantTypes = append(grantTypes, oidc.GrantTypeDeviceCode)
+		grantTypes = append(grantTypes, string(oidc.GrantTypeDeviceCode))
 	}
 	return grantTypes
 }
@@ -180,16 +182,16 @@ func RequestObjectSigAlgorithms(c Configuration) []string {
 	return c.RequestObjectSigningAlgorithmsSupported()
 }
 
-func AuthMethodsTokenEndpoint(c Configuration) []oidc.AuthMethod {
-	authMethods := []oidc.AuthMethod{
-		oidc.AuthMethodNone,
-		oidc.AuthMethodBasic,
+func AuthMethodsTokenEndpoint(c Configuration) []string {
+	authMethods := []string{
+		string(protocol.AuthMethodNone),
+		string(protocol.AuthMethodBasic),
 	}
 	if c.AuthMethodPostSupported() {
-		authMethods = append(authMethods, oidc.AuthMethodPost)
+		authMethods = append(authMethods, string(protocol.AuthMethodPost))
 	}
 	if c.AuthMethodPrivateKeyJWTSupported() {
-		authMethods = append(authMethods, oidc.AuthMethodPrivateKeyJWT)
+		authMethods = append(authMethods, string(protocol.AuthMethodPrivateKeyJWT))
 	}
 	return authMethods
 }
@@ -208,12 +210,12 @@ func IntrospectionSigAlgorithms(c Configuration) []string {
 	return c.IntrospectionEndpointSigningAlgorithmsSupported()
 }
 
-func AuthMethodsIntrospectionEndpoint(c Configuration) []oidc.AuthMethod {
-	authMethods := []oidc.AuthMethod{
-		oidc.AuthMethodBasic,
+func AuthMethodsIntrospectionEndpoint(c Configuration) []string {
+	authMethods := []string{
+		string(protocol.AuthMethodBasic),
 	}
 	if c.AuthMethodPrivateKeyJWTSupported() {
-		authMethods = append(authMethods, oidc.AuthMethodPrivateKeyJWT)
+		authMethods = append(authMethods, string(protocol.AuthMethodPrivateKeyJWT))
 	}
 	return authMethods
 }
@@ -225,16 +227,16 @@ func RevocationSigAlgorithms(c Configuration) []string {
 	return c.RevocationEndpointSigningAlgorithmsSupported()
 }
 
-func AuthMethodsRevocationEndpoint(c Configuration) []oidc.AuthMethod {
-	authMethods := []oidc.AuthMethod{
-		oidc.AuthMethodNone,
-		oidc.AuthMethodBasic,
+func AuthMethodsRevocationEndpoint(c Configuration) []string {
+	authMethods := []string{
+		string(protocol.AuthMethodNone),
+		string(protocol.AuthMethodBasic),
 	}
 	if c.AuthMethodPostSupported() {
-		authMethods = append(authMethods, oidc.AuthMethodPost)
+		authMethods = append(authMethods, string(protocol.AuthMethodPost))
 	}
 	if c.AuthMethodPrivateKeyJWTSupported() {
-		authMethods = append(authMethods, oidc.AuthMethodPrivateKeyJWT)
+		authMethods = append(authMethods, string(protocol.AuthMethodPrivateKeyJWT))
 	}
 	return authMethods
 }
@@ -310,10 +312,10 @@ func IDTokenEncryptionEncValues(c Configuration) []string {
 	return encs
 }
 
-func CodeChallengeMethods(c Configuration) []oidc.CodeChallengeMethod {
-	codeMethods := make([]oidc.CodeChallengeMethod, 0, 1)
+func CodeChallengeMethods(c Configuration) []string {
+	codeMethods := make([]string, 0, 1)
 	if c.CodeMethodS256Supported() {
-		codeMethods = append(codeMethods, oidc.CodeChallengeMethodS256)
+		codeMethods = append(codeMethods, string(oidc.CodeChallengeMethodS256))
 	}
 	return codeMethods
 }
@@ -329,6 +331,17 @@ func PushedAuthRequestEndpoint(c Configuration, issuer string) string {
 		return ""
 	}
 	return endpoint.Absolute(issuer)
+}
+
+func languageTagsToStrings(tags []language.Tag) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make([]string, len(tags))
+	for i, t := range tags {
+		out[i] = t.String()
+	}
+	return out
 }
 
 // RegistrationEndpoint returns the Dynamic Client Registration endpoint URL

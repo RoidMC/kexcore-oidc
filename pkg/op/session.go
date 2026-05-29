@@ -15,6 +15,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type SessionEnder interface {
@@ -64,7 +65,7 @@ func EndSession(w http.ResponseWriter, r *http.Request, ender SessionEnder) {
 		err = ender.Storage().TerminateSession(r.Context(), session.UserID, session.ClientID)
 	}
 	if err != nil {
-		RequestError(w, r, oidc.DefaultToServerError(err, "error terminating session"), ender.Logger())
+		RequestError(w, r, protocol.DefaultToServerError(err, "error terminating session"), ender.Logger())
 		return
 	}
 	http.Redirect(w, r, redirect, http.StatusFound)
@@ -73,12 +74,12 @@ func EndSession(w http.ResponseWriter, r *http.Request, ender SessionEnder) {
 func ParseEndSessionRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.EndSessionRequest, error) {
 	err := r.ParseForm()
 	if err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 	req := new(oidc.EndSessionRequest)
 	err = decoder.Decode(req, r.Form)
 	if err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
 	}
 	return req, nil
 }
@@ -95,19 +96,19 @@ func ValidateEndSessionRequest(ctx context.Context, req *oidc.EndSessionRequest,
 	if req.IdTokenHint != "" {
 		claims, err := VerifyIDTokenHint[*oidc.IDTokenClaims](ctx, req.IdTokenHint, ender.IDTokenHintVerifier(ctx))
 		if err != nil && !errors.As(err, &IDTokenHintExpiredError{}) {
-			return nil, oidc.ErrInvalidRequest().WithDescription("id_token_hint invalid").WithParent(err)
+			return nil, protocol.ErrInvalidRequest().WithDescription("id_token_hint invalid").WithParent(err)
 		}
 		session.UserID = claims.GetSubject()
 		session.IDTokenHintClaims = claims
 		if req.ClientID != "" && req.ClientID != claims.GetAuthorizedParty() {
-			return nil, oidc.ErrInvalidRequest().WithDescription("client_id does not match azp of id_token_hint")
+			return nil, protocol.ErrInvalidRequest().WithDescription("client_id does not match azp of id_token_hint")
 		}
 		req.ClientID = claims.GetAuthorizedParty()
 	}
 	if req.ClientID != "" {
 		client, err := ender.Storage().GetClientByClientID(ctx, req.ClientID)
 		if err != nil {
-			return nil, oidc.DefaultToServerError(err, "")
+			return nil, protocol.DefaultToServerError(err, "")
 		}
 		session.ClientID = client.GetID()
 		if req.PostLogoutRedirectURI != "" {
@@ -120,7 +121,7 @@ func ValidateEndSessionRequest(ctx context.Context, req *oidc.EndSessionRequest,
 	if req.State != "" {
 		redirect, err := url.Parse(session.RedirectURI)
 		if err != nil {
-			return nil, oidc.DefaultToServerError(err, "")
+			return nil, protocol.DefaultToServerError(err, "")
 		}
 		session.RedirectURI = mergeQueryParams(redirect, url.Values{"state": {req.State}})
 	}
@@ -150,12 +151,12 @@ func ValidateEndSessionPostLogoutRedirectURI(postLogoutRedirectURI string, clien
 		for _, uriGlob := range globClient.PostLogoutRedirectURIGlobs() {
 			isMatch, err := path.Match(uriGlob, postLogoutRedirectURI)
 			if err != nil {
-				return oidc.ErrServerError().WithParent(err)
+				return protocol.ErrServerError().WithParent(err)
 			}
 			if isMatch {
 				return nil
 			}
 		}
 	}
-	return oidc.ErrInvalidRequest().WithDescription("post_logout_redirect_uri invalid")
+	return protocol.ErrInvalidRequest().WithDescription("post_logout_redirect_uri invalid")
 }

@@ -12,6 +12,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type JWTAuthorizationGrantExchanger interface {
@@ -52,12 +53,12 @@ func JWTProfile(w http.ResponseWriter, r *http.Request, exchanger JWTAuthorizati
 func ParseJWTProfileGrantRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.JWTProfileGrantRequest, error) {
 	err := r.ParseForm()
 	if err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 	tokenReq := new(oidc.JWTProfileGrantRequest)
 	err = decoder.Decode(tokenReq, r.Form)
 	if err != nil {
-		return nil, oidc.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
+		return nil, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
 	}
 	return tokenReq, nil
 }
