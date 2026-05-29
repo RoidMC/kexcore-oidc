@@ -300,10 +300,12 @@ func (d *DiscoveryConfiguration) MarshalJSON() ([]byte, error) {
 		return base, fmt.Errorf("protocol: unexpected Extra JSON head")
 	}
 	maxInt := int(^uint(0) >> 1)
-	if len(base) > maxInt-(len(extra)-1) {
+	extraTailLen := len(extra) - 1 // safe: len(extra) > 0 checked above
+	if extraTailLen > maxInt-len(base) {
 		return nil, fmt.Errorf("protocol: merged discovery JSON too large")
 	}
-	merged := make([]byte, 0, len(base)+len(extra)-1)
+	mergedCap := len(base) + extraTailLen
+	merged := make([]byte, 0, mergedCap)
 	merged = append(merged, base[:len(base)-1]...)
 	merged = append(merged, ',')
 	merged = append(merged, extra[1:]...)
