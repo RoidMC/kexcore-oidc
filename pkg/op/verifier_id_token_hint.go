@@ -57,31 +57,31 @@ func VerifyIDTokenHint[C oidc.Claims](ctx context.Context, token string, v *IDTo
 	}
 	payload, err := oidc.ParseToken(decrypted, &claims)
 	if err != nil {
-		return nilClaims, err
+		return nilClaims, mapVerifierError(err)
 	}
 
 	if err := oidc.CheckIssuer(claims, v.Issuer); err != nil {
-		return nilClaims, err
+		return nilClaims, mapVerifierError(err)
 	}
 
 	if err = oidc.CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, v.KeySet); err != nil {
-		return nilClaims, err
+		return nilClaims, mapVerifierError(err)
 	}
 
 	if err = oidc.CheckAuthorizationContextClassReference(claims, v.ACR); err != nil {
-		return nilClaims, err
+		return nilClaims, mapVerifierError(err)
 	}
 
 	if err = oidc.CheckExpiration(claims, v.Offset); err != nil {
-		return claims, IDTokenHintExpiredError{err}
+		return claims, IDTokenHintExpiredError{mapVerifierError(err)}
 	}
 
 	if err = oidc.CheckIssuedAt(claims, v.MaxAgeIAT, v.Offset); err != nil {
-		return claims, IDTokenHintExpiredError{err}
+		return claims, IDTokenHintExpiredError{mapVerifierError(err)}
 	}
 
 	if err = oidc.CheckAuthTime(claims, v.MaxAge); err != nil {
-		return claims, IDTokenHintExpiredError{err}
+		return claims, IDTokenHintExpiredError{mapVerifierError(err)}
 	}
 	return claims, nil
 }

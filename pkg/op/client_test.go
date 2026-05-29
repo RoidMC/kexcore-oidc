@@ -15,6 +15,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zitadel/schema"
@@ -54,7 +55,7 @@ func TestClientJWTAuth(t *testing.T) {
 				},
 				testClientJWTProfile{},
 			},
-			wantErr: oidc.ErrParse,
+			wantErr: protocol.ErrParse,
 		},
 	}
 	for _, tt := range tests {

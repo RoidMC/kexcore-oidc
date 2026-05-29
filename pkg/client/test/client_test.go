@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,7 +46,7 @@ func TestDiscover(t *testing.T) {
 			args: args{
 				issuer: "https://example.com",
 			},
-			wantErr: oidc.ErrDiscoveryFailed,
+			wantErr: protocol.ErrDiscoveryFailed,
 		},
 	}
 	for _, tt := range tests {

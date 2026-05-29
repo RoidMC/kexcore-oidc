@@ -8,7 +8,9 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/emmansun/gmsm/sm9"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // JWTProfileVerifier extends oidc.Verifier with
@@ -78,19 +81,19 @@ func VerifyJWTAssertion(ctx context.Context, assertion string, v *JWTProfileVeri
 	request := new(oidc.JWTTokenRequest)
 	payload, err := oidc.ParseToken(assertion, request)
 	if err != nil {
-		return nil, err
+		return nil, mapVerifierError(err)
 	}
 
 	if err = oidc.CheckAudience(request, v.Issuer); err != nil {
-		return nil, err
+		return nil, mapVerifierError(err)
 	}
 
 	if err = oidc.CheckExpiration(request, v.Offset); err != nil {
-		return nil, err
+		return nil, mapVerifierError(err)
 	}
 
 	if err = oidc.CheckIssuedAt(request, v.MaxAgeIAT, v.Offset); err != nil {
-		return nil, err
+		return nil, mapVerifierError(err)
 	}
 
 	if err = v.CheckSubject(request); err != nil {
@@ -102,9 +105,55 @@ func VerifyJWTAssertion(ctx context.Context, assertion string, v *JWTProfileVeri
 		keySet = &jwtProfileKeySet{storage: v.Storage, clientID: request.Issuer}
 	}
 	if err = oidc.CheckSignature(ctx, assertion, payload, request, nil, keySet); err != nil {
-		return nil, err
+		return nil, mapVerifierError(err)
 	}
 	return request, nil
+}
+
+func mapVerifierError(err error) error {
+	pairs := []struct {
+		oidcSentinel, protocolSentinel error
+	}{
+		{oidc.ErrParse, protocol.ErrParse},
+		{oidc.ErrAudience, protocol.ErrAudience},
+		{oidc.ErrExpired, protocol.ErrExpired},
+		{oidc.ErrIatInFuture, protocol.ErrIatInFuture},
+		{oidc.ErrIatMissing, protocol.ErrIatMissing},
+		{oidc.ErrIatToOld, protocol.ErrIatToOld},
+		{oidc.ErrSubjectInvalid, protocol.ErrSubjectInvalid},
+		{oidc.ErrIssuerInvalid, protocol.ErrIssuerInvalid},
+		{oidc.ErrSignatureMissing, protocol.ErrSignatureMissing},
+		{oidc.ErrSignatureMultiple, protocol.ErrSignatureMultiple},
+		{oidc.ErrSignatureUnsupportedAlg, protocol.ErrSignatureUnsupportedAlg},
+		{oidc.ErrSignatureInvalidPayload, protocol.ErrSignatureInvalidPayload},
+		{oidc.ErrSignatureInvalid, protocol.ErrSignatureInvalid},
+		{oidc.ErrAuthTimeNotPresent, protocol.ErrAuthTimeNotPresent},
+		{oidc.ErrAuthTimeToOld, protocol.ErrAuthTimeToOld},
+		{oidc.ErrAcrInvalid, protocol.ErrAcrInvalid},
+	}
+	for _, p := range pairs {
+		if !errors.Is(err, p.oidcSentinel) {
+			continue
+		}
+		suffix := strings.TrimPrefix(err.Error(), p.oidcSentinel.Error())
+		var innerErr error
+		if mu, ok := err.(interface{ Unwrap() []error }); ok {
+			for _, w := range mu.Unwrap() {
+				if w != p.oidcSentinel {
+					innerErr = w
+					break
+				}
+			}
+		}
+		if innerErr != nil {
+			return fmt.Errorf("%w (%w)", p.protocolSentinel, innerErr)
+		}
+		if suffix == "" {
+			return p.protocolSentinel
+		}
+		return fmt.Errorf("%w%s", p.protocolSentinel, suffix)
+	}
+	return err
 }
 
 // JWTProfileKeyStorage interface for fetching keys by ID and client ID
@@ -122,7 +171,7 @@ type SM9JWTProfileKeyStorage interface {
 // SubjectIsIssuer checks that subject equals issuer
 func SubjectIsIssuer(request *oidc.JWTTokenRequest) error {
 	if request.Issuer != request.Subject {
-		return oidc.ErrSubjectInvalid
+		return protocol.ErrSubjectInvalid
 	}
 	return nil
 }

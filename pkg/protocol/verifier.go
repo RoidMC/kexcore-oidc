@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
@@ -103,27 +104,59 @@ func VerifyJWTAssertion(ctx context.Context, assertion string, issuer string, ks
 	request := new(oidc.JWTTokenRequest)
 	payload, err := oidc.ParseToken(assertion, request)
 	if err != nil {
-		return nil, err
+		return nil, mapOidcSentinelError(err)
 	}
 
 	if err := oidc.CheckAudience(request, issuer); err != nil {
-		return nil, err
+		return nil, mapOidcSentinelError(err)
 	}
 
 	if err := oidc.CheckExpiration(request, offset); err != nil {
-		return nil, err
+		return nil, mapOidcSentinelError(err)
 	}
 
 	if request.Issuer != request.Subject {
-		return nil, oidc.ErrSubjectInvalid
+		return nil, ErrSubjectInvalid
 	}
 
 	keySet := &keyStoreAdapter{store: ks}
 	if err := oidc.CheckSignature(ctx, assertion, payload, request, nil, keySet); err != nil {
-		return nil, err
+		return nil, mapOidcSentinelError(err)
 	}
 
 	return request, nil
+}
+
+func mapOidcSentinelError(err error) error {
+	pairs := []struct {
+		oidcSentinel, protocolSentinel error
+	}{
+		{oidc.ErrParse, ErrParse},
+		{oidc.ErrAudience, ErrAudience},
+		{oidc.ErrExpired, ErrExpired},
+		{oidc.ErrIatInFuture, ErrIatInFuture},
+		{oidc.ErrIatMissing, ErrIatMissing},
+		{oidc.ErrIatToOld, ErrIatToOld},
+		{oidc.ErrSubjectInvalid, ErrSubjectInvalid},
+		{oidc.ErrIssuerInvalid, ErrIssuerInvalid},
+		{oidc.ErrSignatureMissing, ErrSignatureMissing},
+		{oidc.ErrSignatureMultiple, ErrSignatureMultiple},
+		{oidc.ErrSignatureUnsupportedAlg, ErrSignatureUnsupportedAlg},
+		{oidc.ErrSignatureInvalidPayload, ErrSignatureInvalidPayload},
+		{oidc.ErrSignatureInvalid, ErrSignatureInvalid},
+		{oidc.ErrAuthTimeNotPresent, ErrAuthTimeNotPresent},
+		{oidc.ErrAuthTimeToOld, ErrAuthTimeToOld},
+	}
+	for _, p := range pairs {
+		if errors.Is(err, p.oidcSentinel) {
+			suffix := strings.TrimPrefix(err.Error(), p.oidcSentinel.Error())
+			if suffix == "" {
+				return p.protocolSentinel
+			}
+			return fmt.Errorf("%w%s", p.protocolSentinel, suffix)
+		}
+	}
+	return err
 }
 
 type keyStoreAdapter struct {
