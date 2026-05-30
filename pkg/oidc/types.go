@@ -7,7 +7,6 @@ package oidc
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/muhlemmer/gu"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	"golang.org/x/text/language"
 )
 
 type Audience = protocol.Audience
@@ -76,123 +74,15 @@ const (
 	JWTTokenType     = protocol.JWTTokenType
 )
 
-type Gender string
+type Gender = protocol.Gender
 
-type Locale struct {
-	tag language.Tag
-}
+type Locale = protocol.Locale
 
-func NewLocale(tag language.Tag) *Locale {
-	return &Locale{tag: tag}
-}
+var NewLocale = protocol.NewLocale
 
-func (l *Locale) Tag() language.Tag {
-	if l == nil {
-		return language.Und
-	}
+type Locales = protocol.Locales
 
-	return l.tag
-}
-
-func (l *Locale) String() string {
-	return l.Tag().String()
-}
-
-func (l *Locale) MarshalJSON() ([]byte, error) {
-	tag := l.Tag()
-	if tag.IsRoot() {
-		return []byte("null"), nil
-	}
-
-	return json.Marshal(tag)
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-// When [language.ValueError] is encountered, the containing tag will be set
-// to an empty value (language "und") and no error will be returned.
-// This state can be checked with the `l.Tag().IsRoot()` method.
-func (l *Locale) UnmarshalJSON(data []byte) error {
-	if len(data) == 0 || string(data) == "\"\"" {
-		return nil
-	}
-	err := json.Unmarshal(data, &l.tag)
-	if err == nil {
-		return nil
-	}
-
-	// catch "well-formed but unknown" errors
-	var target language.ValueError
-	if errors.As(err, &target) {
-		l.tag = language.Tag{}
-		return nil
-	}
-	return err
-}
-
-type Locales []language.Tag
-
-// ParseLocales parses a slice of strings into Locales.
-// If an entry causes a parse error or is undefined,
-// it is ignored and not set to Locales.
-func ParseLocales(locales []string) Locales {
-	out := make(Locales, 0, len(locales))
-	for _, locale := range locales {
-		tag, err := language.Parse(locale)
-		if err == nil && !tag.IsRoot() {
-			out = append(out, tag)
-		}
-	}
-	return out
-}
-
-func (l Locales) String() string {
-	tags := make([]string, len(l))
-	for i, tag := range l {
-		tags[i] = tag.String()
-	}
-	return strings.Join(tags, " ")
-}
-
-// UnmarshalText implements the [encoding.TextUnmarshaler] interface.
-// It decodes an unquoted space separated string into Locales.
-// Undefined language tags in the input are ignored and omitted from
-// the resulting Locales.
-func (l *Locales) UnmarshalText(text []byte) error {
-	*l = ParseLocales(
-		strings.Split(string(text), " "),
-	)
-	return nil
-}
-
-// UnmarshalJSON implements the [json.Unmarshaler] interface.
-// It decodes a json array or a space separated string into Locales.
-// Undefined language tags in the input are ignored and omitted from
-// the resulting Locales.
-func (l *Locales) UnmarshalJSON(data []byte) error {
-	var dst any
-	if err := json.Unmarshal(data, &dst); err != nil {
-		return fmt.Errorf("oidc locales: %w", err)
-	}
-
-	// We catch the possibility of a space separated string here,
-	// because UnmarshalText might have been implicitly called
-	// by the json library before we added UnmarshalJSON.
-	switch v := dst.(type) {
-	case nil:
-		*l = nil
-	case string:
-		*l = ParseLocales(strings.Split(v, " "))
-	case []any:
-		locales, err := gu.AssertInterfaces[string](v)
-		if err != nil {
-			return fmt.Errorf("oidc locales: %w", err)
-		}
-		*l = ParseLocales(locales)
-	default:
-		return fmt.Errorf("oidc locales: unsupported type: %T", v)
-	}
-	return nil
-}
+var ParseLocales = protocol.ParseLocales
 
 type MaxAge *uint
 
@@ -203,6 +93,26 @@ func NewMaxAge(i uint) MaxAge {
 type SpaceDelimitedArray = protocol.SpaceDelimitedArray
 
 type Prompt = protocol.SpaceDelimitedArray
+
+type Bool = protocol.Bool
+
+type Gender = protocol.Gender
+
+type Locale = protocol.Locale
+
+var NewLocale = protocol.NewLocale
+
+type UserInfo = protocol.UserInfo
+
+type UserInfoProfile = protocol.UserInfoProfile
+
+type UserInfoEmail = protocol.UserInfoEmail
+
+type UserInfoPhone = protocol.UserInfoPhone
+
+type UserInfoAddress = protocol.UserInfoAddress
+
+type UserInfoRequest = protocol.UserInfoRequest
 
 type ResponseType string
 

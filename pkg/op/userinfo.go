@@ -8,6 +8,7 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type UserinfoProvider interface {
@@ -38,7 +39,7 @@ func Userinfo(w http.ResponseWriter, r *http.Request, userinfoProvider UserinfoP
 		http.Error(w, "access token invalid", http.StatusUnauthorized)
 		return
 	}
-	info := new(oidc.UserInfo)
+	info := new(protocol.UserInfo)
 	err = userinfoProvider.Storage().SetUserinfoFromToken(r.Context(), info, tokenID, subject, r.Header.Get("origin"))
 	if err != nil {
 		httphelper.MarshalJSONWithStatus(w, err, http.StatusForbidden)
@@ -60,7 +61,7 @@ func ParseUserinfoRequest(r *http.Request, decoder httphelper.Decoder) (string, 
 	if err != nil {
 		return "", errors.New("unable to parse request")
 	}
-	req := new(oidc.UserInfoRequest)
+	req := new(protocol.UserInfoRequest)
 	err = decoder.Decode(req, r.Form)
 	if err != nil {
 		return "", errors.New("unable to parse request")

@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/text/language"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 var (
@@ -73,9 +74,9 @@ var (
 			"foo": "bar",
 		},
 	}
-	userInfoData = &UserInfo{
+	userInfoData = &protocol.UserInfo{
 		Subject: "hello@me.com",
-		UserInfoProfile: UserInfoProfile{
+		UserInfoProfile: protocol.UserInfoProfile{
 			Name:              "Tim Möhlmann",
 			GivenName:         "Tim",
 			FamilyName:        "Möhlmann",
@@ -91,15 +92,15 @@ var (
 			UpdatedAt:         1,
 			PreferredUsername: "muhlemmer",
 		},
-		UserInfoEmail: UserInfoEmail{
+		UserInfoEmail: protocol.UserInfoEmail{
 			Email:         "tim@zitadel.com",
 			EmailVerified: true,
 		},
-		UserInfoPhone: UserInfoPhone{
+		UserInfoPhone: protocol.UserInfoPhone{
 			PhoneNumber:         "+1234567890",
 			PhoneNumberVerified: true,
 		},
-		Address: &UserInfoAddress{
+		Address: &protocol.UserInfoAddress{
 			Formatted:     "Sesame street 666\n666-666, Smallvile\nMoon",
 			StreetAddress: "Sesame street 666",
 			Locality:      "Smallvile",
@@ -236,7 +237,7 @@ func TestNewIDTokenClaims(t *testing.T) {
 }
 
 func TestIDTokenClaims_GetUserInfo(t *testing.T) {
-	want := &UserInfo{
+	want := &protocol.UserInfo{
 		Subject:         idTokenData.Subject,
 		UserInfoProfile: idTokenData.UserInfoProfile,
 		UserInfoEmail:   idTokenData.UserInfoEmail,

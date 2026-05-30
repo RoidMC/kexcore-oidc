@@ -3,6 +3,7 @@ package protocol
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -63,11 +64,98 @@ func (l *Locales) UnmarshalJSON(data []byte) error {
 	case []any:
 		strs := make([]string, 0, len(v))
 		for _, item := range v {
-			if s, ok := item.(string); ok {
-				strs = append(strs, s)
+			s, ok := item.(string)
+			if !ok {
+				return fmt.Errorf("protocol.Locales: unsupported array element type: %T", item)
 			}
+			strs = append(strs, s)
 		}
 		*l = ParseLocales(strs)
+	default:
+		return fmt.Errorf("protocol.Locales: unsupported type: %T", v)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// OIDC Core §5.1 — Gender / Locale / Bool
+// ---------------------------------------------------------------------------
+
+type Gender string
+
+type Locale struct {
+	tag language.Tag
+}
+
+func NewLocale(tag language.Tag) *Locale {
+	return &Locale{tag: tag}
+}
+
+func (l *Locale) Tag() language.Tag {
+	if l == nil {
+		return language.Und
+	}
+	return l.tag
+}
+
+func (l *Locale) String() string {
+	return l.Tag().String()
+}
+
+func (l *Locale) MarshalJSON() ([]byte, error) {
+	tag := l.Tag()
+	if tag.IsRoot() {
+		return []byte("null"), nil
+	}
+	return json.Marshal(tag)
+}
+
+func (l *Locale) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "\"\"" {
+		return nil
+	}
+	err := json.Unmarshal(data, &l.tag)
+	if err == nil {
+		return nil
+	}
+	var target language.ValueError
+	if errors.As(err, &target) {
+		l.tag = language.Tag{}
+		return nil
+	}
+	return err
+}
+
+// Bool handles both standard JSON booleans and string representations ("true"/"false").
+// This is necessary because some OIDC providers (notably AWS Cognito) incorrectly return
+// boolean fields like email_verified and phone_number_verified as strings ("true"/"false")
+// instead of proper JSON booleans, violating the OIDC specification.
+//
+// Ref:
+// - https://openid.net/specs/openid-connect-basic-1_0.html#StandardClaims
+// - https://docs.aws.amazon.com/cognito/latest/developerguide/userinfo-endpoint.html
+type Bool bool
+
+// UnmarshalJSON handles both standard JSON boolean values and string representations.
+// This is necessary because some OIDC providers (notably AWS Cognito) incorrectly return
+// boolean fields like email_verified and phone_number_verified as strings ("true"/"false")
+// instead of proper JSON booleans, violating the OIDC specification.
+//
+// The method first attempts standard boolean unmarshaling, and falls back to string
+// parsing if that fails, making it compatible with both compliant and non-compliant providers.
+//
+// Ref:
+// - https://openid.net/specs/openid-connect-basic-1_0.html#StandardClaims
+// - https://docs.aws.amazon.com/cognito/latest/developerguide/userinfo-endpoint.html
+func (b *Bool) UnmarshalJSON(data []byte) error {
+	s := string(data)
+	switch s {
+	case "true", `"true"`:
+		*b = true
+	case "false", `"false"`:
+		*b = false
+	default:
+		return fmt.Errorf("cannot unmarshal %s into Bool", s)
 	}
 	return nil
 }

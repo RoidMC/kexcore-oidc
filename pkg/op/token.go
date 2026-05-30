@@ -257,14 +257,14 @@ func CreateIDToken(ctx context.Context, issuer string, request IDTokenRequest, v
 	tokenExchangeRequest, okReq := request.(TokenExchangeRequest)
 	teStorage, okStorage := storage.(TokenExchangeStorage)
 	if okReq && okStorage {
-		userInfo := new(oidc.UserInfo)
+		userInfo := new(protocol.UserInfo)
 		err := teStorage.SetUserinfoFromTokenExchangeRequest(ctx, userInfo, tokenExchangeRequest)
 		if err != nil {
 			return "", err
 		}
 		claims.SetUserInfo(userInfo)
 	} else if len(scopes) > 0 {
-		userInfo := new(oidc.UserInfo)
+		userInfo := new(protocol.UserInfo)
 		if fromRequest, ok := storage.(CanSetUserinfoFromRequest); ok {
 			err := fromRequest.SetUserinfoFromRequest(ctx, userInfo, request, scopes)
 			if err != nil {

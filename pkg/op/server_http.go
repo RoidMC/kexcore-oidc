@@ -453,7 +453,7 @@ func (s *webServer) introspectionHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *webServer) userInfoHandler(w http.ResponseWriter, r *http.Request) {
-	request, err := decodeRequest[oidc.UserInfoRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.UserInfoRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return

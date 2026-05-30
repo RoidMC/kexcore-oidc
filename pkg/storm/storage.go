@@ -168,7 +168,7 @@ type IntrospectStore interface {
 
 // UserinfoStore is required by the UserInfo plugin.
 type UserinfoStore interface {
-	SetUserinfoFromToken(ctx context.Context, userinfo *oidc.UserInfo, tokenID, subject, origin string) error
+	SetUserinfoFromToken(ctx context.Context, userinfo *protocol.UserInfo, tokenID, subject, origin string) error
 }
 
 // RevocationStore is required by the Revocation plugin.
@@ -213,7 +213,7 @@ type TokenExchangeStore interface {
 	ValidateTokenExchangeRequest(ctx context.Context, req TokenExchangeRequest) error
 	CreateTokenExchangeRequest(ctx context.Context, req TokenExchangeRequest) error
 	GetPrivateClaimsFromTokenExchangeRequest(ctx context.Context, req TokenExchangeRequest) (map[string]any, error)
-	SetUserinfoFromTokenExchangeRequest(ctx context.Context, userinfo *oidc.UserInfo, req TokenExchangeRequest) error
+	SetUserinfoFromTokenExchangeRequest(ctx context.Context, userinfo *protocol.UserInfo, req TokenExchangeRequest) error
 }
 
 // TokenExchangeRequest represents a validated token exchange request.

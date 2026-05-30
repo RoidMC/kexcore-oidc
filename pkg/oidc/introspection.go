@@ -1,6 +1,9 @@
 package oidc
 
-import "github.com/muhlemmer/gu"
+import (
+	"github.com/muhlemmer/gu"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+)
 
 type IntrospectionRequest struct {
 	Token string `schema:"token"`
@@ -31,17 +34,17 @@ type IntrospectionResponse struct {
 	JWTID                           string                          `json:"jti,omitempty"`
 	Username                        string                          `json:"username,omitempty"`
 	Actor                           *ActorClaims                    `json:"act,omitempty"`
-	UserInfoProfile
-	UserInfoEmail
-	UserInfoPhone
+	protocol.UserInfoProfile
+	protocol.UserInfoEmail
+	protocol.UserInfoPhone
 
-	Address *UserInfoAddress `json:"address,omitempty"`
+	Address *protocol.UserInfoAddress `json:"address,omitempty"`
 	Claims  map[string]any   `json:"-"`
 }
 
 // SetUserInfo copies all relevant fields from UserInfo
 // into the IntrospectionResponse.
-func (i *IntrospectionResponse) SetUserInfo(u *UserInfo) {
+func (i *IntrospectionResponse) SetUserInfo(u *protocol.UserInfo) {
 	i.Subject = u.Subject
 	i.Username = u.PreferredUsername
 	i.Address = gu.PtrCopy(u.Address)
@@ -57,9 +60,9 @@ func (i *IntrospectionResponse) SetUserInfo(u *UserInfo) {
 
 // GetAddress is a safe getter that takes
 // care of a possible nil value.
-func (i *IntrospectionResponse) GetAddress() *UserInfoAddress {
+func (i *IntrospectionResponse) GetAddress() *protocol.UserInfoAddress {
 	if i.Address == nil {
-		return new(UserInfoAddress)
+		return new(protocol.UserInfoAddress)
 	}
 	return i.Address
 }

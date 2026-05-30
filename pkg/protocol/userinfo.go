@@ -1,37 +1,11 @@
-package oidc
-
-import (
-	"fmt"
-)
-
-type Bool bool
-
-// UnmarshalJSON handles both standard JSON boolean values and string representations.
-// This is necessary because some OIDC providers (notably AWS Cognito) incorrectly return
-// boolean fields like email_verified and phone_number_verified as strings ("true"/"false")
-// instead of proper JSON booleans, violating the OIDC specification.
+// SPDX-License-Identifier: Apache-2.0
 //
-// The method first attempts standard boolean unmarshaling, and falls back to string
-// parsing if that fails, making it compatible with both compliant and non-compliant providers.
-//
-// Ref:
-// - https://openid.net/specs/openid-connect-basic-1_0.html#StandardClaims
-// - https://docs.aws.amazon.com/cognito/latest/developerguide/userinfo-endpoint.html
-func (bs *Bool) UnmarshalJSON(data []byte) error {
-	s := string(data)
-	switch s {
-	case "true", `"true"`:
-		*bs = true
-	case "false", `"false"`:
-		*bs = false
-	default:
-		return fmt.Errorf("cannot unmarshal %s into Bool", s)
-	}
-	return nil
-}
+// Copyright 2026 RoidMC Studios
+
+package protocol
 
 // UserInfo implements OpenID Connect Core 1.0, section 5.1.
-// https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims.
+// https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
 type UserInfo struct {
 	Subject string `json:"sub,omitempty"`
 	UserInfoProfile
@@ -46,7 +20,6 @@ func (u *UserInfo) AppendClaims(k string, v any) {
 	if u.Claims == nil {
 		u.Claims = make(map[string]any)
 	}
-
 	u.Claims[k] = v
 }
 

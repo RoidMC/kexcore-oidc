@@ -443,7 +443,7 @@ func (s *LegacyServer) Introspect(ctx context.Context, r *Request[IntrospectionR
 	return NewResponse(response), nil
 }
 
-func (s *LegacyServer) UserInfo(ctx context.Context, r *Request[oidc.UserInfoRequest]) (*Response, error) {
+func (s *LegacyServer) UserInfo(ctx context.Context, r *Request[protocol.UserInfoRequest]) (*Response, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.UserInfo")
 	defer span.End()
 
@@ -451,7 +451,7 @@ func (s *LegacyServer) UserInfo(ctx context.Context, r *Request[oidc.UserInfoReq
 	if !ok {
 		return nil, NewStatusError(protocol.ErrAccessDenied().WithDescription("access token invalid"), http.StatusUnauthorized)
 	}
-	info := new(oidc.UserInfo)
+	info := new(protocol.UserInfo)
 	err := s.provider.Storage().SetUserinfoFromToken(ctx, info, tokenID, subject, r.Header.Get("origin"))
 	if err != nil {
 		return nil, NewStatusError(err, http.StatusForbidden)

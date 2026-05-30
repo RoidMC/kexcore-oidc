@@ -436,7 +436,7 @@ func (s *Storage) SetIntrospectionFromToken(_ context.Context, resp *oidc.Intros
 // storm.UserinfoStore
 // =================================================================
 
-func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *oidc.UserInfo, tokenID, subject, origin string) error {
+func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *protocol.UserInfo, tokenID, subject, origin string) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -472,7 +472,7 @@ func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *oidc.UserInf
 			userinfo.Subject = user.ID
 		case protocol.ScopeEmail:
 			userinfo.Email = user.Email
-			userinfo.EmailVerified = oidc.Bool(user.EmailVerified)
+			userinfo.EmailVerified = protocol.Bool(user.EmailVerified)
 		case protocol.ScopeProfile:
 			userinfo.PreferredUsername = user.Username
 			userinfo.Name = user.FirstName + " " + user.LastName
@@ -481,7 +481,7 @@ func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *oidc.UserInf
 			userinfo.Locale = oidc.NewLocale(user.PreferredLanguage)
 		case protocol.ScopePhone:
 			userinfo.PhoneNumber = user.Phone
-			userinfo.PhoneNumberVerified = oidc.Bool(user.PhoneVerified)
+			userinfo.PhoneNumberVerified = protocol.Bool(user.PhoneVerified)
 		}
 	}
 

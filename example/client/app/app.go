@@ -122,7 +122,7 @@ func main() {
 	))
 
 	// for demonstration purposes the returned userinfo response is written as JSON object onto response
-	marshalUserinfo := func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *oidc.UserInfo) {
+	marshalUserinfo := func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *protocol.UserInfo) {
 		fmt.Println("access token", tokens.AccessToken)
 		fmt.Println("refresh token", tokens.RefreshToken)
 		fmt.Println("id token", tokens.IDToken)

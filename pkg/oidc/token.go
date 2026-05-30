@@ -15,6 +15,7 @@ import (
 	"github.com/muhlemmer/gu"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
@@ -147,10 +148,10 @@ type IDTokenClaims struct {
 	AccessTokenHash string `json:"at_hash,omitempty"`
 	CodeHash        string `json:"c_hash,omitempty"`
 	SessionID       string `json:"sid,omitempty"`
-	UserInfoProfile
-	UserInfoEmail
-	UserInfoPhone
-	Address *UserInfoAddress `json:"address,omitempty"`
+	protocol.UserInfoProfile
+	protocol.UserInfoEmail
+	protocol.UserInfoPhone
+	Address *protocol.UserInfoAddress `json:"address,omitempty"`
 	Claims  map[string]any   `json:"-"`
 }
 
@@ -159,7 +160,7 @@ func (t *IDTokenClaims) GetAccessTokenHash() string {
 	return t.AccessTokenHash
 }
 
-func (t *IDTokenClaims) SetUserInfo(i *UserInfo) {
+func (t *IDTokenClaims) SetUserInfo(i *protocol.UserInfo) {
 	t.Subject = i.Subject
 	t.UserInfoProfile = i.UserInfoProfile
 	t.UserInfoEmail = i.UserInfoEmail
@@ -171,8 +172,8 @@ func (t *IDTokenClaims) SetUserInfo(i *UserInfo) {
 	gu.MapMerge(i.Claims, t.Claims)
 }
 
-func (t *IDTokenClaims) GetUserInfo() *UserInfo {
-	return &UserInfo{
+func (t *IDTokenClaims) GetUserInfo() *protocol.UserInfo {
+	return &protocol.UserInfo{
 		Subject:         t.Subject,
 		UserInfoProfile: t.UserInfoProfile,
 		UserInfoEmail:   t.UserInfoEmail,

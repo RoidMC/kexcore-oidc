@@ -1,14 +1,19 @@
-package oidc
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2026 RoidMC Studios
+
+package protocol_test
 
 import (
 	"encoding/json"
 	"testing"
 
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestUserInfo_AppendClaims(t *testing.T) {
-	u := new(UserInfo)
+	u := new(protocol.UserInfo)
 	u.AppendClaims("a", "b")
 	want := map[string]any{"a": "b"}
 	assert.Equal(t, want, u.Claims)
@@ -19,29 +24,28 @@ func TestUserInfo_AppendClaims(t *testing.T) {
 }
 
 func TestUserInfo_GetAddress(t *testing.T) {
-	// nil address
-	u := new(UserInfo)
-	assert.Equal(t, &UserInfoAddress{}, u.GetAddress())
+	u := new(protocol.UserInfo)
+	assert.Equal(t, &protocol.UserInfoAddress{}, u.GetAddress())
 
-	u.Address = &UserInfoAddress{PostalCode: "1234"}
+	u.Address = &protocol.UserInfoAddress{PostalCode: "1234"}
 	assert.Equal(t, u.Address, u.GetAddress())
 }
 
 func TestUserInfoMarshal(t *testing.T) {
-	userinfo := &UserInfo{
+	userinfo := &protocol.UserInfo{
 		Subject: "test",
-		Address: &UserInfoAddress{
+		Address: &protocol.UserInfoAddress{
 			StreetAddress: "Test 789\nPostfach 2",
 		},
-		UserInfoEmail: UserInfoEmail{
+		UserInfoEmail: protocol.UserInfoEmail{
 			Email:         "test",
 			EmailVerified: true,
 		},
-		UserInfoPhone: UserInfoPhone{
+		UserInfoPhone: protocol.UserInfoPhone{
 			PhoneNumber:         "0791234567",
 			PhoneNumberVerified: true,
 		},
-		UserInfoProfile: UserInfoProfile{
+		UserInfoProfile: protocol.UserInfoProfile{
 			Name: "Test",
 		},
 		Claims: map[string]any{"private_claim": "test"},
@@ -50,28 +54,26 @@ func TestUserInfoMarshal(t *testing.T) {
 	marshal, err := json.Marshal(userinfo)
 	assert.NoError(t, err)
 
-	out := new(UserInfo)
+	out := new(protocol.UserInfo)
 	assert.NoError(t, json.Unmarshal(marshal, out))
 	expected, err := json.Marshal(out)
 
 	assert.NoError(t, err)
 	assert.Equal(t, expected, marshal)
 
-	out2 := new(UserInfo)
+	out2 := new(protocol.UserInfo)
 	assert.NoError(t, json.Unmarshal(expected, out2))
 	assert.Equal(t, out, out2)
 }
 
-// TestUserInfoVerifiedFieldsUnmarshal ensures email_verified and phone_number_verified
-// handle both standard booleans and AWS Cognito's non-compliant strings.
 func TestUserInfoVerifiedFieldsUnmarshal(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name              string
 		json              string
-		wantEmailVerified Bool
-		wantPhoneVerified Bool
+		wantEmailVerified protocol.Bool
+		wantPhoneVerified protocol.Bool
 	}{
 		{
 			name:              "booleans true",
@@ -107,7 +109,7 @@ func TestUserInfoVerifiedFieldsUnmarshal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var got UserInfo
+			var got protocol.UserInfo
 			err := json.Unmarshal([]byte(tt.json), &got)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantEmailVerified, got.EmailVerified)
@@ -116,14 +118,13 @@ func TestUserInfoVerifiedFieldsUnmarshal(t *testing.T) {
 	}
 }
 
-// TestBoolUnmarshal verifies the Bool type handles various inputs correctly.
 func TestBoolUnmarshal(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name    string
 		input   string
-		want    Bool
+		want    protocol.Bool
 		wantErr bool
 	}{
 		{
@@ -160,7 +161,7 @@ func TestBoolUnmarshal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var got Bool
+			var got protocol.Bool
 			err := json.Unmarshal([]byte(tt.input), &got)
 			if tt.wantErr {
 				assert.Error(t, err)

@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -85,7 +84,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		origin = r.Header.Get("Origin")
 	}
 
-	userInfo := new(oidc.UserInfo)
+	userInfo := new(protocol.UserInfo)
 	if err := p.store.SetUserinfoFromToken(r.Context(), userInfo, tokenID, subject, origin); err != nil {
 		shared.WriteError(w, r, err, nil)
 		return

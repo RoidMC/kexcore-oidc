@@ -10,16 +10,15 @@ import (
 	"fmt"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type UserInfo struct {
 	Subject string `json:"sub,omitempty"`
-	oidc.UserInfoProfile
-	oidc.UserInfoEmail
-	oidc.UserInfoPhone
-	Address *oidc.UserInfoAddress `json:"address,omitempty"`
+	protocol.UserInfoProfile
+	protocol.UserInfoEmail
+	protocol.UserInfoPhone
+	Address *protocol.UserInfoAddress `json:"address,omitempty"`
 
 	// Foo and Bar are custom claims
 	Foo string `json:"foo,omitempty"`

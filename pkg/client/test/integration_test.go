@@ -251,7 +251,7 @@ func TestRelyingPartyWithSigningAlgsFromDiscovery(t *testing.T) {
 	capturedW = httptest.NewRecorder()
 	get = httptest.NewRequest("GET", codeBearingURL.String(), nil)
 	var idToken string
-	redirect := func(w http.ResponseWriter, r *http.Request, newTokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *oidc.UserInfo) {
+	redirect := func(w http.ResponseWriter, r *http.Request, newTokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *protocol.UserInfo) {
 		idToken = newTokens.IDToken
 		http.Redirect(w, r, targetURL, http.StatusFound)
 	}
@@ -447,7 +447,7 @@ func RunAuthorizationCodeFlow(t *testing.T, opServer *httptest.Server, clientID,
 	}
 
 	var email string
-	redirect := func(w http.ResponseWriter, r *http.Request, newTokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *oidc.UserInfo) {
+	redirect := func(w http.ResponseWriter, r *http.Request, newTokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *protocol.UserInfo) {
 		tokens = newTokens
 		require.NotNil(t, tokens, "tokens")
 		require.NotNil(t, info, "info")

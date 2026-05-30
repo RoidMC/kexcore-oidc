@@ -118,7 +118,7 @@ type TokenExchangeStorage interface {
 
 	// SetUserinfoFromTokenExchangeRequest will be called during id token creation.
 	// Claims evaluation can be based on all validated request data available, including: scopes, resource, audience, etc.
-	SetUserinfoFromTokenExchangeRequest(ctx context.Context, userinfo *oidc.UserInfo, request TokenExchangeRequest) error
+	SetUserinfoFromTokenExchangeRequest(ctx context.Context, userinfo *protocol.UserInfo, request TokenExchangeRequest) error
 }
 
 // TokenExchangeTokensVerifierStorage is an optional interface used in token exchange process to verify tokens
@@ -135,7 +135,7 @@ type OPStorage interface {
 	// handle the current request.
 	GetClientByClientID(ctx context.Context, clientID string) (Client, error)
 	AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string) error
-	SetUserinfoFromToken(ctx context.Context, userinfo *oidc.UserInfo, tokenID, subject, origin string) error
+	SetUserinfoFromToken(ctx context.Context, userinfo *protocol.UserInfo, tokenID, subject, origin string) error
 	SetIntrospectionFromToken(ctx context.Context, userinfo *oidc.IntrospectionResponse, tokenID, subject, clientID string) error
 	GetPrivateClaimsFromScopes(ctx context.Context, userID, clientID string, scopes []string) (map[string]any, error)
 	GetKeyByIDAndClientID(ctx context.Context, keyID, clientID string) (jwk.Key, error)
@@ -152,7 +152,7 @@ type JWTProfileTokenStorage interface {
 // implementors of Storage.  It allows additional data to be set in id_tokens based on the
 // request.
 type CanSetUserinfoFromRequest interface {
-	SetUserinfoFromRequest(ctx context.Context, userinfo *oidc.UserInfo, request IDTokenRequest, scopes []string) error
+	SetUserinfoFromRequest(ctx context.Context, userinfo *protocol.UserInfo, request IDTokenRequest, scopes []string) error
 }
 
 // CanGetPrivateClaimsFromRequest is an optional additional interface that may be implemented by

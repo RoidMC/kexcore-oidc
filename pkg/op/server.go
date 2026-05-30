@@ -7,7 +7,6 @@ import (
 
 	"github.com/muhlemmer/gu"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -140,8 +139,8 @@ type Server interface {
 
 	// UserInfo handles the UserInfo endpoint and returns Claims about the authenticated End-User.
 	// https://openid.net/specs/openid-connect-core-1_0.html#UserInfo
-	// The recommended Response Data type is [oidc.UserInfo].
-	UserInfo(context.Context, *Request[oidc.UserInfoRequest]) (*Response, error)
+	// The recommended Response Data type is [protocol.UserInfo].
+	UserInfo(context.Context, *Request[protocol.UserInfoRequest]) (*Response, error)
 
 	// Revocation handles token revocation using an access or refresh token.
 	// https://datatracker.ietf.org/doc/html/rfc7009
@@ -350,7 +349,7 @@ func (UnimplementedServer) Introspect(ctx context.Context, r *Request[Introspect
 	return nil, unimplementedError(r)
 }
 
-func (UnimplementedServer) UserInfo(ctx context.Context, r *Request[oidc.UserInfoRequest]) (*Response, error) {
+func (UnimplementedServer) UserInfo(ctx context.Context, r *Request[protocol.UserInfoRequest]) (*Response, error) {
 	return nil, unimplementedError(r)
 }
 

@@ -203,7 +203,7 @@ func (s *multiStorage) AuthorizeClientIDSecret(ctx context.Context, clientID, cl
 
 // SetUserinfoFromRequests implements the op.CanSetUserinfoFromRequest interface.
 // It will be called for the creation of an id_token, so we'll just pass it to the private function without any further check
-func (s *multiStorage) SetUserinfoFromRequest(ctx context.Context, userinfo *oidc.UserInfo, token op.IDTokenRequest, scopes []string) error {
+func (s *multiStorage) SetUserinfoFromRequest(ctx context.Context, userinfo *protocol.UserInfo, token op.IDTokenRequest, scopes []string) error {
 	storage, err := s.storageFromContext(ctx)
 	if err != nil {
 		return err
@@ -213,7 +213,7 @@ func (s *multiStorage) SetUserinfoFromRequest(ctx context.Context, userinfo *oid
 
 // SetUserinfoFromToken implements the op.Storage interface
 // it will be called for the userinfo endpoint, so we read the token and pass the information from that to the private function
-func (s *multiStorage) SetUserinfoFromToken(ctx context.Context, userinfo *oidc.UserInfo, tokenID, subject, origin string) error {
+func (s *multiStorage) SetUserinfoFromToken(ctx context.Context, userinfo *protocol.UserInfo, tokenID, subject, origin string) error {
 	storage, err := s.storageFromContext(ctx)
 	if err != nil {
 		return err
