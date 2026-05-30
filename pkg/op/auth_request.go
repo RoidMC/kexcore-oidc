@@ -306,13 +306,13 @@ func ValidateAuthReqPrompt(prompts []string, maxAge *uint) (_ *uint, err error) 
 // An error is returned if scopes is empty.
 func ValidateAuthReqScopes(client Client, scopes []string) ([]string, error) {
 	if len(scopes) == 0 {
-		return nil, oidc.ErrInvalidRequest().
+		return nil, protocol.ErrInvalidRequest().
 			WithDescription("The scope of your request is missing. Please ensure some scopes are requested. " +
 				"If you have any questions, you may contact the administrator of the application.")
 	}
 	for _, scope := range scopes {
         if !client.IsScopeAllowed(scope) {
-            return nil, oidc.ErrInvalidScope().WithDescription("scope %s is not allowed for this client", scope)
+            return nil, protocol.ErrInvalidScope().WithDescription("scope %s is not allowed for this client", scope)
         }
     }
 	// Some merges: I think we should check every scopes is allowed or not, there's no stuff?
