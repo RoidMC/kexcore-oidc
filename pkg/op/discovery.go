@@ -139,23 +139,23 @@ func ResponseTypes(c Configuration) []string {
 
 func GrantTypes(c Configuration) []string {
 	grantTypes := []string{
-		string(oidc.GrantTypeCode),
-		string(oidc.GrantTypeImplicit),
+		string(protocol.GrantTypeCode),
+		string(protocol.GrantTypeImplicit),
 	}
 	if c.GrantTypeRefreshTokenSupported() {
-		grantTypes = append(grantTypes, string(oidc.GrantTypeRefreshToken))
+		grantTypes = append(grantTypes, string(protocol.GrantTypeRefreshToken))
 	}
 	if c.GrantTypeClientCredentialsSupported() {
-		grantTypes = append(grantTypes, string(oidc.GrantTypeClientCredentials))
+		grantTypes = append(grantTypes, string(protocol.GrantTypeClientCredentials))
 	}
 	if c.GrantTypeTokenExchangeSupported() {
-		grantTypes = append(grantTypes, string(oidc.GrantTypeTokenExchange))
+		grantTypes = append(grantTypes, string(protocol.GrantTypeTokenExchange))
 	}
 	if c.GrantTypeJWTAuthorizationSupported() {
-		grantTypes = append(grantTypes, string(oidc.GrantTypeBearer))
+		grantTypes = append(grantTypes, string(protocol.GrantTypeBearer))
 	}
 	if c.GrantTypeDeviceCodeSupported() {
-		grantTypes = append(grantTypes, string(oidc.GrantTypeDeviceCode))
+		grantTypes = append(grantTypes, string(protocol.GrantTypeDeviceCode))
 	}
 	return grantTypes
 }

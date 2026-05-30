@@ -38,14 +38,14 @@ func ClientCredentialsExchange(w http.ResponseWriter, r *http.Request, exchanger
 	httphelper.MarshalJSON(w, resp)
 }
 
-// ParseClientCredentialsRequest parsed the http request into a oidc.ClientCredentialsRequest
-func ParseClientCredentialsRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.ClientCredentialsRequest, error) {
+// ParseClientCredentialsRequest parsed the http request into a protocol.ClientCredentialsRequest
+func ParseClientCredentialsRequest(r *http.Request, decoder httphelper.Decoder) (*protocol.ClientCredentialsRequest, error) {
 	err := r.ParseForm()
 	if err != nil {
 		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 
-	request := new(oidc.ClientCredentialsRequest)
+	request := new(protocol.ClientCredentialsRequest)
 	err = decoder.Decode(request, r.Form)
 	if err != nil {
 		return nil, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
@@ -71,7 +71,7 @@ func ParseClientCredentialsRequest(r *http.Request, decoder httphelper.Decoder) 
 
 // ValidateClientCredentialsRequest validates the client_credentials request parameters including authorization check of the client
 // and returns a TokenRequest and Client implementation to be used in the client_credentials response, resp. creation of the corresponding access_token.
-func ValidateClientCredentialsRequest(ctx context.Context, request *oidc.ClientCredentialsRequest, exchanger Exchanger) (TokenRequest, Client, error) {
+func ValidateClientCredentialsRequest(ctx context.Context, request *protocol.ClientCredentialsRequest, exchanger Exchanger) (TokenRequest, Client, error) {
 	ctx, span := Tracer.Start(ctx, "ValidateClientCredentialsRequest")
 	defer span.End()
 
@@ -93,7 +93,7 @@ func ValidateClientCredentialsRequest(ctx context.Context, request *oidc.ClientC
 	return tokenRequest, client, nil
 }
 
-func AuthorizeClientCredentialsClient(ctx context.Context, request *oidc.ClientCredentialsRequest, storage ClientCredentialsStorage) (Client, error) {
+func AuthorizeClientCredentialsClient(ctx context.Context, request *protocol.ClientCredentialsRequest, storage ClientCredentialsStorage) (Client, error) {
 	ctx, span := Tracer.Start(ctx, "AuthorizeClientCredentialsClient")
 	defer span.End()
 
@@ -102,7 +102,7 @@ func AuthorizeClientCredentialsClient(ctx context.Context, request *oidc.ClientC
 		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
-	if !ValidateGrantType(client, oidc.GrantTypeClientCredentials) {
+	if !ValidateGrantType(client, protocol.GrantTypeClientCredentials) {
 		return nil, protocol.ErrUnauthorizedClient()
 	}
 

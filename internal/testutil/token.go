@@ -18,6 +18,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // KeySet implements oidc.KeySet
@@ -138,13 +139,13 @@ func NewAccessToken(issuer, subject string, audience []string, expiration time.T
 	return NewAccessTokenCustom(issuer, subject, audience, expiration, jwtid, clientID, skew, nil)
 }
 
-func NewJWTProfileAssertion(issuer, clientID string, audience []string, issuedAt, expiration time.Time) (string, *oidc.JWTTokenRequest) {
-	req := &oidc.JWTTokenRequest{
+func NewJWTProfileAssertion(issuer, clientID string, audience []string, issuedAt, expiration time.Time) (string, *protocol.JWTTokenRequest) {
+	req := &protocol.JWTTokenRequest{
 		Issuer:    issuer,
 		Subject:   clientID,
 		Audience:  audience,
-		ExpiresAt: oidc.FromTime(expiration),
-		IssuedAt:  oidc.FromTime(issuedAt),
+		ExpiresAt: protocol.FromTime(expiration),
+		IssuedAt:  protocol.FromTime(issuedAt),
 	}
 	// make sure the private claim map is set correctly
 	data, err := json.Marshal(req)
@@ -188,7 +189,7 @@ func ValidAccessToken() (string, *oidc.AccessTokenClaims) {
 	return NewAccessToken(ValidIssuer, ValidSubject, ValidAudience, ValidExpiration, ValidJWTID, ValidClientID, ValidSkew)
 }
 
-func ValidJWTProfileAssertion() (string, *oidc.JWTTokenRequest) {
+func ValidJWTProfileAssertion() (string, *protocol.JWTTokenRequest) {
 	return NewJWTProfileAssertion(ValidClientID, ValidClientID, []string{ValidIssuer}, time.Now(), ValidExpiration)
 }
 

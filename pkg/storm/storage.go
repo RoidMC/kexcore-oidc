@@ -219,11 +219,11 @@ type TokenExchangeStore interface {
 // TokenExchangeRequest represents a validated token exchange request.
 type TokenExchangeRequest interface {
 	TokenRequest
-	GetRequestedTokenType() oidc.TokenType
-	GetSubjectTokenType() oidc.TokenType
-	GetActorTokenType() oidc.TokenType
+	GetRequestedTokenType() protocol.TokenType
+	GetSubjectTokenType() protocol.TokenType
+	GetActorTokenType() protocol.TokenType
 	SetCurrentScopes(scopes []string)
-	SetRequestedTokenType(tokenType oidc.TokenType)
+	SetRequestedTokenType(tokenType protocol.TokenType)
 }
 
 // DCRStore is required by the Dynamic Client Registration plugin.

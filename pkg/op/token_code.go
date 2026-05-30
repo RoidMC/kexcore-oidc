@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -38,9 +37,9 @@ func CodeExchange(w http.ResponseWriter, r *http.Request, exchanger Exchanger) {
 	httphelper.MarshalJSON(w, resp)
 }
 
-// ParseAccessTokenRequest parsed the http request into an oidc.AccessTokenRequest
-func ParseAccessTokenRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.AccessTokenRequest, error) {
-	request := new(oidc.AccessTokenRequest)
+// ParseAccessTokenRequest parsed the http request into an protocol.AccessTokenRequest
+func ParseAccessTokenRequest(r *http.Request, decoder httphelper.Decoder) (*protocol.AccessTokenRequest, error) {
+	request := new(protocol.AccessTokenRequest)
 	err := ParseAuthenticatedTokenRequest(r, decoder, request)
 	if err != nil {
 		return nil, err
@@ -50,7 +49,7 @@ func ParseAccessTokenRequest(r *http.Request, decoder httphelper.Decoder) (*oidc
 
 // ValidateAccessTokenRequest validates the token request parameters including authorization check of the client
 // and returns the previous created auth request corresponding to the auth code
-func ValidateAccessTokenRequest(ctx context.Context, tokenReq *oidc.AccessTokenRequest, exchanger Exchanger) (AuthRequest, Client, error) {
+func ValidateAccessTokenRequest(ctx context.Context, tokenReq *protocol.AccessTokenRequest, exchanger Exchanger) (AuthRequest, Client, error) {
 	ctx, span := Tracer.Start(ctx, "ValidateAccessTokenRequest")
 	defer span.End()
 
@@ -61,8 +60,8 @@ func ValidateAccessTokenRequest(ctx context.Context, tokenReq *oidc.AccessTokenR
 	if client.GetID() != authReq.GetClientID() {
 		return nil, nil, protocol.ErrInvalidGrant()
 	}
-	if !ValidateGrantType(client, oidc.GrantTypeCode) {
-		return nil, nil, protocol.ErrUnauthorizedClient().WithDescription("client missing grant type " + string(oidc.GrantTypeCode))
+	if !ValidateGrantType(client, protocol.GrantTypeCode) {
+		return nil, nil, protocol.ErrUnauthorizedClient().WithDescription("client missing grant type " + string(protocol.GrantTypeCode))
 	}
 	if tokenReq.RedirectURI != authReq.GetRedirectURI() {
 		return nil, nil, protocol.ErrInvalidGrant().WithDescription("redirect_uri does not correspond")
@@ -72,7 +71,7 @@ func ValidateAccessTokenRequest(ctx context.Context, tokenReq *oidc.AccessTokenR
 
 // AuthorizeCodeClient checks the authorization of the client and that the used method was the one previously registered.
 // It than returns the auth request corresponding to the auth code
-func AuthorizeCodeClient(ctx context.Context, tokenReq *oidc.AccessTokenRequest, exchanger Exchanger) (request AuthRequest, client Client, err error) {
+func AuthorizeCodeClient(ctx context.Context, tokenReq *protocol.AccessTokenRequest, exchanger Exchanger) (request AuthRequest, client Client, err error) {
 	ctx, span := Tracer.Start(ctx, "AuthorizeCodeClient")
 	defer span.End()
 
@@ -87,7 +86,7 @@ func AuthorizeCodeClient(ctx context.Context, tokenReq *oidc.AccessTokenRequest,
 		return nil, nil, err
 	}
 
-	if tokenReq.ClientAssertionType == oidc.ClientAssertionTypeJWTAssertion {
+	if tokenReq.ClientAssertionType == protocol.ClientAssertionTypeJWTAssertion {
 		jwtExchanger, ok := exchanger.(JWTAuthorizationGrantExchanger)
 		if !ok || !exchanger.AuthMethodPrivateKeyJWTSupported() {
 			return nil, nil, protocol.ErrInvalidClient().WithDescription("auth_method private_key_jwt not supported")

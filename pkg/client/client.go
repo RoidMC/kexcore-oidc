@@ -232,12 +232,12 @@ func NewSignerFromPrivateKeyByte(key []byte, keyID string) (*crypto.Signer, erro
 func SignedJWTProfileAssertion(clientID string, audience []string, expiration time.Duration, signer *crypto.Signer) (string, error) {
 	iat := time.Now()
 	exp := iat.Add(expiration)
-	return crypto.Sign(&oidc.JWTTokenRequest{
+	return crypto.Sign(&protocol.JWTTokenRequest{
 		Issuer:    clientID,
 		Subject:   clientID,
 		Audience:  audience,
-		ExpiresAt: oidc.FromTime(exp),
-		IssuedAt:  oidc.FromTime(iat),
+		ExpiresAt: protocol.FromTime(exp),
+		IssuedAt:  protocol.FromTime(iat),
 	}, signer)
 }
 
@@ -246,7 +246,7 @@ type DeviceAuthorizationCaller interface {
 	HttpClient() *http.Client
 }
 
-func CallDeviceAuthorizationEndpoint(ctx context.Context, request *oidc.ClientCredentialsRequest, caller DeviceAuthorizationCaller, authFn any) (*oidc.DeviceAuthorizationResponse, error) {
+func CallDeviceAuthorizationEndpoint(ctx context.Context, request *protocol.ClientCredentialsRequest, caller DeviceAuthorizationCaller, authFn any) (*oidc.DeviceAuthorizationResponse, error) {
 	ctx, span := Tracer.Start(ctx, "CallDeviceAuthorizationEndpoint")
 	defer span.End()
 
@@ -269,7 +269,7 @@ func CallDeviceAuthorizationEndpoint(ctx context.Context, request *oidc.ClientCr
 }
 
 type DeviceAccessTokenRequest struct {
-	*oidc.ClientCredentialsRequest
+	*protocol.ClientCredentialsRequest
 	oidc.DeviceAccessTokenRequest
 }
 

@@ -8,7 +8,6 @@ package storage
 import (
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -33,7 +32,7 @@ type Client struct {
 	authMethod                     protocol.AuthMethod
 	loginURL                       func(string) string
 	responseTypes                  []protocol.ResponseType
-	grantTypes                     []oidc.GrantType
+	grantTypes                     []protocol.GrantType
 	accessTokenType                op.AccessTokenType
 	devMode                        bool
 	idTokenUserinfoClaimsAssertion bool
@@ -78,7 +77,7 @@ func (c *Client) ResponseTypes() []protocol.ResponseType {
 }
 
 // GrantTypes must return all allowed grant types (authorization_code, refresh_token, urn:ietf:params:oauth:grant-type:jwt-bearer)
-func (c *Client) GrantTypes() []oidc.GrantType {
+func (c *Client) GrantTypes() []protocol.GrantType {
 	return c.grantTypes
 }
 
@@ -169,7 +168,7 @@ func NativeClient(id string, redirectURIs ...string) *Client {
 		authMethod:                     protocol.AuthMethodNone,
 		loginURL:                       defaultLoginURL,
 		responseTypes:                  []protocol.ResponseType{protocol.ResponseTypeCode},
-		grantTypes:                     []oidc.GrantType{oidc.GrantTypeCode, oidc.GrantTypeRefreshToken},
+		grantTypes:                     []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken},
 		accessTokenType:                op.AccessTokenTypeBearer,
 		devMode:                        false,
 		idTokenUserinfoClaimsAssertion: false,
@@ -195,7 +194,7 @@ func WebClient(id, secret string, redirectURIs ...string) *Client {
 		authMethod:                     protocol.AuthMethodBasic,
 		loginURL:                       defaultLoginURL,
 		responseTypes:                  []protocol.ResponseType{protocol.ResponseTypeCode, protocol.ResponseTypeIDTokenOnly, protocol.ResponseTypeIDToken},
-		grantTypes:                     []oidc.GrantType{oidc.GrantTypeCode, oidc.GrantTypeRefreshToken, oidc.GrantTypeTokenExchange},
+		grantTypes:                     []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken, protocol.GrantTypeTokenExchange},
 		accessTokenType:                op.AccessTokenTypeBearer,
 		devMode:                        true,
 		idTokenUserinfoClaimsAssertion: false,
@@ -231,7 +230,7 @@ func DeviceClient(id, secret string) *Client {
 		authMethod:                     protocol.AuthMethodBasic,
 		loginURL:                       defaultLoginURL,
 		responseTypes:                  []protocol.ResponseType{protocol.ResponseTypeCode},
-		grantTypes:                     []oidc.GrantType{oidc.GrantTypeDeviceCode},
+		grantTypes:                     []protocol.GrantType{protocol.GrantTypeDeviceCode},
 		accessTokenType:                op.AccessTokenTypeBearer,
 		devMode:                        false,
 		idTokenUserinfoClaimsAssertion: false,

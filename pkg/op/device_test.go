@@ -311,7 +311,7 @@ func TestDeviceAccessToken(t *testing.T) {
 
 	values := make(url.Values)
 	values.Set("client_id", "native")
-	values.Set("grant_type", string(oidc.GrantTypeDeviceCode))
+	values.Set("grant_type", string(protocol.GrantTypeDeviceCode))
 	values.Set("device_code", "qwerty")
 
 	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(values.Encode()))

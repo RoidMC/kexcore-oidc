@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/roidmc/kexcore-oidc/example/server/storage"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -171,8 +170,8 @@ func Test_GrantTypes(t *testing.T) {
 				}(),
 			},
 			[]string{
-				string(oidc.GrantTypeCode),
-				string(oidc.GrantTypeImplicit),
+				string(protocol.GrantTypeCode),
+				string(protocol.GrantTypeImplicit),
 			},
 		},
 		{
@@ -189,12 +188,12 @@ func Test_GrantTypes(t *testing.T) {
 				}(),
 			},
 			[]string{
-				string(oidc.GrantTypeCode),
-				string(oidc.GrantTypeImplicit),
-				string(oidc.GrantTypeRefreshToken),
-				string(oidc.GrantTypeClientCredentials),
-				string(oidc.GrantTypeTokenExchange),
-				string(oidc.GrantTypeBearer),
+				string(protocol.GrantTypeCode),
+				string(protocol.GrantTypeImplicit),
+				string(protocol.GrantTypeRefreshToken),
+				string(protocol.GrantTypeClientCredentials),
+				string(protocol.GrantTypeTokenExchange),
+				string(protocol.GrantTypeBearer),
 			},
 		},
 	}

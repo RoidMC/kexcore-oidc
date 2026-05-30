@@ -22,7 +22,7 @@ func TestNewJWTProfileVerifier(t *testing.T) {
 		},
 		Storage: tu.JWTProfileKeyStorage{},
 	}
-	got := op.NewJWTProfileVerifier(tu.JWTProfileKeyStorage{}, tu.ValidIssuer, time.Minute, time.Second, op.SubjectCheck(func(request *oidc.JWTTokenRequest) error {
+	got := op.NewJWTProfileVerifier(tu.JWTProfileKeyStorage{}, tu.ValidIssuer, time.Minute, time.Second, op.SubjectCheck(func(request *protocol.JWTTokenRequest) error {
 		return protocol.ErrSubjectMissing
 	}))
 	assert.Equal(t, want.Verifier, got.Verifier)
@@ -38,19 +38,19 @@ func TestVerifyJWTAssertion(t *testing.T) {
 	tests := []struct {
 		name     string
 		ctx      context.Context
-		newToken func() (string, *oidc.JWTTokenRequest)
+		newToken func() (string, *protocol.JWTTokenRequest)
 		wantErr  error
 	}{
 		{
 			name:     "parse error",
 			ctx:      context.Background(),
-			newToken: func() (string, *oidc.JWTTokenRequest) { return "!", nil },
+			newToken: func() (string, *protocol.JWTTokenRequest) { return "!", nil },
 			wantErr:  protocol.ErrParse,
 		},
 		{
 			name: "wrong audience",
 			ctx:  context.Background(),
-			newToken: func() (string, *oidc.JWTTokenRequest) {
+			newToken: func() (string, *protocol.JWTTokenRequest) {
 				return tu.NewJWTProfileAssertion(
 					tu.ValidClientID, tu.ValidClientID, []string{"wrong"},
 					time.Now(), tu.ValidExpiration,
@@ -61,7 +61,7 @@ func TestVerifyJWTAssertion(t *testing.T) {
 		{
 			name: "expired",
 			ctx:  context.Background(),
-			newToken: func() (string, *oidc.JWTTokenRequest) {
+			newToken: func() (string, *protocol.JWTTokenRequest) {
 				return tu.NewJWTProfileAssertion(
 					tu.ValidClientID, tu.ValidClientID, []string{tu.ValidIssuer},
 					time.Now(), time.Now().Add(-time.Hour),
@@ -72,7 +72,7 @@ func TestVerifyJWTAssertion(t *testing.T) {
 		{
 			name: "invalid iat",
 			ctx:  context.Background(),
-			newToken: func() (string, *oidc.JWTTokenRequest) {
+			newToken: func() (string, *protocol.JWTTokenRequest) {
 				return tu.NewJWTProfileAssertion(
 					tu.ValidClientID, tu.ValidClientID, []string{tu.ValidIssuer},
 					time.Now().Add(time.Hour), tu.ValidExpiration,
@@ -83,7 +83,7 @@ func TestVerifyJWTAssertion(t *testing.T) {
 		{
 			name: "invalid subject",
 			ctx:  context.Background(),
-			newToken: func() (string, *oidc.JWTTokenRequest) {
+			newToken: func() (string, *protocol.JWTTokenRequest) {
 				return tu.NewJWTProfileAssertion(
 					tu.ValidClientID, "wrong", []string{tu.ValidIssuer},
 					time.Now(), tu.ValidExpiration,

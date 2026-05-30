@@ -8,7 +8,6 @@ package storage
 import (
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -30,7 +29,7 @@ type Client struct {
 	authMethod                     protocol.AuthMethod
 	loginURLFn                     func(string) string
 	responseTypes                  []protocol.ResponseType
-	grantTypes                     []oidc.GrantType
+	grantTypes                     []protocol.GrantType
 	devMode                        bool
 	idTokenUserinfoClaimsAssertion bool
 	clockSkew                      time.Duration
@@ -46,7 +45,7 @@ func (c *Client) LoginURL(id string) string              { return c.loginURLFn(i
 func (c *Client) RedirectURIs() []string                 { return c.redirectURIs }
 func (c *Client) PostLogoutRedirectURIs() []string       { return c.postLogoutRedirectURIs }
 func (c *Client) ResponseTypes() []protocol.ResponseType { return c.responseTypes }
-func (c *Client) GrantTypes() []oidc.GrantType           { return c.grantTypes }
+func (c *Client) GrantTypes() []protocol.GrantType           { return c.grantTypes }
 func (c *Client) DevMode() bool                          { return c.devMode }
 func (c *Client) IDTokenLifetime() time.Duration         { return 1 * time.Hour }
 func (c *Client) ClockSkew() time.Duration               { return c.clockSkew }
@@ -73,7 +72,7 @@ func NativeClient(id string, redirectURIs ...string) *Client {
 		appType:       1,
 		loginURLFn:    defaultLoginURL,
 		responseTypes: []protocol.ResponseType{protocol.ResponseTypeCode},
-		grantTypes:    []oidc.GrantType{oidc.GrantTypeCode, oidc.GrantTypeRefreshToken},
+		grantTypes:    []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken},
 	}
 }
 
@@ -89,7 +88,7 @@ func WebClient(id, secret string, redirectURIs ...string) *Client {
 		authMethod:    protocol.AuthMethodBasic,
 		loginURLFn:    defaultLoginURL,
 		responseTypes: []protocol.ResponseType{protocol.ResponseTypeCode, protocol.ResponseTypeIDTokenOnly, protocol.ResponseTypeIDToken},
-		grantTypes:    []oidc.GrantType{oidc.GrantTypeCode, oidc.GrantTypeRefreshToken, oidc.GrantTypeTokenExchange},
+		grantTypes:    []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken, protocol.GrantTypeTokenExchange},
 		devMode:       true,
 	}
 }
@@ -115,7 +114,7 @@ func DeviceClient(id, secret string) *Client {
 		authMethod:    protocol.AuthMethodBasic,
 		loginURLFn:    defaultLoginURL,
 		responseTypes: []protocol.ResponseType{protocol.ResponseTypeCode},
-		grantTypes:    []oidc.GrantType{oidc.GrantTypeDeviceCode},
+		grantTypes:    []protocol.GrantType{protocol.GrantTypeDeviceCode},
 	}
 }
 

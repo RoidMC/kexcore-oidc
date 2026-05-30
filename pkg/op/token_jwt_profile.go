@@ -50,12 +50,12 @@ func JWTProfile(w http.ResponseWriter, r *http.Request, exchanger JWTAuthorizati
 	httphelper.MarshalJSON(w, resp)
 }
 
-func ParseJWTProfileGrantRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.JWTProfileGrantRequest, error) {
+func ParseJWTProfileGrantRequest(r *http.Request, decoder httphelper.Decoder) (*protocol.JWTProfileGrantRequest, error) {
 	err := r.ParseForm()
 	if err != nil {
 		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
-	tokenReq := new(oidc.JWTProfileGrantRequest)
+	tokenReq := new(protocol.JWTProfileGrantRequest)
 	err = decoder.Decode(tokenReq, r.Form)
 	if err != nil {
 		return nil, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
@@ -117,8 +117,8 @@ func (j *jwtProfileClient) RestrictAdditionalAccessTokenScopes() func(scopes []s
 	}
 }
 
-func (j *jwtProfileClient) GrantTypes() []oidc.GrantType {
-	return []oidc.GrantType{
-		oidc.GrantTypeBearer,
+func (j *jwtProfileClient) GrantTypes() []protocol.GrantType {
+	return []protocol.GrantType{
+		protocol.GrantTypeBearer,
 	}
 }

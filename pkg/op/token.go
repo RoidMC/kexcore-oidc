@@ -31,7 +31,7 @@ type AccessTokenClient interface {
 	GetID() string
 	ClockSkew() time.Duration
 	RestrictAdditionalAccessTokenScopes() func(scopes []string) []string
-	GrantTypes() []oidc.GrantType
+	GrantTypes() []protocol.GrantType
 }
 
 func CreateTokenResponse(ctx context.Context, request IDTokenRequest, client Client, creator TokenCreator, createAccessToken bool, code, refreshToken string) (*oidc.AccessTokenResponse, error) {
@@ -108,13 +108,13 @@ func createTokens(ctx context.Context, tokenRequest TokenRequest, storage Storag
 func needsRefreshToken(tokenRequest TokenRequest, client AccessTokenClient) bool {
 	switch req := tokenRequest.(type) {
 	case AuthRequest:
-		return slices.Contains(req.GetScopes(), protocol.ScopeOfflineAccess) && req.GetResponseType() == protocol.ResponseTypeCode && ValidateGrantType(client, oidc.GrantTypeRefreshToken)
+		return slices.Contains(req.GetScopes(), protocol.ScopeOfflineAccess) && req.GetResponseType() == protocol.ResponseTypeCode && ValidateGrantType(client, protocol.GrantTypeRefreshToken)
 	case TokenExchangeRequest:
-		return req.GetRequestedTokenType() == oidc.RefreshTokenType
+		return req.GetRequestedTokenType() == protocol.RefreshTokenType
 	case RefreshTokenRequest:
 		return true
 	case *DeviceAuthorizationState:
-		return slices.Contains(req.GetScopes(), protocol.ScopeOfflineAccess) && ValidateGrantType(client, oidc.GrantTypeRefreshToken)
+		return slices.Contains(req.GetScopes(), protocol.ScopeOfflineAccess) && ValidateGrantType(client, protocol.GrantTypeRefreshToken)
 	default:
 		return false
 	}

@@ -102,14 +102,14 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch oidc.GrantType(grantType) {
-	case oidc.GrantTypeCode:
+	switch protocol.GrantType(grantType) {
+	case protocol.GrantTypeCode:
 		p.handleAuthorizationCode(w, r)
-	case oidc.GrantTypeRefreshToken:
+	case protocol.GrantTypeRefreshToken:
 		p.handleRefreshToken(w, r)
-	case oidc.GrantTypeClientCredentials:
+	case protocol.GrantTypeClientCredentials:
 		p.handleClientCredentials(w, r)
-	case oidc.GrantTypeBearer:
+	case protocol.GrantTypeBearer:
 		p.handleJWTProfile(w, r)
 	default:
 		tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("unsupported grant_type: %s", grantType))
@@ -151,7 +151,7 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Validate grant type is allowed for this client
-	if !validateGrantType(client, oidc.GrantTypeCode) {
+	if !validateGrantType(client, protocol.GrantTypeCode) {
 		tokenError(w, r, protocol.ErrUnauthorizedClient().WithDescription("client missing grant_type authorization_code"))
 		return
 	}
@@ -198,7 +198,7 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !validateGrantType(client, oidc.GrantTypeRefreshToken) {
+	if !validateGrantType(client, protocol.GrantTypeRefreshToken) {
 		tokenError(w, r, protocol.ErrUnauthorizedClient())
 		return
 	}
@@ -247,7 +247,7 @@ func (p *Plugin) handleClientCredentials(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if !validateGrantType(client, oidc.GrantTypeClientCredentials) {
+	if !validateGrantType(client, protocol.GrantTypeClientCredentials) {
 		tokenError(w, r, protocol.ErrUnauthorizedClient())
 		return
 	}
@@ -287,24 +287,24 @@ func (p *Plugin) handleJWTProfile(w http.ResponseWriter, r *http.Request) {
 
 // --- parsing ---
 
-func parseAccessTokenRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*oidc.AccessTokenRequest, error) {
-	req := new(oidc.AccessTokenRequest)
+func parseAccessTokenRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*protocol.AccessTokenRequest, error) {
+	req := new(protocol.AccessTokenRequest)
 	if err := codec.Decode(req, form, converters); err != nil {
 		return nil, err
 	}
 	return req, nil
 }
 
-func parseRefreshTokenRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*oidc.RefreshTokenRequest, error) {
-	req := new(oidc.RefreshTokenRequest)
+func parseRefreshTokenRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*protocol.RefreshTokenRequest, error) {
+	req := new(protocol.RefreshTokenRequest)
 	if err := codec.Decode(req, form, converters); err != nil {
 		return nil, err
 	}
 	return req, nil
 }
 
-func parseClientCredentialsRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*oidc.ClientCredentialsRequest, error) {
-	req := new(oidc.ClientCredentialsRequest)
+func parseClientCredentialsRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*protocol.ClientCredentialsRequest, error) {
+	req := new(protocol.ClientCredentialsRequest)
 	if err := codec.Decode(req, form, converters); err != nil {
 		return nil, err
 	}
@@ -376,15 +376,15 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 
 // --- validation ---
 
-func validateGrantType(client storm.Client, grantType oidc.GrantType) bool {
+func validateGrantType(client storm.Client, grantType protocol.GrantType) bool {
 	type grantTypesProvider interface {
-		GrantTypes() []oidc.GrantType
+		GrantTypes() []protocol.GrantType
 	}
 	if gp, ok := client.(grantTypesProvider); ok {
 		return slices.Contains(gp.GrantTypes(), grantType)
 	}
 	// If the client doesn't declare grant types, allow common ones
-	return grantType == oidc.GrantTypeCode || grantType == oidc.GrantTypeRefreshToken
+	return grantType == protocol.GrantTypeCode || grantType == protocol.GrantTypeRefreshToken
 }
 
 func validateRefreshScopes(requestedScopes []string, refreshReq storm.RefreshTokenRequest) error {
@@ -486,7 +486,7 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 	if authReq, ok := request.(storm.AuthRequest); ok {
 		needsRefresh = slices.Contains(authReq.GetScopes(), protocol.ScopeOfflineAccess) &&
 			authReq.GetResponseType() == protocol.ResponseTypeCode &&
-			validateGrantType(client, oidc.GrantTypeRefreshToken)
+			validateGrantType(client, protocol.GrantTypeRefreshToken)
 	}
 
 	var tokenID string

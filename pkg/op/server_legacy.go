@@ -236,7 +236,7 @@ func (s *LegacyServer) VerifyClient(ctx context.Context, r *Request[ClientCreden
 	ctx, span := Tracer.Start(ctx, "LegacyServer.VerifyClient")
 	defer span.End()
 
-	if oidc.GrantType(r.Form.Get("grant_type")) == oidc.GrantTypeClientCredentials {
+	if protocol.GrantType(r.Form.Get("grant_type")) == protocol.GrantTypeClientCredentials {
 		storage, ok := s.provider.Storage().(ClientCredentialsStorage)
 		if !ok {
 			return nil, protocol.ErrUnsupportedGrantType().WithDescription("client_credentials grant not supported")
@@ -244,7 +244,7 @@ func (s *LegacyServer) VerifyClient(ctx context.Context, r *Request[ClientCreden
 		return storage.ClientCredentials(ctx, r.Data.ClientID, r.Data.ClientSecret)
 	}
 
-	if r.Data.ClientAssertionType == oidc.ClientAssertionTypeJWTAssertion {
+	if r.Data.ClientAssertionType == protocol.ClientAssertionTypeJWTAssertion {
 		jwtExchanger, ok := s.provider.(JWTAuthorizationGrantExchanger)
 		if !ok || !s.provider.AuthMethodPrivateKeyJWTSupported() {
 			return nil, protocol.ErrInvalidClient().WithDescription("auth_method private_key_jwt not supported")
@@ -275,7 +275,7 @@ func (s *LegacyServer) VerifyClient(ctx context.Context, r *Request[ClientCreden
 	return client, nil
 }
 
-func (s *LegacyServer) CodeExchange(ctx context.Context, r *ClientRequest[oidc.AccessTokenRequest]) (*Response, error) {
+func (s *LegacyServer) CodeExchange(ctx context.Context, r *ClientRequest[protocol.AccessTokenRequest]) (*Response, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.CodeExchange")
 	defer span.End()
 
@@ -298,12 +298,12 @@ func (s *LegacyServer) CodeExchange(ctx context.Context, r *ClientRequest[oidc.A
 	return NewResponse(resp), nil
 }
 
-func (s *LegacyServer) RefreshToken(ctx context.Context, r *ClientRequest[oidc.RefreshTokenRequest]) (*Response, error) {
+func (s *LegacyServer) RefreshToken(ctx context.Context, r *ClientRequest[protocol.RefreshTokenRequest]) (*Response, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.RefreshToken")
 	defer span.End()
 
 	if !s.provider.GrantTypeRefreshTokenSupported() {
-		return nil, unimplementedGrantError(oidc.GrantTypeRefreshToken)
+		return nil, unimplementedGrantError(protocol.GrantTypeRefreshToken)
 	}
 	request, err := RefreshTokenRequestByRefreshToken(ctx, s.provider.Storage(), r.Data.RefreshToken)
 	if err != nil {
@@ -322,13 +322,13 @@ func (s *LegacyServer) RefreshToken(ctx context.Context, r *ClientRequest[oidc.R
 	return NewResponse(resp), nil
 }
 
-func (s *LegacyServer) JWTProfile(ctx context.Context, r *Request[oidc.JWTProfileGrantRequest]) (*Response, error) {
+func (s *LegacyServer) JWTProfile(ctx context.Context, r *Request[protocol.JWTProfileGrantRequest]) (*Response, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.JWTProfile")
 	defer span.End()
 
 	exchanger, ok := s.provider.(JWTAuthorizationGrantExchanger)
 	if !ok {
-		return nil, unimplementedGrantError(oidc.GrantTypeBearer)
+		return nil, unimplementedGrantError(protocol.GrantTypeBearer)
 	}
 	tokenRequest, err := VerifyJWTAssertion(ctx, r.Data.Assertion, exchanger.JWTProfileVerifier(ctx))
 	if err != nil {
@@ -346,12 +346,12 @@ func (s *LegacyServer) JWTProfile(ctx context.Context, r *Request[oidc.JWTProfil
 	return NewResponse(resp), nil
 }
 
-func (s *LegacyServer) TokenExchange(ctx context.Context, r *ClientRequest[oidc.TokenExchangeRequest]) (*Response, error) {
+func (s *LegacyServer) TokenExchange(ctx context.Context, r *ClientRequest[protocol.TokenExchangeRequest]) (*Response, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.TokenExchange")
 	defer span.End()
 
 	if !s.provider.GrantTypeTokenExchangeSupported() {
-		return nil, unimplementedGrantError(oidc.GrantTypeTokenExchange)
+		return nil, unimplementedGrantError(protocol.GrantTypeTokenExchange)
 	}
 	tokenExchangeRequest, err := CreateTokenExchangeRequest(ctx, r.Data, r.Client, s.provider)
 	if err != nil {
@@ -364,13 +364,13 @@ func (s *LegacyServer) TokenExchange(ctx context.Context, r *ClientRequest[oidc.
 	return NewResponse(resp), nil
 }
 
-func (s *LegacyServer) ClientCredentialsExchange(ctx context.Context, r *ClientRequest[oidc.ClientCredentialsRequest]) (*Response, error) {
+func (s *LegacyServer) ClientCredentialsExchange(ctx context.Context, r *ClientRequest[protocol.ClientCredentialsRequest]) (*Response, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.ClientCredentialsExchange")
 	defer span.End()
 
 	storage, ok := s.provider.Storage().(ClientCredentialsStorage)
 	if !ok {
-		return nil, unimplementedGrantError(oidc.GrantTypeClientCredentials)
+		return nil, unimplementedGrantError(protocol.GrantTypeClientCredentials)
 	}
 	tokenRequest, err := storage.ClientCredentialsTokenRequest(ctx, r.Client.GetID(), r.Data.Scope)
 	if err != nil {
@@ -388,7 +388,7 @@ func (s *LegacyServer) DeviceToken(ctx context.Context, r *ClientRequest[oidc.De
 	defer span.End()
 
 	if !s.provider.GrantTypeDeviceCodeSupported() {
-		return nil, unimplementedGrantError(oidc.GrantTypeDeviceCode)
+		return nil, unimplementedGrantError(protocol.GrantTypeDeviceCode)
 	}
 	// use a limited context timeout shorter as the default
 	// poll interval of 5 seconds.

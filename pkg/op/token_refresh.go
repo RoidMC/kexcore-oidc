@@ -13,7 +13,6 @@ import (
 	"time"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -59,9 +58,9 @@ func RefreshTokenExchange(w http.ResponseWriter, r *http.Request, exchanger Exch
 	httphelper.MarshalJSON(w, resp)
 }
 
-// ParseRefreshTokenRequest parsed the http request into an oidc.RefreshTokenRequest
-func ParseRefreshTokenRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.RefreshTokenRequest, error) {
-	request := new(oidc.RefreshTokenRequest)
+// ParseRefreshTokenRequest parsed the http request into an protocol.RefreshTokenRequest
+func ParseRefreshTokenRequest(r *http.Request, decoder httphelper.Decoder) (*protocol.RefreshTokenRequest, error) {
+	request := new(protocol.RefreshTokenRequest)
 	err := ParseAuthenticatedTokenRequest(r, decoder, request)
 	if err != nil {
 		return nil, err
@@ -71,7 +70,7 @@ func ParseRefreshTokenRequest(r *http.Request, decoder httphelper.Decoder) (*oid
 
 // ValidateRefreshTokenRequest validates the refresh_token request parameters including authorization check of the client
 // and returns the data representing the original auth request corresponding to the refresh_token
-func ValidateRefreshTokenRequest(ctx context.Context, tokenReq *oidc.RefreshTokenRequest, exchanger Exchanger) (RefreshTokenRequest, Client, error) {
+func ValidateRefreshTokenRequest(ctx context.Context, tokenReq *protocol.RefreshTokenRequest, exchanger Exchanger) (RefreshTokenRequest, Client, error) {
 	ctx, span := Tracer.Start(ctx, "ValidateRefreshTokenRequest")
 	defer span.End()
 
@@ -109,11 +108,11 @@ func ValidateRefreshTokenScopes(requestedScopes []string, authRequest RefreshTok
 
 // AuthorizeRefreshClient checks the authorization of the client and that the used method was the one previously registered.
 // It than returns the data representing the original auth request corresponding to the refresh_token
-func AuthorizeRefreshClient(ctx context.Context, tokenReq *oidc.RefreshTokenRequest, exchanger Exchanger) (request RefreshTokenRequest, client Client, err error) {
+func AuthorizeRefreshClient(ctx context.Context, tokenReq *protocol.RefreshTokenRequest, exchanger Exchanger) (request RefreshTokenRequest, client Client, err error) {
 	ctx, span := Tracer.Start(ctx, "AuthorizeRefreshClient")
 	defer span.End()
 
-	if tokenReq.ClientAssertionType == oidc.ClientAssertionTypeJWTAssertion {
+	if tokenReq.ClientAssertionType == protocol.ClientAssertionTypeJWTAssertion {
 		jwtExchanger, ok := exchanger.(JWTAuthorizationGrantExchanger)
 		if !ok || !exchanger.AuthMethodPrivateKeyJWTSupported() {
 			return nil, nil, errors.New("auth_method private_key_jwt not supported")
@@ -122,7 +121,7 @@ func AuthorizeRefreshClient(ctx context.Context, tokenReq *oidc.RefreshTokenRequ
 		if err != nil {
 			return nil, nil, err
 		}
-		if !ValidateGrantType(client, oidc.GrantTypeRefreshToken) {
+		if !ValidateGrantType(client, protocol.GrantTypeRefreshToken) {
 			return nil, nil, protocol.ErrUnauthorizedClient()
 		}
 		request, err = RefreshTokenRequestByRefreshToken(ctx, exchanger.Storage(), tokenReq.RefreshToken)
@@ -132,7 +131,7 @@ func AuthorizeRefreshClient(ctx context.Context, tokenReq *oidc.RefreshTokenRequ
 	if err != nil {
 		return nil, nil, err
 	}
-	if !ValidateGrantType(client, oidc.GrantTypeRefreshToken) {
+	if !ValidateGrantType(client, protocol.GrantTypeRefreshToken) {
 		return nil, nil, protocol.ErrUnauthorizedClient()
 	}
 	if client.AuthMethod() == protocol.AuthMethodPrivateKeyJWT {

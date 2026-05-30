@@ -2,10 +2,17 @@ package protocol
 
 import (
 	"encoding/json"
+	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"golang.org/x/text/language"
 )
+
+// ---------------------------------------------------------------------------
+// OIDC Core §5.2 — UserInfo / Language Tags
+// ---------------------------------------------------------------------------
 
 type Locales []language.Tag
 
@@ -64,6 +71,10 @@ func (l *Locales) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// OIDC Core §3.1.2.1 — Authorization Request Parameters
+// ---------------------------------------------------------------------------
+
 type ResponseType string
 
 type ResponseMode string
@@ -84,6 +95,10 @@ func (d *Display) UnmarshalText(text []byte) error {
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// RFC 6749 §1.4 — Space-Delimited Parameter Encoding
+// ---------------------------------------------------------------------------
 
 type SpaceDelimitedArray []string
 
@@ -113,6 +128,10 @@ func (s *SpaceDelimitedArray) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// OIDC Core §9 — Client Authentication Methods
+// ---------------------------------------------------------------------------
+
 type AuthMethod string
 
 const (
@@ -124,4 +143,117 @@ const (
 
 var AllAuthMethods = []AuthMethod{
 	AuthMethodBasic, AuthMethodPost, AuthMethodNone, AuthMethodPrivateKeyJWT,
+}
+
+// ---------------------------------------------------------------------------
+// RFC 6749 §4.1 / §4.4 / §4.5 — Grant Types
+// ---------------------------------------------------------------------------
+
+type GrantType string
+
+const (
+	GrantTypeCode              GrantType = "authorization_code"
+	GrantTypeRefreshToken      GrantType = "refresh_token"
+	GrantTypeClientCredentials GrantType = "client_credentials"
+	GrantTypeBearer            GrantType = "urn:ietf:params:oauth:grant-type:jwt-bearer"
+	GrantTypeTokenExchange     GrantType = "urn:ietf:params:oauth:grant-type:token-exchange"
+	GrantTypeImplicit          GrantType = "implicit"
+	GrantTypeDeviceCode        GrantType = "urn:ietf:params:oauth:grant-type:device_code"
+)
+
+var AllGrantTypes = []GrantType{
+	GrantTypeCode, GrantTypeRefreshToken, GrantTypeClientCredentials,
+	GrantTypeBearer, GrantTypeTokenExchange, GrantTypeImplicit,
+	GrantTypeDeviceCode,
+}
+
+// ---------------------------------------------------------------------------
+// RFC 8693 §2.1 — Token Types (Token Exchange)
+// ---------------------------------------------------------------------------
+
+type TokenType string
+
+const (
+	AccessTokenType  TokenType = "urn:ietf:params:oauth:token-type:access_token"
+	RefreshTokenType TokenType = "urn:ietf:params:oauth:token-type:refresh_token"
+	IDTokenType      TokenType = "urn:ietf:params:oauth:token-type:id_token"
+	JWTTokenType     TokenType = "urn:ietf:params:oauth:token-type:jwt"
+)
+
+var AllTokenTypes = []TokenType{
+	AccessTokenType, RefreshTokenType, IDTokenType, JWTTokenType,
+}
+
+func (t TokenType) IsSupported() bool {
+	return slices.Contains(AllTokenTypes, t)
+}
+
+// ---------------------------------------------------------------------------
+// OIDC Core §2 — Audience Claim (JSON string or array)
+// ---------------------------------------------------------------------------
+
+type Audience []string
+
+func (a *Audience) UnmarshalJSON(text []byte) error {
+	var i any
+	err := json.Unmarshal(text, &i)
+	if err != nil {
+		return err
+	}
+	switch aud := i.(type) {
+	case []any:
+		*a = make([]string, len(aud))
+		for i, audience := range aud {
+			(*a)[i] = audience.(string)
+		}
+	case string:
+		*a = []string{aud}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// OIDC Core §2 — Time Claim (JSON number or RFC3339 string)
+// ---------------------------------------------------------------------------
+
+type Time int64
+
+func (ts Time) AsTime() time.Time {
+	if ts == 0 {
+		return time.Time{}
+	}
+	return time.Unix(int64(ts), 0)
+}
+
+func FromTime(tt time.Time) Time {
+	if tt.IsZero() {
+		return 0
+	}
+	return Time(tt.Unix())
+}
+
+func NowTime() Time {
+	return FromTime(time.Now())
+}
+
+func (ts *Time) UnmarshalJSON(data []byte) error {
+	var v any
+	if err := json.Unmarshal(data, &v); err != nil {
+		return fmt.Errorf("protocol.Time: %w", err)
+	}
+	switch x := v.(type) {
+	case float64:
+		*ts = Time(x)
+	case string:
+		tt, err := time.Parse(time.RFC3339, x)
+		if err != nil {
+			return fmt.Errorf("protocol.Time: %w", err)
+		}
+		*ts = FromTime(tt)
+	case nil:
+		*ts = 0
+	default:
+		return fmt.Errorf("protocol.Time: unable to parse type %T with value %v", x, x)
+	}
+	return nil
 }

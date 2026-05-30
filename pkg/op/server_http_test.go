@@ -16,7 +16,6 @@ import (
 
 	"github.com/muhlemmer/gu"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -50,7 +49,7 @@ type testClient struct {
 	authMethod      protocol.AuthMethod
 	accessTokenType AccessTokenType
 	responseTypes   []protocol.ResponseType
-	grantTypes      []oidc.GrantType
+	grantTypes      []protocol.GrantType
 	devMode         bool
 }
 
@@ -134,7 +133,7 @@ func (c *testClient) ResponseTypes() []protocol.ResponseType {
 	return c.responseTypes
 }
 
-func (c *testClient) GrantTypes() []oidc.GrantType {
+func (c *testClient) GrantTypes() []protocol.GrantType {
 	return c.grantTypes
 }
 

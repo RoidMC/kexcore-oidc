@@ -21,6 +21,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // ---------- JWE Encryption / Decryption Tests ----------
@@ -95,8 +96,8 @@ func TestLogoutTokenCreation(t *testing.T) {
 		Issuer:     "https://op.example.com",
 		Subject:    "user-123",
 		Audience:   oidc.Audience{"client-abc"},
-		IssuedAt:   oidc.FromTime(now),
-		Expiration: oidc.FromTime(now.Add(5 * time.Minute)),
+		IssuedAt:   protocol.FromTime(now),
+		Expiration: protocol.FromTime(now.Add(5 * time.Minute)),
 		JWTID:      "lt-001",
 		SessionID:  "sid-xyz",
 		Events: map[string]any{
@@ -119,8 +120,8 @@ func TestLogoutTokenClaimsMethods(t *testing.T) {
 		Issuer:     "https://op.example.com",
 		Subject:    "user-123",
 		Audience:   oidc.Audience{"client-abc", "client-def"},
-		IssuedAt:   oidc.FromTime(now),
-		Expiration: oidc.FromTime(now.Add(300)),
+		IssuedAt:   protocol.FromTime(now),
+		Expiration: protocol.FromTime(now.Add(300)),
 		JWTID:      "lt-001",
 		SessionID:  "sid-xyz",
 		Events: map[string]any{
@@ -174,8 +175,8 @@ func TestBackChannelLogout_SendLogoutToken(t *testing.T) {
 		Issuer:     "https://op.example.com",
 		Subject:    "user-123",
 		Audience:   oidc.Audience{"client-abc"},
-		IssuedAt:   oidc.FromTime(now),
-		Expiration: oidc.FromTime(now.Add(300)),
+		IssuedAt:   protocol.FromTime(now),
+		Expiration: protocol.FromTime(now.Add(300)),
 		JWTID:      "lt-test-001",
 		SessionID:  "sid-xyz",
 		Events: map[string]any{
@@ -218,8 +219,8 @@ func TestBackChannelLogout_SendToMultipleRPs(t *testing.T) {
 		Issuer:     "https://op.example.com",
 		Subject:    "user-123",
 		Audience:   oidc.Audience{"client-1"},
-		IssuedAt:   oidc.FromTime(now),
-		Expiration: oidc.FromTime(now.Add(300)),
+		IssuedAt:   protocol.FromTime(now),
+		Expiration: protocol.FromTime(now.Add(300)),
 		JWTID:      "lt-multi-001",
 		SessionID:  "sid-xyz",
 		Events: map[string]any{
@@ -363,8 +364,8 @@ func TestBackChannelLogout_Integration(t *testing.T) {
 		Issuer:     "https://op.example.com",
 		Subject:    "user-123",
 		Audience:   oidc.Audience{"client-abc"},
-		IssuedAt:   oidc.FromTime(now),
-		Expiration: oidc.FromTime(now.Add(300)),
+		IssuedAt:   protocol.FromTime(now),
+		Expiration: protocol.FromTime(now.Add(300)),
 		JWTID:      "lt-integration-001",
 		SessionID:  "sid-xyz",
 		Events: map[string]any{

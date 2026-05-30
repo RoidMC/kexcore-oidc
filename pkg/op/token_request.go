@@ -7,7 +7,6 @@ import (
 	"net/url"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -44,30 +43,30 @@ func Exchange(w http.ResponseWriter, r *http.Request, exchanger Exchanger) {
 
 	grantType := r.FormValue("grant_type")
 	switch grantType {
-	case string(oidc.GrantTypeCode):
+	case string(protocol.GrantTypeCode):
 		CodeExchange(w, r, exchanger)
 		return
-	case string(oidc.GrantTypeRefreshToken):
+	case string(protocol.GrantTypeRefreshToken):
 		if exchanger.GrantTypeRefreshTokenSupported() {
 			RefreshTokenExchange(w, r, exchanger)
 			return
 		}
-	case string(oidc.GrantTypeBearer):
+	case string(protocol.GrantTypeBearer):
 		if ex, ok := exchanger.(JWTAuthorizationGrantExchanger); ok && exchanger.GrantTypeJWTAuthorizationSupported() {
 			JWTProfile(w, r, ex)
 			return
 		}
-	case string(oidc.GrantTypeTokenExchange):
+	case string(protocol.GrantTypeTokenExchange):
 		if exchanger.GrantTypeTokenExchangeSupported() {
 			TokenExchange(w, r, exchanger)
 			return
 		}
-	case string(oidc.GrantTypeClientCredentials):
+	case string(protocol.GrantTypeClientCredentials):
 		if exchanger.GrantTypeClientCredentialsSupported() {
 			ClientCredentialsExchange(w, r, exchanger)
 			return
 		}
-	case string(oidc.GrantTypeDeviceCode):
+	case string(protocol.GrantTypeDeviceCode):
 		if exchanger.GrantTypeDeviceCodeSupported() {
 			DeviceAccessToken(w, r, exchanger)
 			return
@@ -80,7 +79,7 @@ func Exchange(w http.ResponseWriter, r *http.Request, exchanger Exchanger) {
 }
 
 // AuthenticatedTokenRequest is a helper interface for ParseAuthenticatedTokenRequest
-// it is implemented by protocol.AuthRequest and oidc.RefreshTokenRequest
+// it is implemented by protocol.AuthRequest and protocol.RefreshTokenRequest
 type AuthenticatedTokenRequest interface {
 	SetClientID(string)
 	SetClientSecret(string)
@@ -171,7 +170,7 @@ func AuthorizePrivateJWTKey(ctx context.Context, clientAssertion string, exchang
 }
 
 // ValidateGrantType ensures that the requested grant_type is allowed by the client
-func ValidateGrantType(client interface{ GrantTypes() []oidc.GrantType }, grantType oidc.GrantType) bool {
+func ValidateGrantType(client interface{ GrantTypes() []protocol.GrantType }, grantType protocol.GrantType) bool {
 	if client == nil {
 		return false
 	}

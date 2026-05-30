@@ -31,7 +31,7 @@ type AuthStorage interface {
 	//
 	// * AuthRequest as returned by AuthRequestByID or AuthRequestByCode (above)
 	//
-	// * *oidc.JWTTokenRequest from a JWT that is the assertion value of a JWT Profile
+	// * *protocol.JWTTokenRequest from a JWT that is the assertion value of a JWT Profile
 	//   Grant: https://datatracker.ietf.org/doc/html/rfc7523#section-2.1
 	//
 	// * TokenExchangeRequest as returned by ValidateTokenExchangeRequest
@@ -124,8 +124,8 @@ type TokenExchangeStorage interface {
 // TokenExchangeTokensVerifierStorage is an optional interface used in token exchange process to verify tokens
 // issued by third-party applications. If interface is not implemented - only tokens issued by op will be exchanged.
 type TokenExchangeTokensVerifierStorage interface {
-	VerifyExchangeSubjectToken(ctx context.Context, token string, tokenType oidc.TokenType) (tokenIDOrToken string, subject string, tokenClaims map[string]any, err error)
-	VerifyExchangeActorToken(ctx context.Context, token string, tokenType oidc.TokenType) (tokenIDOrToken string, actor string, tokenClaims map[string]any, err error)
+	VerifyExchangeSubjectToken(ctx context.Context, token string, tokenType protocol.TokenType) (tokenIDOrToken string, subject string, tokenClaims map[string]any, err error)
+	VerifyExchangeActorToken(ctx context.Context, token string, tokenType protocol.TokenType) (tokenIDOrToken string, actor string, tokenClaims map[string]any, err error)
 }
 
 var ErrInvalidRefreshToken = errors.New("invalid_refresh_token")

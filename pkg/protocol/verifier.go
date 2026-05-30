@@ -190,28 +190,6 @@ func (c *IDTokenClaims) SetSignatureAlgorithm(alg string)               { c.SigA
 func (c *IDTokenClaims) GetSignatureAlgorithm() string                  { return c.SigAlg }
 func (c *IDTokenClaims) GetAccessTokenHash() string                     { return c.AccessTokenHash }
 
-type JWTTokenRequest struct {
-	Issuer     string   `json:"iss,omitempty"`
-	Subject    string   `json:"sub,omitempty"`
-	Audience   audience `json:"aud,omitempty"`
-	Expiration int64    `json:"exp,omitempty"`
-	IssuedAt   int64    `json:"iat,omitempty"`
-	Nonce      string   `json:"nonce,omitempty"`
-	JWTID      string   `json:"jti,omitempty"`
-	SigAlg     string   `json:"-"`
-}
-
-func (c *JWTTokenRequest) GetIssuer() string                              { return c.Issuer }
-func (c *JWTTokenRequest) GetSubject() string                             { return c.Subject }
-func (c *JWTTokenRequest) GetAudience() []string                          { return []string(c.Audience) }
-func (c *JWTTokenRequest) GetExpiration() time.Time                       { return time.Unix(c.Expiration, 0) }
-func (c *JWTTokenRequest) GetIssuedAt() time.Time                         { return time.Unix(c.IssuedAt, 0) }
-func (c *JWTTokenRequest) GetNonce() string                               { return c.Nonce }
-func (c *JWTTokenRequest) GetAuthenticationContextClassReference() string { return "" }
-func (c *JWTTokenRequest) GetAuthTime() time.Time                         { return time.Time{} }
-func (c *JWTTokenRequest) GetAuthorizedParty() string                     { return "" }
-func (c *JWTTokenRequest) SetSignatureAlgorithm(alg string)               { c.SigAlg = alg }
-
 // --- DecryptToken / EncryptToken ---
 
 func DecryptToken(tokenString string) (string, error) {

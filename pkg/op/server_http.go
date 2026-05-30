@@ -159,7 +159,7 @@ func (s *webServer) withClient(handler clientHandler) http.HandlerFunc {
 			WriteError(w, r, err, s.getLogger(r.Context()))
 			return
 		}
-		if grantType := oidc.GrantType(r.Form.Get("grant_type")); grantType != "" {
+		if grantType := protocol.GrantType(r.Form.Get("grant_type")); grantType != "" {
 			if !ValidateGrantType(client, grantType) {
 				WriteError(w, r, protocol.ErrUnauthorizedClient().WithDescription("grant_type %q not allowed", grantType), s.getLogger(r.Context()))
 				return
@@ -205,7 +205,7 @@ func (s *webServer) parseClientCredentials(r *http.Request) (_ *ClientCredential
 	if cc.ClientID == "" && cc.ClientAssertion == "" {
 		return nil, protocol.ErrInvalidRequest().WithDescription("client_id or client_assertion must be provided")
 	}
-	if cc.ClientAssertion != "" && cc.ClientAssertionType != oidc.ClientAssertionTypeJWTAssertion {
+	if cc.ClientAssertion != "" && cc.ClientAssertionType != protocol.ClientAssertionTypeJWTAssertion {
 		return nil, protocol.ErrInvalidRequest().WithDescription("invalid client_assertion_type %s", cc.ClientAssertionType)
 	}
 	return cc, nil
@@ -276,18 +276,18 @@ func (s *webServer) tokensHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch grantType := oidc.GrantType(r.Form.Get("grant_type")); grantType {
-	case oidc.GrantTypeCode:
+	switch grantType := protocol.GrantType(r.Form.Get("grant_type")); grantType {
+	case protocol.GrantTypeCode:
 		s.withClient(s.codeExchangeHandler)(w, r)
-	case oidc.GrantTypeRefreshToken:
+	case protocol.GrantTypeRefreshToken:
 		s.withClient(s.refreshTokenHandler)(w, r)
-	case oidc.GrantTypeClientCredentials:
+	case protocol.GrantTypeClientCredentials:
 		s.withClient(s.clientCredentialsHandler)(w, r)
-	case oidc.GrantTypeBearer:
+	case protocol.GrantTypeBearer:
 		s.jwtProfileHandler(w, r)
-	case oidc.GrantTypeTokenExchange:
+	case protocol.GrantTypeTokenExchange:
 		s.withClient(s.tokenExchangeHandler)(w, r)
-	case oidc.GrantTypeDeviceCode:
+	case protocol.GrantTypeDeviceCode:
 		s.withClient(s.deviceTokenHandler)(w, r)
 	case "":
 		WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("grant_type missing"), s.getLogger(r.Context()))
@@ -297,7 +297,7 @@ func (s *webServer) tokensHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *webServer) jwtProfileHandler(w http.ResponseWriter, r *http.Request) {
-	request, err := decodeRequest[oidc.JWTProfileGrantRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.JWTProfileGrantRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return
@@ -315,7 +315,7 @@ func (s *webServer) jwtProfileHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *webServer) codeExchangeHandler(w http.ResponseWriter, r *http.Request, client Client) {
-	request, err := decodeRequest[oidc.AccessTokenRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.AccessTokenRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return
@@ -337,7 +337,7 @@ func (s *webServer) codeExchangeHandler(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *webServer) refreshTokenHandler(w http.ResponseWriter, r *http.Request, client Client) {
-	request, err := decodeRequest[oidc.RefreshTokenRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.RefreshTokenRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return
@@ -355,7 +355,7 @@ func (s *webServer) refreshTokenHandler(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *webServer) tokenExchangeHandler(w http.ResponseWriter, r *http.Request, client Client) {
-	request, err := decodeRequest[oidc.TokenExchangeRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.TokenExchangeRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return
@@ -394,7 +394,7 @@ func (s *webServer) clientCredentialsHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	request, err := decodeRequest[oidc.ClientCredentialsRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.ClientCredentialsRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return

@@ -19,25 +19,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-type Audience []string
-
-func (a *Audience) UnmarshalJSON(text []byte) error {
-	var i any
-	err := json.Unmarshal(text, &i)
-	if err != nil {
-		return err
-	}
-	switch aud := i.(type) {
-	case []any:
-		*a = make([]string, len(aud))
-		for i, audience := range aud {
-			(*a)[i] = audience.(string)
-		}
-	case string:
-		*a = []string{aud}
-	}
-	return nil
-}
+type Audience = protocol.Audience
 
 type AuthenticationMethodsReferences []string
 
@@ -73,6 +55,27 @@ func (d *Display) UnmarshalText(text []byte) error {
 	}
 	return nil
 }
+
+type GrantType = protocol.GrantType
+
+const (
+	GrantTypeCode              = protocol.GrantTypeCode
+	GrantTypeRefreshToken      = protocol.GrantTypeRefreshToken
+	GrantTypeClientCredentials = protocol.GrantTypeClientCredentials
+	GrantTypeBearer            = protocol.GrantTypeBearer
+	GrantTypeTokenExchange     = protocol.GrantTypeTokenExchange
+	GrantTypeImplicit          = protocol.GrantTypeImplicit
+	GrantTypeDeviceCode        = protocol.GrantTypeDeviceCode
+)
+
+type TokenType = protocol.TokenType
+
+const (
+	AccessTokenType  = protocol.AccessTokenType
+	RefreshTokenType = protocol.RefreshTokenType
+	IDTokenType      = protocol.IDTokenType
+	JWTTokenType     = protocol.JWTTokenType
+)
 
 type Gender string
 
@@ -343,48 +346,14 @@ func (e *Encoder) fieldToString(fv reflect.Value) string {
 	}
 }
 
-type Time int64
-
-func (ts Time) AsTime() time.Time {
-	if ts == 0 {
-		return time.Time{}
-	}
-	return time.Unix(int64(ts), 0)
-}
+type Time = protocol.Time
 
 func FromTime(tt time.Time) Time {
-	if tt.IsZero() {
-		return 0
-	}
-	return Time(tt.Unix())
+	return protocol.FromTime(tt)
 }
 
 func NowTime() Time {
-	return FromTime(time.Now())
-}
-
-func (ts *Time) UnmarshalJSON(data []byte) error {
-	var v any
-	if err := json.Unmarshal(data, &v); err != nil {
-		return fmt.Errorf("oidc.Time: %w", err)
-	}
-	switch x := v.(type) {
-	case float64:
-		*ts = Time(x)
-	case string:
-		// Compatibility with Auth0:
-		// https://github.com/zitadel/oidc/issues/292
-		tt, err := time.Parse(time.RFC3339, x)
-		if err != nil {
-			return fmt.Errorf("oidc.Time: %w", err)
-		}
-		*ts = FromTime(tt)
-	case nil:
-		*ts = 0
-	default:
-		return fmt.Errorf("oidc.Time: unable to parse type %T with value %v", x, x)
-	}
-	return nil
+	return protocol.NowTime()
 }
 
 type RequestObject struct {

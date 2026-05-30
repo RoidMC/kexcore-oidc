@@ -23,7 +23,6 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/example/server/storage"
 	"github.com/roidmc/kexcore-oidc/pkg/client"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -136,7 +135,7 @@ func TestServerRoutes(t *testing.T) {
 			method: http.MethodGet,
 			path:   testProvider.TokenEndpoint().Relative(),
 			values: map[string]string{
-				"grant_type":    string(oidc.GrantTypeCode),
+				"grant_type":    string(protocol.GrantTypeCode),
 				"client_id":     client.GetID(),
 				"client_secret": "secret",
 				"redirect_uri":  "https://example.com",
@@ -150,7 +149,7 @@ func TestServerRoutes(t *testing.T) {
 			method: http.MethodGet,
 			path:   testProvider.TokenEndpoint().Relative(),
 			values: map[string]string{
-				"grant_type": string(oidc.GrantTypeBearer),
+				"grant_type": string(protocol.GrantTypeBearer),
 				"scope":      protocol.SpaceDelimitedArray{protocol.ScopeOpenID, protocol.ScopeOfflineAccess}.String(),
 				"assertion":  jwtProfileToken,
 			},
@@ -164,10 +163,10 @@ func TestServerRoutes(t *testing.T) {
 			path:      testProvider.TokenEndpoint().Relative(),
 			basicAuth: &basicAuth{"web", "secret"},
 			values: map[string]string{
-				"grant_type":         string(oidc.GrantTypeTokenExchange),
+				"grant_type":         string(protocol.GrantTypeTokenExchange),
 				"scope":              protocol.SpaceDelimitedArray{protocol.ScopeOpenID, protocol.ScopeOfflineAccess}.String(),
 				"subject_token":      jwtToken,
-				"subject_token_type": string(oidc.AccessTokenType),
+				"subject_token_type": string(protocol.AccessTokenType),
 			},
 			wantCode: http.StatusOK,
 			contains: []string{
@@ -183,7 +182,7 @@ func TestServerRoutes(t *testing.T) {
 			path:      testProvider.TokenEndpoint().Relative(),
 			basicAuth: &basicAuth{"sid1", "verysecret"},
 			values: map[string]string{
-				"grant_type": string(oidc.GrantTypeClientCredentials),
+				"grant_type": string(protocol.GrantTypeClientCredentials),
 				"scope":      protocol.SpaceDelimitedArray{protocol.ScopeOpenID, protocol.ScopeOfflineAccess}.String(),
 			},
 			wantCode:  http.StatusOK,
@@ -201,7 +200,7 @@ func TestServerRoutes(t *testing.T) {
 				"Content-Type": "application/x-www-form-urlencoded",
 			},
 			body: map[string]string{
-				"grant_type":  string(oidc.GrantTypeDeviceCode),
+				"grant_type":  string(protocol.GrantTypeDeviceCode),
 				"device_code": "123",
 			},
 			wantCode: http.StatusBadRequest,
@@ -253,7 +252,7 @@ func TestServerRoutes(t *testing.T) {
 			method: http.MethodGet,
 			path:   testProvider.TokenEndpoint().Relative(),
 			values: map[string]string{
-				"grant_type":    string(oidc.GrantTypeRefreshToken),
+				"grant_type":    string(protocol.GrantTypeRefreshToken),
 				"refresh_token": refreshToken,
 				"client_id":     client.GetID(),
 				"client_secret": "secret",

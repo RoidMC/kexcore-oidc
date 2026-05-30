@@ -45,7 +45,7 @@ type Client interface {
 	ApplicationType() ApplicationType
 	AuthMethod() protocol.AuthMethod
 	ResponseTypes() []protocol.ResponseType
-	GrantTypes() []oidc.GrantType
+	GrantTypes() []protocol.GrantType
 	LoginURL(string) string
 	AccessTokenType() AccessTokenType
 	IDTokenLifetime() time.Duration

@@ -787,7 +787,7 @@ type RefreshTokenRequest struct {
 	ClientSecret        string                   `schema:"client_secret,omitempty"`
 	ClientAssertion     string                   `schema:"client_assertion,omitempty"`
 	ClientAssertionType string                   `schema:"client_assertion_type,omitempty"`
-	GrantType           oidc.GrantType           `schema:"grant_type"`
+	GrantType           protocol.GrantType           `schema:"grant_type"`
 }
 
 func (r RefreshTokenRequest) Auth(req *http.Request) {
@@ -815,7 +815,7 @@ func RefreshTokens[C oidc.IDClaims](ctx context.Context, rp RelyingParty, refres
 		ClientSecret:        rp.OAuthConfig().ClientSecret,
 		ClientAssertion:     clientAssertion,
 		ClientAssertionType: clientAssertionType,
-		GrantType:           oidc.GrantTypeRefreshToken,
+		GrantType:           protocol.GrantTypeRefreshToken,
 	}
 	newToken, err := client.CallTokenEndpoint(ctx, request, tokenEndpointCaller{RelyingParty: rp})
 	if err != nil {

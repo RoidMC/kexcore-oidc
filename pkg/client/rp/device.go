@@ -7,11 +7,12 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
-func newDeviceClientCredentialsRequest(scopes []string, rp RelyingParty) (*oidc.ClientCredentialsRequest, error) {
+func newDeviceClientCredentialsRequest(scopes []string, rp RelyingParty) (*protocol.ClientCredentialsRequest, error) {
 	config := rp.OAuthConfig()
-	req := &oidc.ClientCredentialsRequest{
+	req := &protocol.ClientCredentialsRequest{
 		Scope:        scopes,
 		ClientID:     config.ClientID,
 		ClientSecret: config.ClientSecret,
@@ -23,7 +24,7 @@ func newDeviceClientCredentialsRequest(scopes []string, rp RelyingParty) (*oidc.
 			return nil, fmt.Errorf("failed to build assertion: %w", err)
 		}
 		req.ClientAssertion = assertion
-		req.ClientAssertionType = oidc.ClientAssertionTypeJWTAssertion
+		req.ClientAssertionType = protocol.ClientAssertionTypeJWTAssertion
 	}
 
 	return req, nil
@@ -55,7 +56,7 @@ func DeviceAccessToken(ctx context.Context, deviceCode string, interval time.Dur
 	ctx = logCtxWithRPData(ctx, rp, "function", "DeviceAccessToken")
 	req := &client.DeviceAccessTokenRequest{
 		DeviceAccessTokenRequest: oidc.DeviceAccessTokenRequest{
-			GrantType:  oidc.GrantTypeDeviceCode,
+			GrantType:  protocol.GrantTypeDeviceCode,
 			DeviceCode: deviceCode,
 		},
 	}

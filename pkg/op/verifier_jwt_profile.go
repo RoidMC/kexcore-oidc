@@ -29,7 +29,7 @@ type JWTProfileVerifier struct {
 	oidc.Verifier
 	Storage      JWTProfileKeyStorage
 	keySet       oidc.KeySet
-	CheckSubject func(request *oidc.JWTTokenRequest) error
+	CheckSubject func(request *protocol.JWTTokenRequest) error
 }
 
 // NewJWTProfileVerifier creates an oidc.Verifier for JWT Profile assertions (authorization grant and client authentication)
@@ -65,7 +65,7 @@ type JWTProfileVerifierOption func(*JWTProfileVerifier)
 
 // SubjectCheck sets a custom function to check the subject.
 // Defaults to SubjectIsIssuer()
-func SubjectCheck(check func(request *oidc.JWTTokenRequest) error) JWTProfileVerifierOption {
+func SubjectCheck(check func(request *protocol.JWTTokenRequest) error) JWTProfileVerifierOption {
 	return func(verifier *JWTProfileVerifier) {
 		verifier.CheckSubject = check
 	}
@@ -74,11 +74,11 @@ func SubjectCheck(check func(request *oidc.JWTTokenRequest) error) JWTProfileVer
 // VerifyJWTAssertion verifies the assertion string from JWT Profile (authorization grant and client authentication)
 //
 // checks audience, exp, iat, signature and that issuer and sub are the same
-func VerifyJWTAssertion(ctx context.Context, assertion string, v *JWTProfileVerifier) (*oidc.JWTTokenRequest, error) {
+func VerifyJWTAssertion(ctx context.Context, assertion string, v *JWTProfileVerifier) (*protocol.JWTTokenRequest, error) {
 	ctx, span := Tracer.Start(ctx, "VerifyJWTAssertion")
 	defer span.End()
 
-	request := new(oidc.JWTTokenRequest)
+	request := new(protocol.JWTTokenRequest)
 	payload, err := oidc.ParseToken(assertion, request)
 	if err != nil {
 		return nil, mapVerifierError(err)
@@ -169,7 +169,7 @@ type SM9JWTProfileKeyStorage interface {
 }
 
 // SubjectIsIssuer checks that subject equals issuer
-func SubjectIsIssuer(request *oidc.JWTTokenRequest) error {
+func SubjectIsIssuer(request *protocol.JWTTokenRequest) error {
 	if request.Issuer != request.Subject {
 		return protocol.ErrSubjectInvalid
 	}

@@ -9,7 +9,6 @@ import (
 	time "time"
 
 	gomock "github.com/golang/mock/gomock"
-	oidc "github.com/roidmc/kexcore-oidc/pkg/oidc"
 	protocol "github.com/roidmc/kexcore-oidc/pkg/protocol"
 	op "github.com/roidmc/kexcore-oidc/pkg/op"
 )
@@ -122,10 +121,10 @@ func (mr *MockHasRedirectGlobsMockRecorder) GetID() *gomock.Call {
 }
 
 // GrantTypes mocks base method.
-func (m *MockHasRedirectGlobs) GrantTypes() []oidc.GrantType {
+func (m *MockHasRedirectGlobs) GrantTypes() []protocol.GrantType {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GrantTypes")
-	ret0, _ := ret[0].([]oidc.GrantType)
+	ret0, _ := ret[0].([]protocol.GrantType)
 	return ret0
 }
 

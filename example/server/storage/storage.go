@@ -309,8 +309,8 @@ func NewStorageWithClientsAndAlgorithms(userStore UserStore, clients map[string]
 			"sid1": {
 				id:     "sid1",
 				secret: "verysecret",
-				grantTypes: []oidc.GrantType{
-					oidc.GrantTypeClientCredentials,
+				grantTypes: []protocol.GrantType{
+					protocol.GrantTypeClientCredentials,
 				},
 				accessTokenType: op.AccessTokenTypeBearer,
 			},
@@ -707,7 +707,7 @@ func (s *Storage) SetIntrospectionFromToken(ctx context.Context, introspection *
 		return fmt.Errorf("token is invalid")
 	}
 
-	introspection.Expiration = oidc.FromTime(token.Expiration)
+	introspection.Expiration = protocol.FromTime(token.Expiration)
 	if token.Expiration.Before(time.Now()) {
 		return fmt.Errorf("token is expired")
 	}
@@ -914,11 +914,11 @@ func (s *Storage) setUserinfo(ctx context.Context, userInfo *oidc.UserInfo, user
 // it will be called to validate parsed Token Exchange Grant request
 func (s *Storage) ValidateTokenExchangeRequest(ctx context.Context, request op.TokenExchangeRequest) error {
 	if request.GetRequestedTokenType() == "" {
-		request.SetRequestedTokenType(oidc.RefreshTokenType)
+		request.SetRequestedTokenType(protocol.RefreshTokenType)
 	}
 
 	// Just an example, some use cases might need this use case
-	if request.GetExchangeSubjectTokenType() == oidc.IDTokenType && request.GetRequestedTokenType() == oidc.RefreshTokenType {
+	if request.GetExchangeSubjectTokenType() == protocol.IDTokenType && request.GetRequestedTokenType() == protocol.RefreshTokenType {
 		return errors.New("exchanging id_token to refresh_token is not supported")
 	}
 
@@ -1150,7 +1150,7 @@ func (s *Storage) ClientCredentialsTokenRequest(ctx context.Context, clientID st
 		return nil, errors.New("wrong service user or password")
 	}
 
-	return &oidc.JWTTokenRequest{
+	return &protocol.JWTTokenRequest{
 		Subject:  client.id,
 		Audience: []string{clientID},
 		Scopes:   scopes,
@@ -1276,11 +1276,11 @@ func convertResponseTypes(types []string) []protocol.ResponseType {
 	return result
 }
 
-// convertGrantTypes converts []string to []oidc.GrantType
-func convertGrantTypes(types []string) []oidc.GrantType {
-	result := make([]oidc.GrantType, len(types))
+// convertGrantTypes converts []string to []protocol.GrantType
+func convertGrantTypes(types []string) []protocol.GrantType {
+	result := make([]protocol.GrantType, len(types))
 	for i, t := range types {
-		result[i] = oidc.GrantType(t)
+		result[i] = protocol.GrantType(t)
 	}
 	return result
 }

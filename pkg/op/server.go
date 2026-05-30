@@ -93,35 +93,35 @@ type Server interface {
 	// grant_type has the value authorization_code
 	// https://openid.net/specs/openid-connect-core-1_0.html#TokenEndpoint
 	// The recommended Response Data type is [oidc.AccessTokenResponse].
-	CodeExchange(context.Context, *ClientRequest[oidc.AccessTokenRequest]) (*Response, error)
+	CodeExchange(context.Context, *ClientRequest[protocol.AccessTokenRequest]) (*Response, error)
 
 	// RefreshToken returns new Tokens after verifying a Refresh token.
 	// It is called by the Token endpoint handler when
 	// grant_type has the value refresh_token
 	// https://openid.net/specs/openid-connect-core-1_0.html#RefreshTokens
 	// The recommended Response Data type is [oidc.AccessTokenResponse].
-	RefreshToken(context.Context, *ClientRequest[oidc.RefreshTokenRequest]) (*Response, error)
+	RefreshToken(context.Context, *ClientRequest[protocol.RefreshTokenRequest]) (*Response, error)
 
 	// JWTProfile handles the OAuth 2.0 JWT Profile Authorization Grant
 	// It is called by the Token endpoint handler when
 	// grant_type has the value urn:ietf:params:oauth:grant-type:jwt-bearer
 	// https://datatracker.ietf.org/doc/html/rfc7523#section-2.1
 	// The recommended Response Data type is [oidc.AccessTokenResponse].
-	JWTProfile(context.Context, *Request[oidc.JWTProfileGrantRequest]) (*Response, error)
+	JWTProfile(context.Context, *Request[protocol.JWTProfileGrantRequest]) (*Response, error)
 
 	// TokenExchange handles the OAuth 2.0 token exchange grant
 	// It is called by the Token endpoint handler when
 	// grant_type has the value urn:ietf:params:oauth:grant-type:token-exchange
 	// https://datatracker.ietf.org/doc/html/rfc8693
 	// The recommended Response Data type is [oidc.AccessTokenResponse].
-	TokenExchange(context.Context, *ClientRequest[oidc.TokenExchangeRequest]) (*Response, error)
+	TokenExchange(context.Context, *ClientRequest[protocol.TokenExchangeRequest]) (*Response, error)
 
 	// ClientCredentialsExchange handles the OAuth 2.0 client credentials grant
 	// It is called by the Token endpoint handler when
 	// grant_type has the value client_credentials
 	// https://datatracker.ietf.org/doc/html/rfc6749#section-4.4
 	// The recommended Response Data type is [oidc.AccessTokenResponse].
-	ClientCredentialsExchange(context.Context, *ClientRequest[oidc.ClientCredentialsRequest]) (*Response, error)
+	ClientCredentialsExchange(context.Context, *ClientRequest[protocol.ClientCredentialsRequest]) (*Response, error)
 
 	// DeviceToken handles the OAuth 2.0 Device Authorization Grant
 	// It is called by the Token endpoint handler when
@@ -276,7 +276,7 @@ func unimplementedError(r interface{ path() string }) StatusError {
 	return NewStatusError(err, UnimplementedStatusCode)
 }
 
-func unimplementedGrantError(gt oidc.GrantType) StatusError {
+func unimplementedGrantError(gt protocol.GrantType) StatusError {
 	err := protocol.ErrUnsupportedGrantType().WithDescription("%s not supported", gt)
 	return NewStatusError(err, http.StatusBadRequest) // https://datatracker.ietf.org/doc/html/rfc6749#section-5.2
 }
@@ -322,28 +322,28 @@ func (UnimplementedServer) VerifyClient(ctx context.Context, r *Request[ClientCr
 	return nil, unimplementedError(r)
 }
 
-func (UnimplementedServer) CodeExchange(ctx context.Context, r *ClientRequest[oidc.AccessTokenRequest]) (*Response, error) {
-	return nil, unimplementedGrantError(oidc.GrantTypeCode)
+func (UnimplementedServer) CodeExchange(ctx context.Context, r *ClientRequest[protocol.AccessTokenRequest]) (*Response, error) {
+	return nil, unimplementedGrantError(protocol.GrantTypeCode)
 }
 
-func (UnimplementedServer) RefreshToken(ctx context.Context, r *ClientRequest[oidc.RefreshTokenRequest]) (*Response, error) {
-	return nil, unimplementedGrantError(oidc.GrantTypeRefreshToken)
+func (UnimplementedServer) RefreshToken(ctx context.Context, r *ClientRequest[protocol.RefreshTokenRequest]) (*Response, error) {
+	return nil, unimplementedGrantError(protocol.GrantTypeRefreshToken)
 }
 
-func (UnimplementedServer) JWTProfile(ctx context.Context, r *Request[oidc.JWTProfileGrantRequest]) (*Response, error) {
-	return nil, unimplementedGrantError(oidc.GrantTypeBearer)
+func (UnimplementedServer) JWTProfile(ctx context.Context, r *Request[protocol.JWTProfileGrantRequest]) (*Response, error) {
+	return nil, unimplementedGrantError(protocol.GrantTypeBearer)
 }
 
-func (UnimplementedServer) TokenExchange(ctx context.Context, r *ClientRequest[oidc.TokenExchangeRequest]) (*Response, error) {
-	return nil, unimplementedGrantError(oidc.GrantTypeTokenExchange)
+func (UnimplementedServer) TokenExchange(ctx context.Context, r *ClientRequest[protocol.TokenExchangeRequest]) (*Response, error) {
+	return nil, unimplementedGrantError(protocol.GrantTypeTokenExchange)
 }
 
-func (UnimplementedServer) ClientCredentialsExchange(ctx context.Context, r *ClientRequest[oidc.ClientCredentialsRequest]) (*Response, error) {
-	return nil, unimplementedGrantError(oidc.GrantTypeClientCredentials)
+func (UnimplementedServer) ClientCredentialsExchange(ctx context.Context, r *ClientRequest[protocol.ClientCredentialsRequest]) (*Response, error) {
+	return nil, unimplementedGrantError(protocol.GrantTypeClientCredentials)
 }
 
 func (UnimplementedServer) DeviceToken(ctx context.Context, r *ClientRequest[oidc.DeviceAccessTokenRequest]) (*Response, error) {
-	return nil, unimplementedGrantError(oidc.GrantTypeDeviceCode)
+	return nil, unimplementedGrantError(protocol.GrantTypeDeviceCode)
 }
 
 func (UnimplementedServer) Introspect(ctx context.Context, r *Request[IntrospectionRequest]) (*Response, error) {

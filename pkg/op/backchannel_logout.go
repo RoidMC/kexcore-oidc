@@ -232,8 +232,8 @@ func createLogoutToken(issuer, sub, sid, audience string, signer *crypto.Signer)
 		Issuer:     issuer,
 		Subject:    sub,
 		Audience:   oidc.Audience{audience},
-		IssuedAt:   oidc.FromTime(now),
-		Expiration: oidc.FromTime(now.Add(5 * time.Minute)),
+		IssuedAt:   oidc.Time(protocol.FromTime(now)),
+		Expiration: oidc.Time(protocol.FromTime(now.Add(5 * time.Minute))),
 		JWTID:      fmt.Sprintf("%s-%d", audience, now.UnixNano()),
 		SessionID:  sid,
 		Events: map[string]any{

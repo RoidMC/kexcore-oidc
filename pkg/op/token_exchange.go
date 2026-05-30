@@ -20,38 +20,38 @@ type TokenExchangeRequest interface {
 	GetClientID() string
 	GetScopes() []string
 	GetSubject() string
-	GetRequestedTokenType() oidc.TokenType
+	GetRequestedTokenType() protocol.TokenType
 
 	GetExchangeSubject() string
-	GetExchangeSubjectTokenType() oidc.TokenType
+	GetExchangeSubjectTokenType() protocol.TokenType
 	GetExchangeSubjectTokenIDOrToken() string
 	GetExchangeSubjectTokenClaims() map[string]any
 
 	GetExchangeActor() string
-	GetExchangeActorTokenType() oidc.TokenType
+	GetExchangeActorTokenType() protocol.TokenType
 	GetExchangeActorTokenIDOrToken() string
 	GetExchangeActorTokenClaims() map[string]any
 
 	SetCurrentScopes(scopes []string)
-	SetRequestedTokenType(tt oidc.TokenType)
+	SetRequestedTokenType(tt protocol.TokenType)
 	SetSubject(subject string)
 }
 
 type tokenExchangeRequest struct {
 	exchangeSubjectTokenIDOrToken string
-	exchangeSubjectTokenType      oidc.TokenType
+	exchangeSubjectTokenType      protocol.TokenType
 	exchangeSubject               string
 	exchangeSubjectTokenClaims    map[string]any
 
 	exchangeActorTokenIDOrToken string
-	exchangeActorTokenType      oidc.TokenType
+	exchangeActorTokenType      protocol.TokenType
 	exchangeActor               string
 	exchangeActorTokenClaims    map[string]any
 
 	resource           []string
-	audience           oidc.Audience
-	scopes             oidc.SpaceDelimitedArray
-	requestedTokenType oidc.TokenType
+	audience           protocol.Audience
+	scopes             protocol.SpaceDelimitedArray
+	requestedTokenType protocol.TokenType
 	clientID           string
 	authTime           time.Time
 	subject            string
@@ -81,7 +81,7 @@ func (r *tokenExchangeRequest) GetScopes() []string {
 	return r.scopes
 }
 
-func (r *tokenExchangeRequest) GetRequestedTokenType() oidc.TokenType {
+func (r *tokenExchangeRequest) GetRequestedTokenType() protocol.TokenType {
 	return r.requestedTokenType
 }
 
@@ -89,7 +89,7 @@ func (r *tokenExchangeRequest) GetExchangeSubject() string {
 	return r.exchangeSubject
 }
 
-func (r *tokenExchangeRequest) GetExchangeSubjectTokenType() oidc.TokenType {
+func (r *tokenExchangeRequest) GetExchangeSubjectTokenType() protocol.TokenType {
 	return r.exchangeSubjectTokenType
 }
 
@@ -105,7 +105,7 @@ func (r *tokenExchangeRequest) GetExchangeActor() string {
 	return r.exchangeActor
 }
 
-func (r *tokenExchangeRequest) GetExchangeActorTokenType() oidc.TokenType {
+func (r *tokenExchangeRequest) GetExchangeActorTokenType() protocol.TokenType {
 	return r.exchangeActorTokenType
 }
 
@@ -125,7 +125,7 @@ func (r *tokenExchangeRequest) SetCurrentScopes(scopes []string) {
 	r.scopes = scopes
 }
 
-func (r *tokenExchangeRequest) SetRequestedTokenType(tt oidc.TokenType) {
+func (r *tokenExchangeRequest) SetRequestedTokenType(tt protocol.TokenType) {
 	r.requestedTokenType = tt
 }
 
@@ -158,14 +158,14 @@ func TokenExchange(w http.ResponseWriter, r *http.Request, exchanger Exchanger) 
 	httphelper.MarshalJSON(w, resp)
 }
 
-// ParseTokenExchangeRequest parses the http request into oidc.TokenExchangeRequest
-func ParseTokenExchangeRequest(r *http.Request, decoder httphelper.Decoder) (_ *oidc.TokenExchangeRequest, clientID, clientSecret string, err error) {
+// ParseTokenExchangeRequest parses the http request into protocol.TokenExchangeRequest
+func ParseTokenExchangeRequest(r *http.Request, decoder httphelper.Decoder) (_ *protocol.TokenExchangeRequest, clientID, clientSecret string, err error) {
 	err = r.ParseForm()
 	if err != nil {
 		return nil, "", "", protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 
-	request := new(oidc.TokenExchangeRequest)
+	request := new(protocol.TokenExchangeRequest)
 	err = decoder.Decode(request, r.Form)
 	if err != nil {
 		return nil, "", "", protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
@@ -191,7 +191,7 @@ func ParseTokenExchangeRequest(r *http.Request, decoder httphelper.Decoder) (_ *
 // subject_token and actor_token
 func ValidateTokenExchangeRequest(
 	ctx context.Context,
-	oidcTokenExchangeRequest *oidc.TokenExchangeRequest,
+	oidcTokenExchangeRequest *protocol.TokenExchangeRequest,
 	clientID, clientSecret string,
 	exchanger Exchanger,
 ) (TokenExchangeRequest, Client, error) {
@@ -232,7 +232,7 @@ func ValidateTokenExchangeRequest(
 
 func CreateTokenExchangeRequest(
 	ctx context.Context,
-	oidcTokenExchangeRequest *oidc.TokenExchangeRequest,
+	oidcTokenExchangeRequest *protocol.TokenExchangeRequest,
 	client Client,
 	exchanger Exchanger,
 ) (TokenExchangeRequest, error) {
@@ -241,7 +241,7 @@ func CreateTokenExchangeRequest(
 
 	teStorage, ok := exchanger.Storage().(TokenExchangeStorage)
 	if !ok {
-		return nil, unimplementedGrantError(oidc.GrantTypeTokenExchange)
+		return nil, unimplementedGrantError(protocol.GrantTypeTokenExchange)
 	}
 
 	exchangeSubjectTokenIDOrToken, exchangeSubject, exchangeSubjectTokenClaims, ok := GetTokenIDAndSubjectFromToken(ctx, exchanger,
@@ -299,28 +299,28 @@ func GetTokenIDAndSubjectFromToken(
 	ctx context.Context,
 	exchanger Exchanger,
 	token string,
-	tokenType oidc.TokenType,
+	tokenType protocol.TokenType,
 	isActor bool,
 ) (tokenIDOrToken, subject string, claims map[string]any, ok bool) {
 	ctx, span := Tracer.Start(ctx, "GetTokenIDAndSubjectFromToken")
 	defer span.End()
 
 	switch tokenType {
-	case oidc.AccessTokenType:
+	case protocol.AccessTokenType:
 		var accessTokenClaims *oidc.AccessTokenClaims
 		tokenIDOrToken, subject, accessTokenClaims, ok = getTokenIDAndClaims(ctx, exchanger, token)
 		if !ok {
 			break
 		}
 		claims = accessTokenClaims.Claims
-	case oidc.RefreshTokenType:
+	case protocol.RefreshTokenType:
 		refreshTokenRequest, err := exchanger.Storage().TokenRequestByRefreshToken(ctx, token)
 		if err != nil {
 			break
 		}
 
 		tokenIDOrToken, subject, ok = token, refreshTokenRequest.GetSubject(), true
-	case oidc.IDTokenType:
+	case protocol.IDTokenType:
 		idTokenClaims, err := VerifyIDTokenHint[*oidc.IDTokenClaims](ctx, token, exchanger.IDTokenHintVerifier(ctx))
 		if err != nil {
 			break
@@ -382,14 +382,14 @@ func CreateTokenExchangeResponse(
 	)
 
 	switch tokenExchangeRequest.GetRequestedTokenType() {
-	case oidc.AccessTokenType, oidc.RefreshTokenType:
+	case protocol.AccessTokenType, protocol.RefreshTokenType:
 		token, refreshToken, validity, err = CreateAccessToken(ctx, tokenExchangeRequest, client.AccessTokenType(), creator, client, "")
 		if err != nil {
 			return nil, err
 		}
 
 		tokenType = oidc.BearerToken
-	case oidc.IDTokenType:
+	case protocol.IDTokenType:
 		token, err = CreateIDToken(ctx, IssuerFromContext(ctx), tokenExchangeRequest, client.IDTokenLifetime(), "", "", creator.Storage(), client)
 		if err != nil {
 			return nil, err
@@ -398,7 +398,7 @@ func CreateTokenExchangeResponse(
 		// not applicable (see https://datatracker.ietf.org/doc/html/rfc8693#section-2-2-1-2-6)
 		tokenType = "N_A"
 	default:
-		// oidc.JWTTokenType and other custom token types are not supported for issuing.
+		// protocol.JWTTokenType and other custom token types are not supported for issuing.
 		// In the future it can be considered to have custom tokens generation logic injected via op configuration
 		// or via expanding Storage interface
 		protocol.ErrInvalidRequest().WithDescription("requested_token_type is invalid")
@@ -407,7 +407,7 @@ func CreateTokenExchangeResponse(
 	exp := uint64(validity.Seconds())
 	return &oidc.TokenExchangeResponse{
 		AccessToken:     token,
-		IssuedTokenType: tokenExchangeRequest.GetRequestedTokenType(),
+		IssuedTokenType: oidc.TokenType(tokenExchangeRequest.GetRequestedTokenType()),
 		TokenType:       tokenType,
 		ExpiresIn:       exp,
 		RefreshToken:    refreshToken,

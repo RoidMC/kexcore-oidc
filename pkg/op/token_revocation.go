@@ -91,7 +91,7 @@ func ParseTokenRevocationRequest(r *http.Request, revoker Revoker) (token, token
 	if err != nil {
 		return "", "", "", protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
 	}
-	if req.ClientAssertionType == oidc.ClientAssertionTypeJWTAssertion {
+	if req.ClientAssertionType == protocol.ClientAssertionTypeJWTAssertion {
 		revokerJWTProfile, ok := revoker.(RevokerJWTProfile)
 		if !ok || !revoker.AuthMethodPrivateKeyJWTSupported() {
 			return "", "", "", protocol.ErrInvalidClient().WithDescription("auth_method private_key_jwt not supported")

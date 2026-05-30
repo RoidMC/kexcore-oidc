@@ -425,8 +425,8 @@ func (s *Storage) SetIntrospectionFromToken(_ context.Context, resp *oidc.Intros
 	resp.Scope = oidc.SpaceDelimitedArray(token.Scopes)
 	resp.TokenType = oidc.BearerToken
 	if !token.Expiration.IsZero() {
-		resp.Expiration = oidc.FromTime(token.Expiration)
-		resp.NotBefore = oidc.FromTime(token.Expiration)
+		resp.Expiration = protocol.FromTime(token.Expiration)
+		resp.NotBefore = protocol.FromTime(token.Expiration)
 	}
 
 	return nil

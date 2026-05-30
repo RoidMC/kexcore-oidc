@@ -8,7 +8,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 )
@@ -89,7 +88,7 @@ type ConfClient struct {
 	authMethod      protocol.AuthMethod
 	accessTokenType op.AccessTokenType
 	responseTypes   []protocol.ResponseType
-	grantTypes      []oidc.GrantType
+	grantTypes      []protocol.GrantType
 	devMode         bool
 }
 
@@ -138,7 +137,7 @@ func (c *ConfClient) ResponseTypes() []protocol.ResponseType {
 	return c.responseTypes
 }
 
-func (c *ConfClient) GrantTypes() []oidc.GrantType {
+func (c *ConfClient) GrantTypes() []protocol.GrantType {
 	return c.grantTypes
 }
 

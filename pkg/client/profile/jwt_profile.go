@@ -15,7 +15,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	kcrypto "github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type TokenSource interface {
@@ -114,5 +114,5 @@ func (j *jwtProfileTokenSource) TokenCtx(ctx context.Context) (*oauth2.Token, er
 	if err != nil {
 		return nil, err
 	}
-	return client.JWTProfileExchange(ctx, oidc.NewJWTProfileGrantRequest(assertion, j.scopes...), j)
+	return client.JWTProfileExchange(ctx, protocol.NewJWTProfileGrantRequest(assertion, j.scopes...), j)
 }
