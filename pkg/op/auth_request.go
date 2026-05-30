@@ -311,7 +311,7 @@ func ValidateAuthReqScopes(client Client, scopes []string) ([]string, error) {
 				"If you have any questions, you may contact the administrator of the application.")
 	}
 	for _, scope := range scopes {
-        if !client.IsScopeAllowed(scope) && scope != oidc.ScopeOpenID {
+        if !client.IsScopeAllowed(scope) && scope != protocol.ScopeOpenID {
             return nil, protocol.ErrInvalidScope().WithDescription("scope %s is not allowed for this client", scope)
         }
     }
