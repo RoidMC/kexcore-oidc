@@ -185,15 +185,21 @@ func TestSM4GCMWrongAdditionalData(t *testing.T) {
 
 func TestSM4InvalidPadding(t *testing.T) {
 	key, _ := crypto.SM4GenerateKey()
-	invalidCiphertext := make([]byte, crypto.SM4BlockSize*2)
-	for i := range invalidCiphertext {
-		invalidCiphertext[i] = 0xFF
+	plaintext := []byte("hello world 1234")
+	ciphertext, err := crypto.SM4EncryptECB(key, plaintext)
+	if err != nil {
+		t.Fatalf("SM4EncryptECB failed: %v", err)
 	}
 
-	_, err := crypto.SM4DecryptECB(key, invalidCiphertext)
-	if err == nil {
-		t.Error("expected error for invalid padding")
+	for attempts := 0; attempts < 256; attempts++ {
+		ciphertext[len(ciphertext)-1] ^= byte(attempts)
+		_, err = crypto.SM4DecryptECB(key, ciphertext)
+		ciphertext[len(ciphertext)-1] ^= byte(attempts)
+		if err != nil {
+			return
+		}
 	}
+	t.Error("expected error for invalid padding after 256 attempts")
 }
 
 func TestSM4KeyHexConversion(t *testing.T) {

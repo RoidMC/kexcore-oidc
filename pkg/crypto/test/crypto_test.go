@@ -19,7 +19,7 @@ func TestEncryptAESRoundTrip(t *testing.T) {
 	}
 	keyStr := string(key)
 
-	plaintext := "hello world, AES CTR round trip test"
+	plaintext := "hello world, AES GCM round trip test"
 	encrypted, err := crypto.EncryptAES(plaintext, keyStr)
 	if err != nil {
 		t.Fatalf("EncryptAES failed: %v", err)
@@ -62,6 +62,23 @@ func TestDecryptAESInvalidInput(t *testing.T) {
 	}
 }
 
+func TestDecryptAESWrongKey(t *testing.T) {
+	key1 := make([]byte, 32)
+	key2 := make([]byte, 32)
+	rand.Read(key1)
+	rand.Read(key2)
+
+	encrypted, err := crypto.EncryptAES("test", string(key1))
+	if err != nil {
+		t.Fatalf("EncryptAES failed: %v", err)
+	}
+
+	_, err = crypto.DecryptAES(encrypted, string(key2))
+	if err == nil {
+		t.Error("DecryptAES should fail with wrong key")
+	}
+}
+
 func TestEncryptAESEmptyPlaintext(t *testing.T) {
 	key := make([]byte, 32)
 	rand.Read(key)
@@ -89,8 +106,28 @@ func TestDecryptAESShortCiphertext(t *testing.T) {
 
 	short := base64.RawURLEncoding.EncodeToString([]byte{0x01})
 	_, err := crypto.DecryptAES(short, keyStr)
-	if err != crypto.ErrCipherTextBlockSize {
-		t.Errorf("expected ErrCipherTextBlockSize, got %v", err)
+	if err != crypto.ErrCipherTextTooShort {
+		t.Errorf("expected ErrCipherTextTooShort, got %v", err)
+	}
+}
+
+func TestEncryptAESTamperedCiphertext(t *testing.T) {
+	key := make([]byte, 32)
+	rand.Read(key)
+	keyStr := string(key)
+
+	encrypted, err := crypto.EncryptAES("sensitive data", keyStr)
+	if err != nil {
+		t.Fatalf("EncryptAES failed: %v", err)
+	}
+
+	raw, _ := base64.RawURLEncoding.DecodeString(encrypted)
+	raw[len(raw)-1] ^= 0xFF
+	tampered := base64.RawURLEncoding.EncodeToString(raw)
+
+	_, err = crypto.DecryptAES(tampered, keyStr)
+	if err == nil {
+		t.Error("DecryptAES should fail on tampered ciphertext (GCM auth tag)")
 	}
 }
 
