@@ -94,26 +94,6 @@ type SpaceDelimitedArray = protocol.SpaceDelimitedArray
 
 type Prompt = protocol.SpaceDelimitedArray
 
-type Bool = protocol.Bool
-
-type Gender = protocol.Gender
-
-type Locale = protocol.Locale
-
-var NewLocale = protocol.NewLocale
-
-type UserInfo = protocol.UserInfo
-
-type UserInfoProfile = protocol.UserInfoProfile
-
-type UserInfoEmail = protocol.UserInfoEmail
-
-type UserInfoPhone = protocol.UserInfoPhone
-
-type UserInfoAddress = protocol.UserInfoAddress
-
-type UserInfoRequest = protocol.UserInfoRequest
-
 type ResponseType string
 
 type ResponseMode string
