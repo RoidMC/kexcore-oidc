@@ -1,6 +1,5 @@
 package oidc
 
-type RevocationRequest struct {
-	Token         string `schema:"token"`
-	TokenTypeHint string `schema:"token_type_hint"`
-}
+import "github.com/roidmc/kexcore-oidc/pkg/protocol"
+
+type RevocationRequest = protocol.RevocationRequest

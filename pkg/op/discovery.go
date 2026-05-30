@@ -315,7 +315,7 @@ func IDTokenEncryptionEncValues(c Configuration) []string {
 func CodeChallengeMethods(c Configuration) []string {
 	codeMethods := make([]string, 0, 1)
 	if c.CodeMethodS256Supported() {
-		codeMethods = append(codeMethods, string(oidc.CodeChallengeMethodS256))
+		codeMethods = append(codeMethods, string(protocol.CodeChallengeMethodS256))
 	}
 	return codeMethods
 }

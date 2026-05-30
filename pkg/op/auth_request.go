@@ -33,7 +33,7 @@ type AuthRequest interface {
 	GetAudience() []string
 	GetAuthTime() time.Time
 	GetClientID() string
-	GetCodeChallenge() *oidc.CodeChallenge
+	GetCodeChallenge() *protocol.CodeChallenge
 	GetNonce() string
 	GetRedirectURI() string
 	GetResponseType() oidc.ResponseType

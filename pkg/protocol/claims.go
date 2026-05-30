@@ -1,10 +1,26 @@
 package protocol
 
-import "github.com/roidmc/kexcore-oidc/pkg/oidc"
+import "time"
 
-type TokenClaims = oidc.TokenClaims
-type AccessTokenClaims = oidc.AccessTokenClaims
-type IDTokenClaims = oidc.IDTokenClaims
-type JWTTokenRequest = oidc.JWTTokenRequest
-type JWTProfileAssertionClaims = oidc.JWTProfileAssertionClaims
-type CodeChallenge = oidc.CodeChallenge
+type Claims interface {
+	GetIssuer() string
+	GetSubject() string
+	GetAudience() []string
+	GetExpiration() time.Time
+	GetIssuedAt() time.Time
+	GetNonce() string
+	GetAuthenticationContextClassReference() string
+	GetAuthTime() time.Time
+	GetAuthorizedParty() string
+	ClaimsSignature
+}
+
+type ClaimsSignature interface {
+	SetSignatureAlgorithm(algorithm string)
+}
+
+type IDClaims interface {
+	Claims
+	GetSignatureAlgorithm() string
+	GetAccessTokenHash() string
+}

@@ -279,8 +279,8 @@ func NewRelyingPartyOIDC(ctx context.Context, issuer, clientID, clientSecret, re
 		if slices.ContainsFunc(
 			discoveryConfiguration.CodeChallengeMethodsSupported,
 			func(method string) bool {
-				return method == string(oidc.CodeChallengeMethodPlain) ||
-					method == string(oidc.CodeChallengeMethodS256)
+				return method == string(protocol.CodeChallengeMethodPlain) ||
+					method == string(protocol.CodeChallengeMethodS256)
 			},
 		) {
 			rp.pkce = pkceEnabled
@@ -465,7 +465,7 @@ func GenerateAndStoreCodeChallenge(w http.ResponseWriter, rp RelyingParty) (stri
 	if err := rp.CookieHandler().SetCookie(w, pkceCode, codeVerifier); err != nil {
 		return "", err
 	}
-	return oidc.NewSHACodeChallenge(codeVerifier), nil
+	return protocol.NewSHACodeChallenge(codeVerifier), nil
 }
 
 // GenerateAndStoreCodeChallenge generates a PKCE code challenge and stores its verifier into a secure cookie
@@ -474,7 +474,7 @@ func GenerateAndStoreCodeChallengeWithRequest(r *http.Request, w http.ResponseWr
 	if err := rp.CookieHandler().SetRequestAwareCookie(r, w, pkceCode, codeVerifier); err != nil {
 		return "", err
 	}
-	return oidc.NewSHACodeChallenge(codeVerifier), nil
+	return protocol.NewSHACodeChallenge(codeVerifier), nil
 }
 
 // ErrMissingIDToken is returned when an id_token was expected,

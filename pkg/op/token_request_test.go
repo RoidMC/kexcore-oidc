@@ -3,7 +3,7 @@ package op_test
 import (
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/stretchr/testify/assert"
 )
@@ -12,7 +12,7 @@ func TestAuthorizeCodeChallenge(t *testing.T) {
 	tests := []struct {
 		name          string
 		codeVerifier  string
-		codeChallenge *oidc.CodeChallenge
+		codeChallenge *protocol.CodeChallenge
 		want          func(t *testing.T, err error)
 	}{
 		{
@@ -26,9 +26,9 @@ func TestAuthorizeCodeChallenge(t *testing.T) {
 		{
 			name:         "valid code_verifier",
 			codeVerifier: "Hello World!",
-			codeChallenge: &oidc.CodeChallenge{
+			codeChallenge: &protocol.CodeChallenge{
 				Challenge: "f4OxZX_x_FO5LcGBSKHWXfwtSx-j1ncoSt3SABJtkGk",
-				Method:    oidc.CodeChallengeMethodS256,
+				Method:    protocol.CodeChallengeMethodS256,
 			},
 			want: func(t *testing.T, err error) {
 				assert.Nil(t, err)
@@ -37,9 +37,9 @@ func TestAuthorizeCodeChallenge(t *testing.T) {
 		{
 			name:         "invalid code_verifier",
 			codeVerifier: "Hi World!",
-			codeChallenge: &oidc.CodeChallenge{
+			codeChallenge: &protocol.CodeChallenge{
 				Challenge: "f4OxZX_x_FO5LcGBSKHWXfwtSx-j1ncoSt3SABJtkGk",
-				Method:    oidc.CodeChallengeMethodS256,
+				Method:    protocol.CodeChallengeMethodS256,
 			},
 			want: func(t *testing.T, err error) {
 				assert.ErrorContains(t, err, "invalid code_verifier")
@@ -56,9 +56,9 @@ func TestAuthorizeCodeChallenge(t *testing.T) {
 		{
 			name:         "empty code_verifier",
 			codeVerifier: "",
-			codeChallenge: &oidc.CodeChallenge{
+			codeChallenge: &protocol.CodeChallenge{
 				Challenge: "f4OxZX_x_FO5LcGBSKHWXfwtSx-j1ncoSt3SABJtkGk",
-				Method:    oidc.CodeChallengeMethodS256,
+				Method:    protocol.CodeChallengeMethodS256,
 			},
 			want: func(t *testing.T, err error) {
 				assert.ErrorContains(t, err, "code_verifier required")

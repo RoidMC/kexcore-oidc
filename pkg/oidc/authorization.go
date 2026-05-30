@@ -7,6 +7,7 @@ package oidc
 
 import (
 	"log/slog"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
@@ -90,7 +91,7 @@ type AuthRequest struct {
 	ACRValues    SpaceDelimitedArray `json:"acr_values" schema:"acr_values"`
 
 	CodeChallenge       string              `json:"code_challenge" schema:"code_challenge"`
-	CodeChallengeMethod CodeChallengeMethod `json:"code_challenge_method" schema:"code_challenge_method"`
+	CodeChallengeMethod protocol.CodeChallengeMethod `json:"code_challenge_method" schema:"code_challenge_method"`
 
 	// RequestParam enables OIDC requests to be passed in a single, self-contained parameter (as JWT, called Request Object)
 	RequestParam string `schema:"request"`

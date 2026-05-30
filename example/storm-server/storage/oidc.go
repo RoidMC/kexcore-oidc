@@ -13,6 +13,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
@@ -60,7 +61,7 @@ func (a *AuthRequest) GetAMR() []string                       { if a.done { retu
 func (a *AuthRequest) GetAudience() []string                  { return []string{a.ApplicationID} }
 func (a *AuthRequest) GetAuthTime() time.Time                 { return a.authTime }
 func (a *AuthRequest) GetClientID() string                    { return a.ApplicationID }
-func (a *AuthRequest) GetCodeChallenge() *oidc.CodeChallenge  { return CodeChallengeToOIDC(a.CodeChallenge) }
+func (a *AuthRequest) GetCodeChallenge() *protocol.CodeChallenge  { return CodeChallengeToOIDC(a.CodeChallenge) }
 func (a *AuthRequest) GetNonce() string                       { return a.Nonce }
 func (a *AuthRequest) GetRedirectURI() string                 { return a.CallbackURI }
 func (a *AuthRequest) GetResponseType() oidc.ResponseType     { return a.ResponseType }
@@ -121,15 +122,15 @@ type OIDCCodeChallenge struct {
 	Method    string
 }
 
-func CodeChallengeToOIDC(challenge *OIDCCodeChallenge) *oidc.CodeChallenge {
+func CodeChallengeToOIDC(challenge *OIDCCodeChallenge) *protocol.CodeChallenge {
 	if challenge == nil {
 		return nil
 	}
-	method := oidc.CodeChallengeMethodPlain
+	method := protocol.CodeChallengeMethodPlain
 	if challenge.Method == "S256" {
-		method = oidc.CodeChallengeMethodS256
+		method = protocol.CodeChallengeMethodS256
 	}
-	return &oidc.CodeChallenge{Challenge: challenge.Challenge, Method: method}
+	return &protocol.CodeChallenge{Challenge: challenge.Challenge, Method: method}
 }
 
 // RefreshTokenRequest wraps a RefreshToken to implement storm.RefreshTokenRequest.
@@ -144,7 +145,7 @@ func (r *RefreshTokenRequest) GetClientID() string              { return r.Appli
 func (r *RefreshTokenRequest) GetScopes() []string               { return r.Scopes }
 func (r *RefreshTokenRequest) GetSubject() string                { return r.UserID }
 func (r *RefreshTokenRequest) SetCurrentScopes(scopes []string)  { r.Scopes = scopes }
-func (r *RefreshTokenRequest) GetCodeChallenge() *oidc.CodeChallenge { return nil }
+func (r *RefreshTokenRequest) GetCodeChallenge() *protocol.CodeChallenge { return nil }
 func (r *RefreshTokenRequest) GetNonce() string                  { return "" }
 func (r *RefreshTokenRequest) GetID() string                     { return r.RefreshToken.ID }
 func (r *RefreshTokenRequest) GetSessionID() string              { return r.SessionID }

@@ -132,7 +132,7 @@ func AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string,
 
 // AuthorizeCodeChallenge authorizes a client by validating the code_verifier against the previously sent
 // code_challenge of the auth request (PKCE)
-func AuthorizeCodeChallenge(codeVerifier string, challenge *oidc.CodeChallenge) error {
+func AuthorizeCodeChallenge(codeVerifier string, challenge *protocol.CodeChallenge) error {
 	if challenge == nil {
 		if codeVerifier != "" {
 			return protocol.ErrInvalidRequest().WithDescription("code_verifier unexpectedly provided")
@@ -144,7 +144,7 @@ func AuthorizeCodeChallenge(codeVerifier string, challenge *oidc.CodeChallenge) 
 	if codeVerifier == "" {
 		return protocol.ErrInvalidRequest().WithDescription("code_verifier required")
 	}
-	if !oidc.VerifyCodeChallenge(challenge, codeVerifier) {
+	if !protocol.VerifyCodeChallenge(challenge, codeVerifier) {
 		return protocol.ErrInvalidGrant().WithDescription("invalid code_verifier")
 	}
 	return nil

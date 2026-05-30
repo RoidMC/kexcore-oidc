@@ -124,7 +124,7 @@ type AuthRequest interface {
 	GetAudience() []string
 	GetAuthTime() time.Time
 	GetClientID() string
-	GetCodeChallenge() *oidc.CodeChallenge
+	GetCodeChallenge() *protocol.CodeChallenge
 	GetNonce() string
 	GetRedirectURI() string
 	GetResponseType() oidc.ResponseType
@@ -155,7 +155,7 @@ type RefreshTokenRequest interface {
 	TokenRequest
 	GetAMR() []string
 	GetAuthTime() time.Time
-	GetCodeChallenge() *oidc.CodeChallenge
+	GetCodeChallenge() *protocol.CodeChallenge
 	GetNonce() string
 	GetID() string
 	SetCurrentScopes(scopes []string)
@@ -342,7 +342,7 @@ type Signer interface {
 type EndSessionRequest struct {
 	UserID            string
 	ClientID          string
-	IDTokenHintClaims *oidc.IDTokenClaims
+	IDTokenHintClaims *protocol.IDTokenClaims
 	RedirectURI       string
 	LogoutHint        string
 	UILocales         []language.Tag

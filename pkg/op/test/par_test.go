@@ -246,7 +246,7 @@ func TestPushedAuthRequest_PublicClientWithPKCE(t *testing.T) {
 	entry, ok := s.storage.store[resp.RequestURI]
 	require.True(t, ok)
 	assert.Equal(t, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", entry.authReq.CodeChallenge)
-	assert.Equal(t, oidc.CodeChallengeMethodS256, entry.authReq.CodeChallengeMethod)
+	assert.Equal(t, protocol.CodeChallengeMethodS256, entry.authReq.CodeChallengeMethod)
 }
 
 func TestPushedAuthRequest_PublicClientWithoutPKCE(t *testing.T) {
@@ -613,7 +613,7 @@ func TestPushedAuthRequest_CodeChallengeParamsStored(t *testing.T) {
 	entry, ok := s.storage.store[resp.RequestURI]
 	require.True(t, ok)
 	assert.Equal(t, "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", entry.authReq.CodeChallenge)
-	assert.Equal(t, oidc.CodeChallengeMethodS256, entry.authReq.CodeChallengeMethod)
+	assert.Equal(t, protocol.CodeChallengeMethodS256, entry.authReq.CodeChallengeMethod)
 }
 
 func TestPushedAuthRequest_ExpiredRequestURIRejected(t *testing.T) {

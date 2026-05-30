@@ -641,7 +641,7 @@ func Test_CodeChallengeMethods(t *testing.T) {
 				m.EXPECT().CodeMethodS256Supported().Return(true)
 				return m
 			}()},
-			[]string{string(oidc.CodeChallengeMethodS256)},
+			[]string{string(protocol.CodeChallengeMethodS256)},
 		},
 	}
 	for _, tt := range tests {

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/storm/codec"
+	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 func TestDecode(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
@@ -90,7 +91,7 @@ func (a *AuthRequest) GetClientID() string {
 	return a.ApplicationID
 }
 
-func (a *AuthRequest) GetCodeChallenge() *oidc.CodeChallenge {
+func (a *AuthRequest) GetCodeChallenge() *protocol.CodeChallenge {
 	return CodeChallengeToOIDC(a.CodeChallenge)
 }
 
@@ -193,15 +194,15 @@ type OIDCCodeChallenge struct {
 	Method    string
 }
 
-func CodeChallengeToOIDC(challenge *OIDCCodeChallenge) *oidc.CodeChallenge {
+func CodeChallengeToOIDC(challenge *OIDCCodeChallenge) *protocol.CodeChallenge {
 	if challenge == nil {
 		return nil
 	}
-	challengeMethod := oidc.CodeChallengeMethodPlain
+	challengeMethod := protocol.CodeChallengeMethodPlain
 	if challenge.Method == "S256" {
-		challengeMethod = oidc.CodeChallengeMethodS256
+		challengeMethod = protocol.CodeChallengeMethodS256
 	}
-	return &oidc.CodeChallenge{
+	return &protocol.CodeChallenge{
 		Challenge: challenge.Challenge,
 		Method:    challengeMethod,
 	}
