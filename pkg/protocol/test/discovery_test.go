@@ -110,7 +110,7 @@ func TestDiscoveryConfiguration_MarshalJSON_NoExtra(t *testing.T) {
 }
 
 func TestDiscoveryConfiguration_UnmarshalJSON(t *testing.T) {
-	data, err := os.ReadFile(testdataPath("oidc.endpoint.json"))
+	data, err := os.ReadFile(testdataPath("oidc.EndPoint.json"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
