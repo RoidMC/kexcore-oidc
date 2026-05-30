@@ -16,12 +16,12 @@ import (
 type MyCustomClaims struct {
 	oidc.TokenClaims
 	NotBefore            protocol.Time `json:"nbf,omitempty"`
-	CodeHash             string    `json:"c_hash,omitempty"`
-	SessionID            string    `json:"sid,omitempty"`
-	Scopes               []string  `json:"scope,omitempty"`
-	AccessTokenUseNumber int       `json:"at_use_nbr,omitempty"`
-	Foo                  string    `json:"foo,omitempty"`
-	Bar                  *Nested   `json:"bar,omitempty"`
+	CodeHash             string        `json:"c_hash,omitempty"`
+	SessionID            string        `json:"sid,omitempty"`
+	Scopes               []string      `json:"scope,omitempty"`
+	AccessTokenUseNumber int           `json:"at_use_nbr,omitempty"`
+	Foo                  string        `json:"foo,omitempty"`
+	Bar                  *Nested       `json:"bar,omitempty"`
 }
 
 // Nested struct types are also possible.

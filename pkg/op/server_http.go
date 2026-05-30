@@ -241,7 +241,7 @@ func (s *webServer) authorize(ctx context.Context, r *Request[protocol.AuthReque
 }
 
 func (s *webServer) deviceAuthorizationHandler(w http.ResponseWriter, r *http.Request, client Client) {
-	request, err := decodeRequest[oidc.DeviceAuthorizationRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.DeviceAuthorizationRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return
@@ -408,7 +408,7 @@ func (s *webServer) clientCredentialsHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *webServer) deviceTokenHandler(w http.ResponseWriter, r *http.Request, client Client) {
-	request, err := decodeRequest[oidc.DeviceAccessTokenRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.DeviceAccessTokenRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return

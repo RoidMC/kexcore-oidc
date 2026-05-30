@@ -33,7 +33,7 @@ func Test_deviceAuthorizationHandler(t *testing.T) {
 	conf.DeviceAuthorization.UserFormPath = "/device"
 	provider := newTestProvider(conf)
 
-	req := &oidc.DeviceAuthorizationRequest{
+	req := &protocol.DeviceAuthorizationRequest{
 		Scopes:   []string{"foo", "bar"},
 		ClientID: "device",
 	}
@@ -76,7 +76,7 @@ func Test_deviceAuthorizationHandler(t *testing.T) {
 func TestParseDeviceCodeRequest(t *testing.T) {
 	tests := []struct {
 		name    string
-		req     *oidc.DeviceAuthorizationRequest
+		req     *protocol.DeviceAuthorizationRequest
 		wantErr bool
 	}{
 		{
@@ -85,7 +85,7 @@ func TestParseDeviceCodeRequest(t *testing.T) {
 		},
 		{
 			name: "missing grant type",
-			req: &oidc.DeviceAuthorizationRequest{
+			req: &protocol.DeviceAuthorizationRequest{
 				Scopes:   oidc.SpaceDelimitedArray{"foo", "bar"},
 				ClientID: "web",
 			},
@@ -93,7 +93,7 @@ func TestParseDeviceCodeRequest(t *testing.T) {
 		},
 		{
 			name: "client not found",
-			req: &oidc.DeviceAuthorizationRequest{
+			req: &protocol.DeviceAuthorizationRequest{
 				Scopes:   oidc.SpaceDelimitedArray{"foo", "bar"},
 				ClientID: "foobar",
 			},
@@ -101,8 +101,8 @@ func TestParseDeviceCodeRequest(t *testing.T) {
 		},
 		{
 			name: "success",
-			req: &oidc.DeviceAuthorizationRequest{
-				Scopes:   oidc.SpaceDelimitedArray{"foo", "bar"},
+			req: &protocol.DeviceAuthorizationRequest{
+				Scopes:   protocol.SpaceDelimitedArray{"foo", "bar"},
 				ClientID: "device",
 			},
 		},

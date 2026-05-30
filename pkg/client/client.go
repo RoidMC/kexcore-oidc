@@ -246,7 +246,7 @@ type DeviceAuthorizationCaller interface {
 	HttpClient() *http.Client
 }
 
-func CallDeviceAuthorizationEndpoint(ctx context.Context, request *protocol.ClientCredentialsRequest, caller DeviceAuthorizationCaller, authFn any) (*oidc.DeviceAuthorizationResponse, error) {
+func CallDeviceAuthorizationEndpoint(ctx context.Context, request *protocol.ClientCredentialsRequest, caller DeviceAuthorizationCaller, authFn any) (*protocol.DeviceAuthorizationResponse, error) {
 	ctx, span := Tracer.Start(ctx, "CallDeviceAuthorizationEndpoint")
 	defer span.End()
 
@@ -261,7 +261,7 @@ func CallDeviceAuthorizationEndpoint(ctx context.Context, request *protocol.Clie
 	}
 	request.Auth(req)
 
-	resp := new(oidc.DeviceAuthorizationResponse)
+	resp := new(protocol.DeviceAuthorizationResponse)
 	if err := httphelper.HttpRequest(caller.HttpClient(), req, &resp); err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ func CallDeviceAuthorizationEndpoint(ctx context.Context, request *protocol.Clie
 
 type DeviceAccessTokenRequest struct {
 	*protocol.ClientCredentialsRequest
-	oidc.DeviceAccessTokenRequest
+	protocol.DeviceAccessTokenRequest
 }
 
 func (r *DeviceAccessTokenRequest) Auth(req *http.Request) {

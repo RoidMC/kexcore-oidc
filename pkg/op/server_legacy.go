@@ -180,7 +180,7 @@ func (s *LegacyServer) Authorize(ctx context.Context, r *ClientRequest[protocol.
 	return NewRedirect(r.Client.LoginURL(req.GetID())), nil
 }
 
-func (s *LegacyServer) DeviceAuthorization(ctx context.Context, r *ClientRequest[oidc.DeviceAuthorizationRequest]) (*Response, error) {
+func (s *LegacyServer) DeviceAuthorization(ctx context.Context, r *ClientRequest[protocol.DeviceAuthorizationRequest]) (*Response, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.DeviceAuthorization")
 	defer span.End()
 
@@ -383,7 +383,7 @@ func (s *LegacyServer) ClientCredentialsExchange(ctx context.Context, r *ClientR
 	return NewResponse(resp), nil
 }
 
-func (s *LegacyServer) DeviceToken(ctx context.Context, r *ClientRequest[oidc.DeviceAccessTokenRequest]) (*Response, error) {
+func (s *LegacyServer) DeviceToken(ctx context.Context, r *ClientRequest[protocol.DeviceAccessTokenRequest]) (*Response, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.DeviceToken")
 	defer span.End()
 

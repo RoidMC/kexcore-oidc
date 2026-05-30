@@ -83,7 +83,7 @@ func DeviceAuthorization(w http.ResponseWriter, r *http.Request, o OpenIDProvide
 	return nil
 }
 
-func createDeviceAuthorization(ctx context.Context, req *oidc.DeviceAuthorizationRequest, clientID string, o OpenIDProvider) (*oidc.DeviceAuthorizationResponse, error) {
+func createDeviceAuthorization(ctx context.Context, req *protocol.DeviceAuthorizationRequest, clientID string, o OpenIDProvider) (*protocol.DeviceAuthorizationResponse, error) {
 	ctx, span := Tracer.Start(ctx, "createDeviceAuthorization")
 	defer span.End()
 
@@ -112,7 +112,7 @@ func createDeviceAuthorization(ctx context.Context, req *oidc.DeviceAuthorizatio
 	}
 	verification.Path = config.UserFormPath
 
-	response := &oidc.DeviceAuthorizationResponse{
+	response := &protocol.DeviceAuthorizationResponse{
 		DeviceCode:      deviceCode,
 		UserCode:        userCode,
 		VerificationURI: verification.String(),
@@ -125,7 +125,7 @@ func createDeviceAuthorization(ctx context.Context, req *oidc.DeviceAuthorizatio
 	return response, nil
 }
 
-func ParseDeviceCodeRequest(r *http.Request, o OpenIDProvider) (*oidc.DeviceAuthorizationRequest, error) {
+func ParseDeviceCodeRequest(r *http.Request, o OpenIDProvider) (*protocol.DeviceAuthorizationRequest, error) {
 	ctx, span := Tracer.Start(r.Context(), "ParseDeviceCodeRequest")
 	r = r.WithContext(ctx)
 	defer span.End()
@@ -142,7 +142,7 @@ func ParseDeviceCodeRequest(r *http.Request, o OpenIDProvider) (*oidc.DeviceAuth
 		return nil, protocol.ErrUnauthorizedClient().WithDescription("client missing grant type " + string(protocol.GrantTypeDeviceCode))
 	}
 
-	req := new(oidc.DeviceAuthorizationRequest)
+	req := new(protocol.DeviceAuthorizationRequest)
 	if err := o.Decoder().Decode(req, r.Form); err != nil {
 		return nil, protocol.ErrInvalidRequest().WithDescription("cannot parse device authentication request").WithParent(err)
 	}
@@ -241,8 +241,8 @@ func deviceAccessToken(w http.ResponseWriter, r *http.Request, exchanger Exchang
 	return nil
 }
 
-func ParseDeviceAccessTokenRequest(r *http.Request, exchanger Exchanger) (*oidc.DeviceAccessTokenRequest, error) {
-	req := new(oidc.DeviceAccessTokenRequest)
+func ParseDeviceAccessTokenRequest(r *http.Request, exchanger Exchanger) (*protocol.DeviceAccessTokenRequest, error) {
+	req := new(protocol.DeviceAccessTokenRequest)
 	if err := exchanger.Decoder().Decode(req, r.PostForm); err != nil {
 		return nil, err
 	}

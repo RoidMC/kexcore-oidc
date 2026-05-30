@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -101,7 +100,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 	issuer := shared.IssuerFromContext(r.Context())
 
-	resp := &oidc.DeviceAuthorizationResponse{
+	resp := &protocol.DeviceAuthorizationResponse{
 		DeviceCode:              deviceCode,
 		UserCode:                userCode,
 		VerificationURI:         issuer + "/device",

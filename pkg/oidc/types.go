@@ -6,7 +6,6 @@
 package oidc
 
 import (
-	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -201,67 +200,13 @@ func NewMaxAge(i uint) MaxAge {
 	return &i
 }
 
-type SpaceDelimitedArray []string
+type SpaceDelimitedArray = protocol.SpaceDelimitedArray
 
-type Prompt SpaceDelimitedArray
+type Prompt = protocol.SpaceDelimitedArray
 
 type ResponseType string
 
 type ResponseMode string
-
-func (s SpaceDelimitedArray) String() string {
-	return strings.Join(s, " ")
-}
-
-func (s *SpaceDelimitedArray) UnmarshalText(text []byte) error {
-	*s = strings.Split(string(text), " ")
-	return nil
-}
-
-func (s SpaceDelimitedArray) MarshalText() ([]byte, error) {
-	return []byte(s.String()), nil
-}
-
-func (s SpaceDelimitedArray) MarshalJSON() ([]byte, error) {
-	return json.Marshal((s).String())
-}
-
-func (s *SpaceDelimitedArray) UnmarshalJSON(data []byte) error {
-	var str string
-	if err := json.Unmarshal(data, &str); err != nil {
-		return err
-	}
-	*s = strings.Split(str, " ")
-	return nil
-}
-
-func (s *SpaceDelimitedArray) Scan(src any) error {
-	if src == nil {
-		*s = nil
-		return nil
-	}
-	switch v := src.(type) {
-	case string:
-		if len(v) == 0 {
-			*s = SpaceDelimitedArray{}
-			return nil
-		}
-		*s = strings.Split(v, " ")
-	case []byte:
-		if len(v) == 0 {
-			*s = SpaceDelimitedArray{}
-			return nil
-		}
-		*s = strings.Split(string(v), " ")
-	default:
-		return fmt.Errorf("cannot convert %T to SpaceDelimitedArray", src)
-	}
-	return nil
-}
-
-func (s SpaceDelimitedArray) Value() (driver.Value, error) {
-	return strings.Join(s, " "), nil
-}
 
 // NewEncoder returns an Encoder that knows how to encode
 // SpaceDelimitedArray and Locales values into url.Values.

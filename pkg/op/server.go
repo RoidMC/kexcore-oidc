@@ -69,8 +69,8 @@ type Server interface {
 
 	// DeviceAuthorization initiates the device authorization flow.
 	// https://datatracker.ietf.org/doc/html/rfc8628#section-3.1
-	// The recommended Response Data type is [oidc.DeviceAuthorizationResponse].
-	DeviceAuthorization(context.Context, *ClientRequest[oidc.DeviceAuthorizationRequest]) (*Response, error)
+	// The recommended Response Data type is [protocol.DeviceAuthorizationResponse].
+	DeviceAuthorization(context.Context, *ClientRequest[protocol.DeviceAuthorizationRequest]) (*Response, error)
 
 	// PushedAuthorizationRequest handles a Pushed Authorization Request (PAR).
 	// The client is already authenticated by the framework via VerifyClient.
@@ -130,8 +130,8 @@ type Server interface {
 	// should be returned to signal authorization_pending or access_denied etc.
 	// https://datatracker.ietf.org/doc/html/rfc8628#section-3.4,
 	// https://datatracker.ietf.org/doc/html/rfc8628#section-3.5.
-	// The recommended Response Data type is [oidc.AccessTokenResponse].
-	DeviceToken(context.Context, *ClientRequest[oidc.DeviceAccessTokenRequest]) (*Response, error)
+	// The recommended Response Data type is [protocol.AccessTokenResponse].
+	DeviceToken(context.Context, *ClientRequest[protocol.DeviceAccessTokenRequest]) (*Response, error)
 
 	// Introspect handles the OAuth 2.0 Token Introspection endpoint.
 	// https://datatracker.ietf.org/doc/html/rfc7662
@@ -310,7 +310,7 @@ func (UnimplementedServer) Authorize(ctx context.Context, r *ClientRequest[proto
 	return nil, unimplementedError(r)
 }
 
-func (UnimplementedServer) DeviceAuthorization(ctx context.Context, r *ClientRequest[oidc.DeviceAuthorizationRequest]) (*Response, error) {
+func (UnimplementedServer) DeviceAuthorization(ctx context.Context, r *ClientRequest[protocol.DeviceAuthorizationRequest]) (*Response, error) {
 	return nil, unimplementedError(r)
 }
 
@@ -342,7 +342,7 @@ func (UnimplementedServer) ClientCredentialsExchange(ctx context.Context, r *Cli
 	return nil, unimplementedGrantError(protocol.GrantTypeClientCredentials)
 }
 
-func (UnimplementedServer) DeviceToken(ctx context.Context, r *ClientRequest[oidc.DeviceAccessTokenRequest]) (*Response, error) {
+func (UnimplementedServer) DeviceToken(ctx context.Context, r *ClientRequest[protocol.DeviceAccessTokenRequest]) (*Response, error) {
 	return nil, unimplementedGrantError(protocol.GrantTypeDeviceCode)
 }
 
