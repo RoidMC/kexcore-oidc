@@ -301,23 +301,32 @@ func ValidateAuthReqPrompt(prompts []string, maxAge *uint) (_ *uint, err error) 
 	return maxAge, nil
 }
 
-// ValidateAuthReqScopes validates the passed scopes and deletes any unsupported scopes.
+// Note: check every scopes here currently.
+// Orignal: ValidateAuthReqScopes validates the passed scopes and deletes any unsupported scopes.
 // An error is returned if scopes is empty.
 func ValidateAuthReqScopes(client Client, scopes []string) ([]string, error) {
 	if len(scopes) == 0 {
-		return nil, protocol.ErrInvalidRequest().
+		return nil, oidc.ErrInvalidRequest().
 			WithDescription("The scope of your request is missing. Please ensure some scopes are requested. " +
 				"If you have any questions, you may contact the administrator of the application.")
 	}
+	for _, scope := range scopes {
+        if !client.IsScopeAllowed(scope) {
+            return nil, oidc.ErrInvalidScope().WithDescription("scope %s is not allowed for this client", scope)
+        }
+    }
+	// Some merges: I think we should check every scopes is allowed or not, there's no stuff?
+    /*
 	scopes = slices.DeleteFunc(scopes, func(scope string) bool {
-		return !(scope == protocol.ScopeOpenID ||
-			scope == protocol.ScopeProfile ||
-			scope == protocol.ScopeEmail ||
-			scope == protocol.ScopePhone ||
-			scope == protocol.ScopeAddress ||
-			scope == protocol.ScopeOfflineAccess) &&
+		return !(scope == oidc.ScopeOpenID ||
+			scope == oidc.ScopeProfile ||
+			scope == oidc.ScopeEmail ||
+			scope == oidc.ScopePhone ||
+			scope == oidc.ScopeAddress ||
+			scope == oidc.ScopeOfflineAccess) &&
 			!client.IsScopeAllowed(scope)
 	})
+	*/
 	return scopes, nil
 }
 
