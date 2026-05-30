@@ -10,6 +10,10 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
+const (
+	DiscoveryEndpoint = "oidc.EndPoint.json"
+)
+
 func testdataPath(name string) string {
 	_, thisFile, _, _ := runtime.Caller(0)
 	base := filepath.Dir(thisFile)
@@ -110,7 +114,7 @@ func TestDiscoveryConfiguration_MarshalJSON_NoExtra(t *testing.T) {
 }
 
 func TestDiscoveryConfiguration_UnmarshalJSON(t *testing.T) {
-	data, err := os.ReadFile(testdataPath("oidc.EndPoint.json"))
+	data, err := os.ReadFile(testdataPath(DiscoveryEndpoint))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
@@ -183,7 +187,7 @@ func TestDiscoveryConfiguration_UnmarshalJSON(t *testing.T) {
 }
 
 func TestDiscoveryConfiguration_UnmarshalJSON_Extra(t *testing.T) {
-	data, err := os.ReadFile(testdataPath("oidc.endpoint.json"))
+	data, err := os.ReadFile(testdataPath(DiscoveryEndpoint))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
@@ -211,7 +215,7 @@ func TestDiscoveryConfiguration_UnmarshalJSON_Extra(t *testing.T) {
 }
 
 func TestDiscoveryConfiguration_RoundTrip(t *testing.T) {
-	data, err := os.ReadFile(testdataPath("oidc.endpoint.json"))
+	data, err := os.ReadFile(testdataPath(DiscoveryEndpoint))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
