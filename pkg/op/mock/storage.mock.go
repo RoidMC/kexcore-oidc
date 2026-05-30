@@ -117,7 +117,7 @@ func (mr *MockStorageMockRecorder) CreateAccessToken(arg0, arg1 interface{}) *go
 }
 
 // CreateAuthRequest mocks base method.
-func (m *MockStorage) CreateAuthRequest(arg0 context.Context, arg1 *oidc.AuthRequest, arg2 string) (op.AuthRequest, error) {
+func (m *MockStorage) CreateAuthRequest(arg0 context.Context, arg1 *protocol.AuthRequest, arg2 string) (op.AuthRequest, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateAuthRequest", arg0, arg1, arg2)
 	ret0, _ := ret[0].(op.AuthRequest)

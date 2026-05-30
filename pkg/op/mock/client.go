@@ -5,7 +5,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
@@ -31,7 +31,7 @@ func NewClientExpectAny(t *testing.T, appType op.ApplicationType) op.Client {
 	return c
 }
 
-func NewClientWithConfig(t *testing.T, uri []string, appType op.ApplicationType, responseTypes []oidc.ResponseType, devMode bool) op.Client {
+func NewClientWithConfig(t *testing.T, uri []string, appType op.ApplicationType, responseTypes []protocol.ResponseType, devMode bool) op.Client {
 	c := NewClient(t)
 	m := c.(*MockClient)
 	m.EXPECT().RedirectURIs().AnyTimes().Return(uri)

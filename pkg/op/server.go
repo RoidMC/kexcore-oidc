@@ -60,12 +60,12 @@ type Server interface {
 	// If the implementation does not support "Request Object",
 	// it MUST return an [oidc.ErrRequestNotSupported].
 	// https://openid.net/specs/openid-connect-core-1_0.html#RequestObject
-	VerifyAuthRequest(context.Context, *Request[oidc.AuthRequest]) (*ClientRequest[oidc.AuthRequest], error)
+	VerifyAuthRequest(context.Context, *Request[protocol.AuthRequest]) (*ClientRequest[protocol.AuthRequest], error)
 
 	// Authorize initiates the authorization flow and redirects to a login page.
 	// See the various https://openid.net/specs/openid-connect-core-1_0.html
 	// authorize endpoint sections (one for each type of flow).
-	Authorize(context.Context, *ClientRequest[oidc.AuthRequest]) (*Redirect, error)
+	Authorize(context.Context, *ClientRequest[protocol.AuthRequest]) (*Redirect, error)
 
 	// DeviceAuthorization initiates the device authorization flow.
 	// https://datatracker.ietf.org/doc/html/rfc8628#section-3.1
@@ -77,8 +77,8 @@ type Server interface {
 	// The implementation must validate auth request parameters, store the request,
 	// and return a PushedAuthResponse with request_uri and expires_in.
 	// https://datatracker.ietf.org/doc/html/rfc9126
-	// The recommended Response Data type is [oidc.PushedAuthResponse].
-	PushedAuthorizationRequest(context.Context, *ClientRequest[oidc.AuthRequest]) (*Response, error)
+	// The recommended Response Data type is [protocol.PushedAuthResponse].
+	PushedAuthorizationRequest(context.Context, *ClientRequest[protocol.AuthRequest]) (*Response, error)
 
 	// VerifyClient is called on most oauth/token handlers to authenticate,
 	// using either a secret (POST, Basic) or assertion (JWT).
@@ -146,12 +146,12 @@ type Server interface {
 	// Revocation handles token revocation using an access or refresh token.
 	// https://datatracker.ietf.org/doc/html/rfc7009
 	// There are no response requirements. Data may remain empty.
-	Revocation(context.Context, *ClientRequest[oidc.RevocationRequest]) (*Response, error)
+	Revocation(context.Context, *ClientRequest[protocol.RevocationRequest]) (*Response, error)
 
 	// EndSession handles the OpenID Connect RP-Initiated Logout.
 	// https://openid.net/specs/openid-connect-rpinitiated-1_0.html
 	// There are no response requirements. Data may remain empty.
-	EndSession(context.Context, *Request[oidc.EndSessionRequest]) (*Redirect, error)
+	EndSession(context.Context, *Request[protocol.EndSessionRequest]) (*Redirect, error)
 
 	// mustImpl forces implementations to embed the UnimplementedServer for forward
 	// compatibility with the interface.
@@ -299,14 +299,14 @@ func (UnimplementedServer) Keys(ctx context.Context, r *Request[struct{}]) (*Res
 	return nil, unimplementedError(r)
 }
 
-func (UnimplementedServer) VerifyAuthRequest(ctx context.Context, r *Request[oidc.AuthRequest]) (*ClientRequest[oidc.AuthRequest], error) {
+func (UnimplementedServer) VerifyAuthRequest(ctx context.Context, r *Request[protocol.AuthRequest]) (*ClientRequest[protocol.AuthRequest], error) {
 	if r.Data.RequestParam != "" {
 		return nil, protocol.ErrRequestNotSupported()
 	}
 	return nil, unimplementedError(r)
 }
 
-func (UnimplementedServer) Authorize(ctx context.Context, r *ClientRequest[oidc.AuthRequest]) (*Redirect, error) {
+func (UnimplementedServer) Authorize(ctx context.Context, r *ClientRequest[protocol.AuthRequest]) (*Redirect, error) {
 	return nil, unimplementedError(r)
 }
 
@@ -314,7 +314,7 @@ func (UnimplementedServer) DeviceAuthorization(ctx context.Context, r *ClientReq
 	return nil, unimplementedError(r)
 }
 
-func (UnimplementedServer) PushedAuthorizationRequest(ctx context.Context, r *ClientRequest[oidc.AuthRequest]) (*Response, error) {
+func (UnimplementedServer) PushedAuthorizationRequest(ctx context.Context, r *ClientRequest[protocol.AuthRequest]) (*Response, error) {
 	return nil, unimplementedError(r)
 }
 
@@ -354,10 +354,10 @@ func (UnimplementedServer) UserInfo(ctx context.Context, r *Request[oidc.UserInf
 	return nil, unimplementedError(r)
 }
 
-func (UnimplementedServer) Revocation(ctx context.Context, r *ClientRequest[oidc.RevocationRequest]) (*Response, error) {
+func (UnimplementedServer) Revocation(ctx context.Context, r *ClientRequest[protocol.RevocationRequest]) (*Response, error) {
 	return nil, unimplementedError(r)
 }
 
-func (UnimplementedServer) EndSession(ctx context.Context, r *Request[oidc.EndSessionRequest]) (*Redirect, error) {
+func (UnimplementedServer) EndSession(ctx context.Context, r *Request[protocol.EndSessionRequest]) (*Redirect, error) {
 	return nil, unimplementedError(r)
 }

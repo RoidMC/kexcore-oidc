@@ -19,7 +19,7 @@ import (
 )
 
 type AuthStorage interface {
-	CreateAuthRequest(context.Context, *oidc.AuthRequest, string) (AuthRequest, error)
+	CreateAuthRequest(context.Context, *protocol.AuthRequest, string) (AuthRequest, error)
 	AuthRequestByID(context.Context, string) (AuthRequest, error)
 	AuthRequestByCode(context.Context, string) (AuthRequest, error)
 	SaveAuthCode(context.Context, string, string) error

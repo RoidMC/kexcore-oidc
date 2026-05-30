@@ -8,13 +8,12 @@ import (
 	"net/http"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type ErrAuthRequest interface {
 	GetRedirectURI() string
-	GetResponseType() oidc.ResponseType
+	GetResponseType() protocol.ResponseType
 	GetState() string
 }
 
@@ -53,8 +52,8 @@ func AuthRequestError(w http.ResponseWriter, r *http.Request, authReq ErrAuthReq
 		sessionState = authRequestSessionState.GetSessionState()
 	}
 	e.SessionState = sessionState
-	var responseMode oidc.ResponseMode
-	if rm, ok := authReq.(interface{ GetResponseMode() oidc.ResponseMode }); ok {
+	var responseMode protocol.ResponseMode
+	if rm, ok := authReq.(interface{ GetResponseMode() protocol.ResponseMode }); ok {
 		responseMode = rm.GetResponseMode()
 	}
 	url, err := AuthResponseURL(authReq.GetRedirectURI(), authReq.GetResponseType(), responseMode, e, authorizer.Encoder())
@@ -108,8 +107,8 @@ func TryErrorRedirect(ctx context.Context, authReq ErrAuthRequest, parent error,
 		sessionState = authRequestSessionState.GetSessionState()
 	}
 	e.SessionState = sessionState
-	var responseMode oidc.ResponseMode
-	if rm, ok := authReq.(interface{ GetResponseMode() oidc.ResponseMode }); ok {
+	var responseMode protocol.ResponseMode
+	if rm, ok := authReq.(interface{ GetResponseMode() protocol.ResponseMode }); ok {
 		responseMode = rm.GetResponseMode()
 	}
 	url, err := AuthResponseURL(authReq.GetRedirectURI(), authReq.GetResponseType(), responseMode, e, encoder)

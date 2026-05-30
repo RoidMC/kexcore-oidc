@@ -27,11 +27,10 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
-	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 // Plugin implements the OIDC Authorization endpoint.
@@ -223,7 +222,7 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 // authResponse creates the successful authentication response.
 func (p *Plugin) authResponse(w http.ResponseWriter, r *http.Request, authReq storm.AuthRequest) {
-	if authReq.GetResponseType() == oidc.ResponseTypeCode {
+	if authReq.GetResponseType() == protocol.ResponseTypeCode {
 		p.authResponseCode(w, r, authReq)
 		return
 	}
@@ -265,8 +264,8 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 
 // --- parsing ---
 
-func parseAuthorizeRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*oidc.AuthRequest, error) {
-	req := new(oidc.AuthRequest)
+func parseAuthorizeRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*protocol.AuthRequest, error) {
+	req := new(protocol.AuthRequest)
 	if err := codec.Decode(req, form, converters); err != nil {
 		return nil, err
 	}
@@ -275,7 +274,7 @@ func parseAuthorizeRequest(form map[string][]string, converters map[reflect.Type
 
 // --- validation ---
 
-func validateAuthRequestParams(client storm.Client, authReq *oidc.AuthRequest) error {
+func validateAuthRequestParams(client storm.Client, authReq *protocol.AuthRequest) error {
 	if err := validateRedirectURI(client, authReq.RedirectURI, authReq.ResponseType); err != nil {
 		return err
 	}
@@ -286,7 +285,7 @@ func validateAuthRequestParams(client storm.Client, authReq *oidc.AuthRequest) e
 	return validateResponseType(client, authReq.ResponseType)
 }
 
-func validateRedirectURI(client storm.Client, uri string, responseType oidc.ResponseType) error {
+func validateRedirectURI(client storm.Client, uri string, responseType protocol.ResponseType) error {
 	if uri == "" {
 		return protocol.ErrInvalidRequestRedirectURI().WithDescription("redirect_uri is missing")
 	}
@@ -344,20 +343,20 @@ func isLocalhost(host string) bool {
 		host == "0.0.0.0"
 }
 
-func validatePrompt(authReq *oidc.AuthRequest) {
+func validatePrompt(authReq *protocol.AuthRequest) {
 	for _, prompt := range authReq.Prompt {
-		if prompt == oidc.PromptNone && len(authReq.Prompt) > 1 {
+		if prompt == protocol.PromptNone && len(authReq.Prompt) > 1 {
 			// Caller will handle the error; we just flag it.
 			return
 		}
-		if prompt == oidc.PromptLogin {
+		if prompt == protocol.PromptLogin {
 			zero := uint(0)
 			authReq.MaxAge = &zero
 		}
 	}
 }
 
-func validateScopes(client storm.Client, authReq *oidc.AuthRequest) error {
+func validateScopes(client storm.Client, authReq *protocol.AuthRequest) error {
 	if len(authReq.Scopes) == 0 {
 		return protocol.ErrInvalidRequest().WithDescription("scope is missing")
 	}
@@ -368,8 +367,8 @@ func validateScopes(client storm.Client, authReq *oidc.AuthRequest) error {
 
 	authReq.Scopes = slices.DeleteFunc(authReq.Scopes, func(scope string) bool {
 		switch scope {
-		case oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail,
-			oidc.ScopePhone, oidc.ScopeAddress, oidc.ScopeOfflineAccess:
+		case protocol.ScopeOpenID, protocol.ScopeProfile, protocol.ScopeEmail,
+			protocol.ScopePhone, protocol.ScopeAddress, protocol.ScopeOfflineAccess:
 			return false
 		default:
 			if sp, ok := client.(scopeProvider); ok {
@@ -381,13 +380,13 @@ func validateScopes(client storm.Client, authReq *oidc.AuthRequest) error {
 	return nil
 }
 
-func validateResponseType(client storm.Client, responseType oidc.ResponseType) error {
+func validateResponseType(client storm.Client, responseType protocol.ResponseType) error {
 	if responseType == "" {
 		return protocol.ErrInvalidRequest().WithDescription("response type is missing")
 	}
 
 	type responseTypesProvider interface {
-		ResponseTypes() []oidc.ResponseType
+		ResponseTypes() []protocol.ResponseType
 	}
 	if rp, ok := client.(responseTypesProvider); ok {
 		if !slices.Contains(rp.ResponseTypes(), responseType) {
@@ -440,9 +439,9 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, redirectURI, state s
 
 // isImplicitResponseType returns true if the response type includes
 // id_token (Implicit or Hybrid flow per OIDC Core §3.2).
-func isImplicitResponseType(rt oidc.ResponseType) bool {
-	return rt == oidc.ResponseTypeIDTokenOnly ||
-		rt == oidc.ResponseTypeIDToken
+func isImplicitResponseType(rt protocol.ResponseType) bool {
+	return rt == protocol.ResponseTypeIDTokenOnly ||
+		rt == protocol.ResponseTypeIDToken
 }
 
 // authResponseImplicit handles the Implicit Flow response (OIDC Core §3.2.2.5).
@@ -457,8 +456,8 @@ func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, au
 	fragment := u.Query()
 	fragment.Set("state", authReq.GetState())
 
-	if authReq.GetResponseType() == oidc.ResponseTypeIDTokenOnly ||
-		authReq.GetResponseType() == oidc.ResponseTypeIDToken {
+	if authReq.GetResponseType() == protocol.ResponseTypeIDTokenOnly ||
+		authReq.GetResponseType() == protocol.ResponseTypeIDToken {
 		idToken, err := p.createImplicitIDToken(r.Context(), authReq)
 		if err == nil && idToken != "" {
 			fragment.Set("id_token", idToken)
@@ -514,7 +513,7 @@ func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRe
 // --- request object / PAR helpers ---
 
 // applyRequestObject parses and validates a JWT request object (OIDC Core §6.1).
-func (p *Plugin) applyRequestObject(ctx context.Context, authReq *oidc.AuthRequest) error {
+func (p *Plugin) applyRequestObject(ctx context.Context, authReq *protocol.AuthRequest) error {
 	if p.keyStore == nil {
 		return protocol.ErrInvalidRequest().WithDescription("request object not supported")
 	}
@@ -529,7 +528,7 @@ func (p *Plugin) applyRequestObject(ctx context.Context, authReq *oidc.AuthReque
 }
 
 // applyPARRequest resolves a Pushed Authorization Request (RFC 9101 §5.2).
-func (p *Plugin) applyPARRequest(ctx context.Context, authReq *oidc.AuthRequest) error {
+func (p *Plugin) applyPARRequest(ctx context.Context, authReq *protocol.AuthRequest) error {
 	parReq, err := p.parStore.GetPushedAuthRequest(ctx, authReq.RequestURI)
 	if err != nil {
 		return protocol.ErrInvalidRequest().WithDescription("invalid request_uri").WithParent(err)

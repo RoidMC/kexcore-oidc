@@ -65,7 +65,7 @@ func TestParseAuthorizeRequest(t *testing.T) {
 		decoder httphelper.Decoder
 	}
 	type res struct {
-		want *oidc.AuthRequest
+		want *protocol.AuthRequest
 		err  bool
 	}
 	tests := []struct {
@@ -110,7 +110,7 @@ func TestParseAuthorizeRequest(t *testing.T) {
 				}(),
 			},
 			res{
-				&oidc.AuthRequest{Scopes: oidc.SpaceDelimitedArray{"openid"}},
+				&protocol.AuthRequest{Scopes: protocol.SpaceDelimitedArray{"openid"}},
 				false,
 			},
 		},
@@ -130,7 +130,7 @@ func TestParseAuthorizeRequest(t *testing.T) {
 
 func TestValidateAuthRequest(t *testing.T) {
 	type args struct {
-		authRequest *oidc.AuthRequest
+		authRequest *protocol.AuthRequest
 		client      op.Client
 		verifier    *op.IDTokenHintVerifier
 	}
@@ -141,22 +141,22 @@ func TestValidateAuthRequest(t *testing.T) {
 	}{
 		{
 			"scope missing fails",
-			args{&oidc.AuthRequest{}, &mock.ConfClient{}, nil},
+			args{&protocol.AuthRequest{}, &mock.ConfClient{}, nil},
 			protocol.ErrInvalidRequest(),
 		},
 		{
 			"response_type missing fails",
-			args{&oidc.AuthRequest{Scopes: []string{"openid"}}, &mock.ConfClient{}, nil},
+			args{&protocol.AuthRequest{Scopes: []string{"openid"}}, &mock.ConfClient{}, nil},
 			protocol.ErrInvalidRequest(),
 		},
 		{
 			"client_id missing fails",
-			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode}, &mock.ConfClient{}, nil},
+			args{&protocol.AuthRequest{Scopes: []string{"openid"}, ResponseType: protocol.ResponseTypeCode}, &mock.ConfClient{}, nil},
 			protocol.ErrInvalidRequest(),
 		},
 		{
 			"redirect_uri missing fails",
-			args{&oidc.AuthRequest{Scopes: []string{"openid"}, ResponseType: oidc.ResponseTypeCode, ClientID: "client_id"}, &mock.ConfClient{}, nil},
+			args{&protocol.AuthRequest{Scopes: []string{"openid"}, ResponseType: protocol.ResponseTypeCode, ClientID: "client_id"}, &mock.ConfClient{}, nil},
 			protocol.ErrInvalidRequest(),
 		},
 	}
@@ -325,7 +325,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 	type args struct {
 		uri          string
 		client       op.Client
-		responseType oidc.ResponseType
+		responseType protocol.ResponseType
 	}
 	tests := []struct {
 		name    string
@@ -337,7 +337,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"",
 				mock.NewClientWithConfig(t, []string{"https://registered.com/callback"}, op.ApplicationTypeWeb, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -346,7 +346,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"https://unregistered.com/callback",
 				mock.NewClientWithConfig(t, []string{"https://registered.com/callback"}, op.ApplicationTypeWeb, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -355,7 +355,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://unregistered.com/callback",
 				mock.NewClientWithConfig(t, []string{"http://registered.com/callback"}, op.ApplicationTypeWeb, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -364,7 +364,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"https://registered.com/callback",
 				mock.NewClientWithConfig(t, []string{"https://registered.com/callback"}, op.ApplicationTypeWeb, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -373,7 +373,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"https://registered.com/callback",
 				mock.NewClientWithConfig(t, []string{"https://registered.com/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -382,7 +382,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"https://registered.com/callback",
 				mock.NewClientWithConfig(t, []string{"https://registered.com/callback"}, op.ApplicationTypeUserAgent, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -391,7 +391,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewClientWithConfig(t, []string{"http://registered.com/callback"}, op.ApplicationTypeWeb, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -400,7 +400,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewClientWithConfig(t, []string{"http://registered.com/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -409,7 +409,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewClientWithConfig(t, []string{"http://registered.com/callback"}, op.ApplicationTypeUserAgent, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -418,7 +418,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://localhost:4200/callback",
 				mock.NewClientWithConfig(t, []string{"http://localhost/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -427,7 +427,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://127.0.0.1:4200/callback",
 				mock.NewClientWithConfig(t, []string{"http://127.0.0.1/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -436,7 +436,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://[::1]:4200/callback",
 				mock.NewClientWithConfig(t, []string{"http://[::1]/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -445,7 +445,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"https://127.0.0.1:4200/callback",
 				mock.NewClientWithConfig(t, []string{"https://127.0.0.1/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -454,7 +454,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"https://[::1]:4200/callback",
 				mock.NewClientWithConfig(t, []string{"https://[::1]/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -463,7 +463,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://unregistered.com/callback",
 				mock.NewClientWithConfig(t, []string{"http://locahost/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -472,7 +472,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"unregistered://callback",
 				mock.NewClientWithConfig(t, []string{"registered://callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -481,7 +481,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://[::1]:4200/unregistered",
 				mock.NewClientWithConfig(t, []string{"http://[::1]:4200/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -490,7 +490,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"custom://callback",
 				mock.NewClientWithConfig(t, []string{"custom://callback"}, op.ApplicationTypeWeb, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -499,7 +499,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"custom://callback",
 				mock.NewClientWithConfig(t, []string{"custom://callback"}, op.ApplicationTypeUserAgent, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -508,7 +508,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"custom://callback",
 				mock.NewClientWithConfig(t, []string{"custom://callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -517,7 +517,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewClientWithConfig(t, []string{"http://registered.com/callback"}, op.ApplicationTypeUserAgent, nil, true),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -526,7 +526,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"https://registered.com/callback",
 				mock.NewClientWithConfig(t, []string{"https://registered.com/callback"}, op.ApplicationTypeUserAgent, nil, false),
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 			},
 			false,
 		},
@@ -535,7 +535,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"https://unregistered.com/callback",
 				mock.NewClientWithConfig(t, []string{"https://registered.com/callback"}, op.ApplicationTypeUserAgent, nil, false),
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 			},
 			true,
 		},
@@ -544,7 +544,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://localhost:9999/callback",
 				mock.NewClientWithConfig(t, []string{"http://localhost:9999/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 			},
 			false,
 		},
@@ -553,7 +553,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://localhost:9999/callback",
 				mock.NewClientWithConfig(t, []string{"http://localhost:9999/callback"}, op.ApplicationTypeWeb, nil, false),
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 			},
 			true,
 		},
@@ -562,7 +562,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://localhost:9999/callback",
 				mock.NewClientWithConfig(t, []string{"http://localhost:9999/callback"}, op.ApplicationTypeUserAgent, nil, false),
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 			},
 			true,
 		},
@@ -571,7 +571,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewClientWithConfig(t, []string{"http://registered.com/callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 			},
 			true,
 		},
@@ -580,7 +580,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"custom://callback",
 				mock.NewClientWithConfig(t, []string{"custom://callback"}, op.ApplicationTypeNative, nil, false),
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 			},
 			false,
 		},
@@ -589,7 +589,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewClientWithConfig(t, []string{"http://registered.com/callback"}, op.ApplicationTypeUserAgent, nil, true),
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 			},
 			false,
 		},
@@ -598,7 +598,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewHasRedirectGlobsWithConfig(t, []string{"http://registered.com/*"}, op.ApplicationTypeUserAgent, nil, true),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -607,7 +607,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewHasRedirectGlobsWithConfig(t, []string{"http://registered.com/*"}, op.ApplicationTypeUserAgent, nil, true),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -616,7 +616,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewHasRedirectGlobsWithConfig(t, []string{"http://**/*"}, op.ApplicationTypeUserAgent, nil, true),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -625,7 +625,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewHasRedirectGlobsWithConfig(t, []string{"http://**/*"}, op.ApplicationTypeUserAgent, nil, true),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -634,7 +634,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://[::1]:80/callback",
 				mock.NewHasRedirectGlobsWithConfig(t, []string{"http://\\[::1\\]:80/*"}, op.ApplicationTypeUserAgent, nil, true),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -643,7 +643,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"http://registered.com/callback",
 				mock.NewHasRedirectGlobsWithConfig(t, []string{"http://**/\\"}, op.ApplicationTypeUserAgent, nil, true),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			true,
 		},
@@ -652,7 +652,7 @@ func TestValidateAuthReqRedirectURI(t *testing.T) {
 			args{
 				"https%3A%2F%2Fregistered.com%2Fcallback",
 				mock.NewClientWithConfig(t, []string{"https://registered.com/callback"}, op.ApplicationTypeWeb, nil, false),
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 			},
 			false,
 		},
@@ -742,7 +742,7 @@ func TestLoopbackOrLocalhost(t *testing.T) {
 
 func TestValidateAuthReqResponseType(t *testing.T) {
 	type args struct {
-		responseType oidc.ResponseType
+		responseType protocol.ResponseType
 		client       op.Client
 	}
 	tests := []struct {
@@ -754,23 +754,23 @@ func TestValidateAuthReqResponseType(t *testing.T) {
 			"empty response type",
 			args{
 				"",
-				mock.NewClientWithConfig(t, nil, op.ApplicationTypeNative, []oidc.ResponseType{oidc.ResponseTypeCode}, true),
+				mock.NewClientWithConfig(t, nil, op.ApplicationTypeNative, []protocol.ResponseType{protocol.ResponseTypeCode}, true),
 			},
 			true,
 		},
 		{
 			"response type missing in client config",
 			args{
-				oidc.ResponseTypeIDToken,
-				mock.NewClientWithConfig(t, nil, op.ApplicationTypeNative, []oidc.ResponseType{oidc.ResponseTypeCode}, true),
+				protocol.ResponseTypeIDToken,
+				mock.NewClientWithConfig(t, nil, op.ApplicationTypeNative, []protocol.ResponseType{protocol.ResponseTypeCode}, true),
 			},
 			true,
 		},
 		{
 			"valid response type",
 			args{
-				oidc.ResponseTypeCode,
-				mock.NewClientWithConfig(t, nil, op.ApplicationTypeNative, []oidc.ResponseType{oidc.ResponseTypeCode}, true),
+				protocol.ResponseTypeCode,
+				mock.NewClientWithConfig(t, nil, op.ApplicationTypeNative, []protocol.ResponseType{protocol.ResponseTypeCode}, true),
 			},
 			false,
 		},
@@ -818,8 +818,8 @@ func TestRedirectToLogin(t *testing.T) {
 func TestAuthResponseURL(t *testing.T) {
 	type args struct {
 		redirectURI  string
-		responseType oidc.ResponseType
-		responseMode oidc.ResponseMode
+		responseType protocol.ResponseType
+		responseMode protocol.ResponseMode
 		response     any
 		encoder      httphelper.Encoder
 	}
@@ -836,7 +836,7 @@ func TestAuthResponseURL(t *testing.T) {
 			"encoding error",
 			args{
 				"uri",
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 				"",
 				map[string]any{"test": "test"},
 				&mockEncoder{
@@ -852,8 +852,8 @@ func TestAuthResponseURL(t *testing.T) {
 			"response mode query",
 			args{
 				"uri",
-				oidc.ResponseTypeIDToken,
-				oidc.ResponseModeQuery,
+				protocol.ResponseTypeIDToken,
+				protocol.ResponseModeQuery,
 				map[string][]string{"test": {"test"}},
 				&mockEncoder{},
 			},
@@ -866,8 +866,8 @@ func TestAuthResponseURL(t *testing.T) {
 			"response mode fragment",
 			args{
 				"uri",
-				oidc.ResponseTypeCode,
-				oidc.ResponseModeFragment,
+				protocol.ResponseTypeCode,
+				protocol.ResponseModeFragment,
 				map[string][]string{"test": {"test"}},
 				&mockEncoder{},
 			},
@@ -880,7 +880,7 @@ func TestAuthResponseURL(t *testing.T) {
 			"response type code",
 			args{
 				"uri",
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 				"",
 				map[string][]string{"test": {"test"}},
 				&mockEncoder{},
@@ -894,7 +894,7 @@ func TestAuthResponseURL(t *testing.T) {
 			"response type id token",
 			args{
 				"uri",
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 				"",
 				map[string][]string{"test": {"test"}},
 				&mockEncoder{},
@@ -908,7 +908,7 @@ func TestAuthResponseURL(t *testing.T) {
 			"with query",
 			args{
 				"uri?param=value",
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 				"",
 				map[string][]string{"test": {"test"}},
 				&mockEncoder{},
@@ -922,7 +922,7 @@ func TestAuthResponseURL(t *testing.T) {
 			"with query response type id token",
 			args{
 				"uri?param=value",
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 				"",
 				map[string][]string{"test": {"test"}},
 				&mockEncoder{},
@@ -936,7 +936,7 @@ func TestAuthResponseURL(t *testing.T) {
 			"with existing query",
 			args{
 				"uri?test=value",
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 				"",
 				map[string][]string{"test": {"test"}},
 				&mockEncoder{},
@@ -950,7 +950,7 @@ func TestAuthResponseURL(t *testing.T) {
 			"with existing query response type id token",
 			args{
 				"uri?test=value",
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 				"",
 				map[string][]string{"test": {"test"}},
 				&mockEncoder{},
@@ -964,7 +964,7 @@ func TestAuthResponseURL(t *testing.T) {
 			"with existing query and multiple values",
 			args{
 				"uri?test=value",
-				oidc.ResponseTypeCode,
+				protocol.ResponseTypeCode,
 				"",
 				map[string][]string{"test": {"test", "test2"}},
 				&mockEncoder{},
@@ -978,7 +978,7 @@ func TestAuthResponseURL(t *testing.T) {
 			"with existing query and multiple values response type id token",
 			args{
 				"uri?test=value",
-				oidc.ResponseTypeIDToken,
+				protocol.ResponseTypeIDToken,
 				"",
 				map[string][]string{"test": {"test", "test2"}},
 				&mockEncoder{},

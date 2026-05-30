@@ -32,7 +32,7 @@ type Client struct {
 	applicationType                op.ApplicationType
 	authMethod                     protocol.AuthMethod
 	loginURL                       func(string) string
-	responseTypes                  []oidc.ResponseType
+	responseTypes                  []protocol.ResponseType
 	grantTypes                     []oidc.GrantType
 	accessTokenType                op.AccessTokenType
 	devMode                        bool
@@ -73,7 +73,7 @@ func (c *Client) AuthMethod() protocol.AuthMethod {
 
 // ResponseTypes must return all allowed response types (code, id_token token, id_token)
 // these must match with the allowed grant types
-func (c *Client) ResponseTypes() []oidc.ResponseType {
+func (c *Client) ResponseTypes() []protocol.ResponseType {
 	return c.responseTypes
 }
 
@@ -168,7 +168,7 @@ func NativeClient(id string, redirectURIs ...string) *Client {
 		applicationType:                op.ApplicationTypeNative,
 		authMethod:                     protocol.AuthMethodNone,
 		loginURL:                       defaultLoginURL,
-		responseTypes:                  []oidc.ResponseType{oidc.ResponseTypeCode},
+		responseTypes:                  []protocol.ResponseType{protocol.ResponseTypeCode},
 		grantTypes:                     []oidc.GrantType{oidc.GrantTypeCode, oidc.GrantTypeRefreshToken},
 		accessTokenType:                op.AccessTokenTypeBearer,
 		devMode:                        false,
@@ -194,7 +194,7 @@ func WebClient(id, secret string, redirectURIs ...string) *Client {
 		applicationType:                op.ApplicationTypeWeb,
 		authMethod:                     protocol.AuthMethodBasic,
 		loginURL:                       defaultLoginURL,
-		responseTypes:                  []oidc.ResponseType{oidc.ResponseTypeCode, oidc.ResponseTypeIDTokenOnly, oidc.ResponseTypeIDToken},
+		responseTypes:                  []protocol.ResponseType{protocol.ResponseTypeCode, protocol.ResponseTypeIDTokenOnly, protocol.ResponseTypeIDToken},
 		grantTypes:                     []oidc.GrantType{oidc.GrantTypeCode, oidc.GrantTypeRefreshToken, oidc.GrantTypeTokenExchange},
 		accessTokenType:                op.AccessTokenTypeBearer,
 		devMode:                        true,
@@ -230,7 +230,7 @@ func DeviceClient(id, secret string) *Client {
 		applicationType:                op.ApplicationTypeWeb,
 		authMethod:                     protocol.AuthMethodBasic,
 		loginURL:                       defaultLoginURL,
-		responseTypes:                  []oidc.ResponseType{oidc.ResponseTypeCode},
+		responseTypes:                  []protocol.ResponseType{protocol.ResponseTypeCode},
 		grantTypes:                     []oidc.GrantType{oidc.GrantTypeDeviceCode},
 		accessTokenType:                op.AccessTokenTypeBearer,
 		devMode:                        false,

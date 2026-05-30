@@ -107,12 +107,12 @@ func TestRoutes(t *testing.T) {
 	client, err := storage.GetClientByClientID(ctx, "web")
 	require.NoError(t, err)
 
-	oidcAuthReq := &oidc.AuthRequest{
+	oidcAuthReq := &protocol.AuthRequest{
 		ClientID:     client.GetID(),
 		RedirectURI:  "https://example.com",
 		MaxAge:       gu.Ptr[uint](300),
-		Scopes:       oidc.SpaceDelimitedArray{oidc.ScopeOpenID, oidc.ScopeOfflineAccess, oidc.ScopeEmail, oidc.ScopeProfile, oidc.ScopePhone},
-		ResponseType: oidc.ResponseTypeCode,
+		Scopes:       protocol.SpaceDelimitedArray{protocol.ScopeOpenID, protocol.ScopeOfflineAccess, protocol.ScopeEmail, protocol.ScopeProfile, protocol.ScopePhone},
+		ResponseType: protocol.ResponseTypeCode,
 	}
 
 	authReq, err := storage.CreateAuthRequest(ctx, oidcAuthReq, "id1")
@@ -180,8 +180,8 @@ func TestRoutes(t *testing.T) {
 			values: map[string]string{
 				"client_id":     client.GetID(),
 				"redirect_uri":  "https://example.com",
-				"scope":         oidc.SpaceDelimitedArray{oidc.ScopeOpenID, oidc.ScopeOfflineAccess}.String(),
-				"response_type": string(oidc.ResponseTypeCode),
+				"scope":         protocol.SpaceDelimitedArray{protocol.ScopeOpenID, protocol.ScopeOfflineAccess}.String(),
+				"response_type": string(protocol.ResponseTypeCode),
 			},
 			wantCode:       http.StatusFound,
 			headerContains: map[string]string{"Location": "/login/username?authRequestID="},
@@ -217,7 +217,7 @@ func TestRoutes(t *testing.T) {
 			path:   testProvider.TokenEndpoint().Relative(),
 			values: map[string]string{
 				"grant_type": string(oidc.GrantTypeBearer),
-				"scope":      oidc.SpaceDelimitedArray{oidc.ScopeOpenID, oidc.ScopeOfflineAccess}.String(),
+				"scope":      protocol.SpaceDelimitedArray{protocol.ScopeOpenID, protocol.ScopeOfflineAccess}.String(),
 				"assertion":  jwtToken,
 			},
 			wantCode: http.StatusBadRequest,
@@ -230,7 +230,7 @@ func TestRoutes(t *testing.T) {
 			basicAuth: &basicAuth{"web", "secret"},
 			values: map[string]string{
 				"grant_type":         string(oidc.GrantTypeTokenExchange),
-				"scope":              oidc.SpaceDelimitedArray{oidc.ScopeOpenID, oidc.ScopeOfflineAccess}.String(),
+				"scope":              protocol.SpaceDelimitedArray{protocol.ScopeOpenID, protocol.ScopeOfflineAccess}.String(),
 				"subject_token":      jwtToken,
 				"subject_token_type": string(oidc.AccessTokenType),
 			},
@@ -249,7 +249,7 @@ func TestRoutes(t *testing.T) {
 			basicAuth: &basicAuth{"sid1", "verysecret"},
 			values: map[string]string{
 				"grant_type": string(oidc.GrantTypeClientCredentials),
-				"scope":      oidc.SpaceDelimitedArray{oidc.ScopeOpenID, oidc.ScopeOfflineAccess}.String(),
+				"scope":      protocol.SpaceDelimitedArray{protocol.ScopeOpenID, protocol.ScopeOfflineAccess}.String(),
 			},
 			wantCode:  http.StatusOK,
 			contains:  []string{`{"access_token":"`, `"token_type":"Bearer","expires_in":`, `,"scope":"openid offline_access"}`},
@@ -372,7 +372,7 @@ func TestRoutes(t *testing.T) {
 			path:      testProvider.DeviceAuthorizationEndpoint().Relative(),
 			basicAuth: &basicAuth{"device", "secret"},
 			values: map[string]string{
-				"scope": oidc.SpaceDelimitedArray{oidc.ScopeOpenID, oidc.ScopeOfflineAccess}.String(),
+				"scope": protocol.SpaceDelimitedArray{protocol.ScopeOpenID, protocol.ScopeOfflineAccess}.String(),
 			},
 			wantCode: http.StatusOK,
 			contains: []string{

@@ -24,6 +24,7 @@ import (
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 var (
@@ -106,7 +107,7 @@ func main() {
 	}
 
 	if responseMode != "" {
-		urlOptions = append(urlOptions, rp.WithResponseModeURLParam(oidc.ResponseMode(responseMode)))
+		urlOptions = append(urlOptions, rp.WithResponseModeURLParam(protocol.ResponseMode(responseMode)))
 	}
 
 	// register the AuthURLHandler at your preferred path.

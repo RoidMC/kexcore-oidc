@@ -80,7 +80,7 @@ func Exchange(w http.ResponseWriter, r *http.Request, exchanger Exchanger) {
 }
 
 // AuthenticatedTokenRequest is a helper interface for ParseAuthenticatedTokenRequest
-// it is implemented by oidc.AuthRequest and oidc.RefreshTokenRequest
+// it is implemented by protocol.AuthRequest and oidc.RefreshTokenRequest
 type AuthenticatedTokenRequest interface {
 	SetClientID(string)
 	SetClientSecret(string)

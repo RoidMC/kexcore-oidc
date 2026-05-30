@@ -735,7 +735,7 @@ func WithPromptURLParam(prompt ...string) URLParamOpt {
 }
 
 // WithResponseModeURLParam sets the `response_mode` parameter in a URL.
-func WithResponseModeURLParam(mode oidc.ResponseMode) URLParamOpt {
+func WithResponseModeURLParam(mode protocol.ResponseMode) URLParamOpt {
 	return withURLParam("response_mode", string(mode))
 }
 
@@ -830,12 +830,12 @@ func RefreshTokens[C oidc.IDClaims](ctx context.Context, rp RelyingParty, refres
 	return nil, err
 }
 
-func EndSession(ctx context.Context, rp RelyingParty, idToken, optionalRedirectURI, optionalState, optionalLogoutHint string, optionalLocales oidc.Locales) (*url.URL, error) {
+func EndSession(ctx context.Context, rp RelyingParty, idToken, optionalRedirectURI, optionalState, optionalLogoutHint string, optionalLocales protocol.Locales) (*url.URL, error) {
 	ctx = logCtxWithRPData(ctx, rp, "function", "EndSession")
 	ctx, span := client.Tracer.Start(ctx, "RefreshTokens")
 	defer span.End()
 
-	request := oidc.EndSessionRequest{
+	request := protocol.EndSessionRequest{
 		IdTokenHint:           idToken,
 		ClientID:              rp.OAuthConfig().ClientID,
 		PostLogoutRedirectURI: optionalRedirectURI,

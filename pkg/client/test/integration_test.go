@@ -41,6 +41,7 @@ import (
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 var Logger = slog.New(
@@ -568,7 +569,7 @@ func TestErrorFromPromptNone(t *testing.T) {
 	get := httptest.NewRequest("GET", localURL.String(), nil)
 	rp.AuthURLHandler(func() string { return state }, provider,
 		rp.WithPromptURLParam("none"),
-		rp.WithResponseModeURLParam(oidc.ResponseModeFragment),
+		rp.WithResponseModeURLParam(protocol.ResponseModeFragment),
 	)(capturedW, get)
 
 	defer func() {

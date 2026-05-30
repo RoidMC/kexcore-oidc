@@ -71,12 +71,12 @@ func EndSession(w http.ResponseWriter, r *http.Request, ender SessionEnder) {
 	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
-func ParseEndSessionRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.EndSessionRequest, error) {
+func ParseEndSessionRequest(r *http.Request, decoder httphelper.Decoder) (*protocol.EndSessionRequest, error) {
 	err := r.ParseForm()
 	if err != nil {
 		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
-	req := new(oidc.EndSessionRequest)
+	req := new(protocol.EndSessionRequest)
 	err = decoder.Decode(req, r.Form)
 	if err != nil {
 		return nil, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err)
@@ -84,7 +84,7 @@ func ParseEndSessionRequest(r *http.Request, decoder httphelper.Decoder) (*oidc.
 	return req, nil
 }
 
-func ValidateEndSessionRequest(ctx context.Context, req *oidc.EndSessionRequest, ender SessionEnder) (*EndSessionRequest, error) {
+func ValidateEndSessionRequest(ctx context.Context, req *protocol.EndSessionRequest, ender SessionEnder) (*EndSessionRequest, error) {
 	ctx, span := Tracer.Start(ctx, "ValidateEndSessionRequest")
 	defer span.End()
 

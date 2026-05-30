@@ -220,10 +220,10 @@ func (mr *MockClientMockRecorder) RedirectURIs() *gomock.Call {
 }
 
 // ResponseTypes mocks base method.
-func (m *MockClient) ResponseTypes() []oidc.ResponseType {
+func (m *MockClient) ResponseTypes() []protocol.ResponseType {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ResponseTypes")
-	ret0, _ := ret[0].([]oidc.ResponseType)
+	ret0, _ := ret[0].([]protocol.ResponseType)
 	return ret0
 }
 

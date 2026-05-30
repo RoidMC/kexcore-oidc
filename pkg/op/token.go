@@ -13,6 +13,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type TokenCreator interface {
@@ -107,13 +108,13 @@ func createTokens(ctx context.Context, tokenRequest TokenRequest, storage Storag
 func needsRefreshToken(tokenRequest TokenRequest, client AccessTokenClient) bool {
 	switch req := tokenRequest.(type) {
 	case AuthRequest:
-		return slices.Contains(req.GetScopes(), oidc.ScopeOfflineAccess) && req.GetResponseType() == oidc.ResponseTypeCode && ValidateGrantType(client, oidc.GrantTypeRefreshToken)
+		return slices.Contains(req.GetScopes(), protocol.ScopeOfflineAccess) && req.GetResponseType() == protocol.ResponseTypeCode && ValidateGrantType(client, oidc.GrantTypeRefreshToken)
 	case TokenExchangeRequest:
 		return req.GetRequestedTokenType() == oidc.RefreshTokenType
 	case RefreshTokenRequest:
 		return true
 	case *DeviceAuthorizationState:
-		return slices.Contains(req.GetScopes(), oidc.ScopeOfflineAccess) && ValidateGrantType(client, oidc.GrantTypeRefreshToken)
+		return slices.Contains(req.GetScopes(), protocol.ScopeOfflineAccess) && ValidateGrantType(client, oidc.GrantTypeRefreshToken)
 	default:
 		return false
 	}
@@ -290,10 +291,10 @@ func removeUserinfoScopes(scopes []string) []string {
 	newScopeList := make([]string, 0, len(scopes))
 	for _, scope := range scopes {
 		switch scope {
-		case oidc.ScopeProfile,
-			oidc.ScopeEmail,
-			oidc.ScopeAddress,
-			oidc.ScopePhone:
+		case protocol.ScopeProfile,
+			protocol.ScopeEmail,
+			protocol.ScopeAddress,
+			protocol.ScopePhone:
 			continue
 		default:
 			newScopeList = append(newScopeList, scope)

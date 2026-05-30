@@ -212,7 +212,7 @@ func (s *webServer) parseClientCredentials(r *http.Request) (_ *ClientCredential
 }
 
 func (s *webServer) authorizeHandler(w http.ResponseWriter, r *http.Request) {
-	request, err := decodeRequest[oidc.AuthRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.AuthRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return
@@ -225,7 +225,7 @@ func (s *webServer) authorizeHandler(w http.ResponseWriter, r *http.Request) {
 	redirect.writeOut(w, r)
 }
 
-func (s *webServer) authorize(ctx context.Context, r *Request[oidc.AuthRequest]) (_ *Redirect, err error) {
+func (s *webServer) authorize(ctx context.Context, r *Request[protocol.AuthRequest]) (_ *Redirect, err error) {
 	cr, err := s.server.VerifyAuthRequest(ctx, r)
 	if err != nil {
 		return nil, err
@@ -255,7 +255,7 @@ func (s *webServer) deviceAuthorizationHandler(w http.ResponseWriter, r *http.Re
 }
 
 func (s *webServer) pushedAuthRequestHandler(w http.ResponseWriter, r *http.Request, client Client) {
-	request, err := decodeRequest[oidc.AuthRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.AuthRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return
@@ -478,7 +478,7 @@ func (s *webServer) userInfoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *webServer) revocationHandler(w http.ResponseWriter, r *http.Request, client Client) {
-	request, err := decodeRequest[oidc.RevocationRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.RevocationRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return
@@ -496,7 +496,7 @@ func (s *webServer) revocationHandler(w http.ResponseWriter, r *http.Request, cl
 }
 
 func (s *webServer) endSessionHandler(w http.ResponseWriter, r *http.Request) {
-	request, err := decodeRequest[oidc.EndSessionRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.EndSessionRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return

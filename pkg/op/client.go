@@ -44,7 +44,7 @@ type Client interface {
 	PostLogoutRedirectURIs() []string
 	ApplicationType() ApplicationType
 	AuthMethod() protocol.AuthMethod
-	ResponseTypes() []oidc.ResponseType
+	ResponseTypes() []protocol.ResponseType
 	GrantTypes() []oidc.GrantType
 	LoginURL(string) string
 	AccessTokenType() AccessTokenType
@@ -116,7 +116,7 @@ type BackChannelLogoutClient interface {
 	BackChannelLogoutURI() string
 }
 
-func ContainsResponseType(types []oidc.ResponseType, responseType oidc.ResponseType) bool {
+func ContainsResponseType(types []protocol.ResponseType, responseType protocol.ResponseType) bool {
 	for _, t := range types {
 		if t == responseType {
 			return true

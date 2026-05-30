@@ -40,7 +40,7 @@ func (s *multiStorage) CheckUsernamePassword(ctx context.Context, username, pass
 
 // CreateAuthRequest implements the op.Storage interface
 // it will be called after parsing and validation of the authentication request
-func (s *multiStorage) CreateAuthRequest(ctx context.Context, authReq *oidc.AuthRequest, userID string) (op.AuthRequest, error) {
+func (s *multiStorage) CreateAuthRequest(ctx context.Context, authReq *protocol.AuthRequest, userID string) (op.AuthRequest, error) {
 	storage, err := s.storageFromContext(ctx)
 	if err != nil {
 		return nil, err

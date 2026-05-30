@@ -11,7 +11,6 @@ import (
 
 	"golang.org/x/text/language"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -40,8 +39,8 @@ type AuthRequest struct {
 	MaxAuthAge    *time.Duration
 	UserID        string
 	Scopes        []string
-	ResponseType  oidc.ResponseType
-	ResponseMode  oidc.ResponseMode
+	ResponseType  protocol.ResponseType
+	ResponseMode  protocol.ResponseMode
 	Nonce         string
 	CodeChallenge *OIDCCodeChallenge
 
@@ -103,11 +102,11 @@ func (a *AuthRequest) GetRedirectURI() string {
 	return a.CallbackURI
 }
 
-func (a *AuthRequest) GetResponseType() oidc.ResponseType {
+func (a *AuthRequest) GetResponseType() protocol.ResponseType {
 	return a.ResponseType
 }
 
-func (a *AuthRequest) GetResponseMode() oidc.ResponseMode {
+func (a *AuthRequest) GetResponseMode() protocol.ResponseMode {
 	return a.ResponseMode
 }
 
@@ -131,14 +130,14 @@ func (a *AuthRequest) GetSessionID() string {
 	return a.sessionID
 }
 
-func PromptToInternal(oidcPrompt oidc.SpaceDelimitedArray) []string {
+func PromptToInternal(oidcPrompt protocol.SpaceDelimitedArray) []string {
 	prompts := make([]string, 0, len(oidcPrompt))
 	for _, oidcPrompt := range oidcPrompt {
 		switch oidcPrompt {
-		case oidc.PromptNone,
-			oidc.PromptLogin,
-			oidc.PromptConsent,
-			oidc.PromptSelectAccount:
+		case protocol.PromptNone,
+			protocol.PromptLogin,
+			protocol.PromptConsent,
+			protocol.PromptSelectAccount:
 			prompts = append(prompts, oidcPrompt)
 		}
 	}
@@ -153,7 +152,7 @@ func MaxAgeToInternal(maxAge *uint) *time.Duration {
 	return &dur
 }
 
-func authRequestToInternal(authReq *oidc.AuthRequest, userID string) *AuthRequest {
+func authRequestToInternal(authReq *protocol.AuthRequest, userID string) *AuthRequest {
 	var codeChallenge *OIDCCodeChallenge
 	if authReq.CodeChallenge != "" {
 		codeChallenge = &OIDCCodeChallenge{

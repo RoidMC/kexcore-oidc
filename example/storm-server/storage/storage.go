@@ -240,7 +240,7 @@ func (s *Storage) SigningKey(_ context.Context) (storm.SigningKey, error) {
 // storm.AuthStore
 // =================================================================
 
-func (s *Storage) CreateAuthRequest(_ context.Context, req *oidc.AuthRequest, userID string) (storm.AuthRequest, error) {
+func (s *Storage) CreateAuthRequest(_ context.Context, req *protocol.AuthRequest, userID string) (storm.AuthRequest, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -468,18 +468,18 @@ func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *oidc.UserInf
 
 	for _, scope := range token.Scopes {
 		switch scope {
-		case oidc.ScopeOpenID:
+		case protocol.ScopeOpenID:
 			userinfo.Subject = user.ID
-		case oidc.ScopeEmail:
+		case protocol.ScopeEmail:
 			userinfo.Email = user.Email
 			userinfo.EmailVerified = oidc.Bool(user.EmailVerified)
-		case oidc.ScopeProfile:
+		case protocol.ScopeProfile:
 			userinfo.PreferredUsername = user.Username
 			userinfo.Name = user.FirstName + " " + user.LastName
 			userinfo.FamilyName = user.LastName
 			userinfo.GivenName = user.FirstName
 			userinfo.Locale = oidc.NewLocale(user.PreferredLanguage)
-		case oidc.ScopePhone:
+		case protocol.ScopePhone:
 			userinfo.PhoneNumber = user.Phone
 			userinfo.PhoneNumberVerified = oidc.Bool(user.PhoneVerified)
 		}

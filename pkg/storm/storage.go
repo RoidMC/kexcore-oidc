@@ -109,7 +109,7 @@ func (s *GMTokenSigner) Sign(payload []byte) (string, error) {
 
 // AuthStore is required by the Authorization plugin.
 type AuthStore interface {
-	CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, userID string) (AuthRequest, error)
+	CreateAuthRequest(ctx context.Context, req *protocol.AuthRequest, userID string) (AuthRequest, error)
 	AuthRequestByID(ctx context.Context, id string) (AuthRequest, error)
 	AuthRequestByCode(ctx context.Context, code string) (AuthRequest, error)
 	SaveAuthCode(ctx context.Context, id, code string) error
@@ -127,8 +127,8 @@ type AuthRequest interface {
 	GetCodeChallenge() *protocol.CodeChallenge
 	GetNonce() string
 	GetRedirectURI() string
-	GetResponseType() oidc.ResponseType
-	GetResponseMode() oidc.ResponseMode
+	GetResponseType() protocol.ResponseType
+	GetResponseMode() protocol.ResponseMode
 	GetScopes() []string
 	GetState() string
 	GetSubject() string
@@ -288,8 +288,8 @@ type BackChannelStore interface {
 
 // PARStore is required by the Pushed Authorization Request plugin.
 type PARStore interface {
-	StorePushedAuthRequest(ctx context.Context, clientID string, req *oidc.AuthRequest, lifetime time.Duration) (requestURI string, err error)
-	GetPushedAuthRequest(ctx context.Context, requestURI string) (*oidc.AuthRequest, error)
+	StorePushedAuthRequest(ctx context.Context, clientID string, req *protocol.AuthRequest, lifetime time.Duration) (requestURI string, err error)
+	GetPushedAuthRequest(ctx context.Context, requestURI string) (*protocol.AuthRequest, error)
 }
 
 // Crypto provides cryptographic operations for token encryption and signing.

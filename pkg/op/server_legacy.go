@@ -138,7 +138,7 @@ var (
 	ErrAuthReqMissingRedirectURI = errors.New("auth request is missing redirect_uri")
 )
 
-func (s *LegacyServer) VerifyAuthRequest(ctx context.Context, r *Request[oidc.AuthRequest]) (*ClientRequest[oidc.AuthRequest], error) {
+func (s *LegacyServer) VerifyAuthRequest(ctx context.Context, r *Request[protocol.AuthRequest]) (*ClientRequest[protocol.AuthRequest], error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.VerifyAuthRequest")
 	defer span.End()
 
@@ -159,13 +159,13 @@ func (s *LegacyServer) VerifyAuthRequest(ctx context.Context, r *Request[oidc.Au
 		return nil, protocol.DefaultToServerError(err, "unable to retrieve client by id")
 	}
 
-	return &ClientRequest[oidc.AuthRequest]{
+	return &ClientRequest[protocol.AuthRequest]{
 		Request: r,
 		Client:  client,
 	}, nil
 }
 
-func (s *LegacyServer) Authorize(ctx context.Context, r *ClientRequest[oidc.AuthRequest]) (_ *Redirect, err error) {
+func (s *LegacyServer) Authorize(ctx context.Context, r *ClientRequest[protocol.AuthRequest]) (_ *Redirect, err error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.Authorize")
 	defer span.End()
 
@@ -191,7 +191,7 @@ func (s *LegacyServer) DeviceAuthorization(ctx context.Context, r *ClientRequest
 	return NewResponse(response), nil
 }
 
-func (s *LegacyServer) PushedAuthorizationRequest(ctx context.Context, r *ClientRequest[oidc.AuthRequest]) (*Response, error) {
+func (s *LegacyServer) PushedAuthorizationRequest(ctx context.Context, r *ClientRequest[protocol.AuthRequest]) (*Response, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.PushedAuthorizationRequest")
 	defer span.End()
 
@@ -207,7 +207,7 @@ func (s *LegacyServer) PushedAuthorizationRequest(ctx context.Context, r *Client
 		return nil, protocol.ErrInvalidRequest().WithDescription("pushed authorization requests not supported")
 	}
 
-	if client.AuthMethod() == protocol.AuthMethodNone && authReq.ResponseType == oidc.ResponseTypeCode && authReq.CodeChallenge == "" {
+	if client.AuthMethod() == protocol.AuthMethodNone && authReq.ResponseType == protocol.ResponseTypeCode && authReq.CodeChallenge == "" {
 		return nil, protocol.ErrInvalidRequest().WithDescription("public clients must use PKCE (code_challenge) for pushed authorization requests with response_type=code")
 	}
 
@@ -226,7 +226,7 @@ func (s *LegacyServer) PushedAuthorizationRequest(ctx context.Context, r *Client
 
 	expiresIn := int(DefaultPushedAuthRequestLifetime / time.Second)
 
-	return NewResponse(&oidc.PushedAuthResponse{
+	return NewResponse(&protocol.PushedAuthResponse{
 		RequestURI: requestURI,
 		ExpiresIn:  expiresIn,
 	}), nil
@@ -459,7 +459,7 @@ func (s *LegacyServer) UserInfo(ctx context.Context, r *Request[oidc.UserInfoReq
 	return NewResponse(info), nil
 }
 
-func (s *LegacyServer) Revocation(ctx context.Context, r *ClientRequest[oidc.RevocationRequest]) (*Response, error) {
+func (s *LegacyServer) Revocation(ctx context.Context, r *ClientRequest[protocol.RevocationRequest]) (*Response, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.Revocation")
 	defer span.End()
 
@@ -491,7 +491,7 @@ func (s *LegacyServer) Revocation(ctx context.Context, r *ClientRequest[oidc.Rev
 	return NewResponse(nil), nil
 }
 
-func (s *LegacyServer) EndSession(ctx context.Context, r *Request[oidc.EndSessionRequest]) (*Redirect, error) {
+func (s *LegacyServer) EndSession(ctx context.Context, r *Request[protocol.EndSessionRequest]) (*Redirect, error) {
 	ctx, span := Tracer.Start(ctx, "LegacyServer.EndSession")
 	defer span.End()
 

@@ -49,7 +49,7 @@ type testClient struct {
 	appType         ApplicationType
 	authMethod      protocol.AuthMethod
 	accessTokenType AccessTokenType
-	responseTypes   []oidc.ResponseType
+	responseTypes   []protocol.ResponseType
 	grantTypes      []oidc.GrantType
 	devMode         bool
 }
@@ -72,17 +72,17 @@ func newClient(kind clientType) *testClient {
 		client.appType = ApplicationTypeWeb
 		client.authMethod = protocol.AuthMethodBasic
 		client.accessTokenType = AccessTokenTypeBearer
-		client.responseTypes = []oidc.ResponseType{oidc.ResponseTypeCode}
+		client.responseTypes = []protocol.ResponseType{protocol.ResponseTypeCode}
 	case clientTypeNative:
 		client.appType = ApplicationTypeNative
 		client.authMethod = protocol.AuthMethodNone
 		client.accessTokenType = AccessTokenTypeBearer
-		client.responseTypes = []oidc.ResponseType{oidc.ResponseTypeCode}
+		client.responseTypes = []protocol.ResponseType{protocol.ResponseTypeCode}
 	case clientTypeUserAgent:
 		client.appType = ApplicationTypeUserAgent
 		client.authMethod = protocol.AuthMethodBasic
 		client.accessTokenType = AccessTokenTypeJWT
-		client.responseTypes = []oidc.ResponseType{oidc.ResponseTypeIDToken}
+		client.responseTypes = []protocol.ResponseType{protocol.ResponseTypeIDToken}
 	default:
 		panic(fmt.Errorf("invalid client type %s", kind))
 	}
@@ -130,7 +130,7 @@ func (c *testClient) AccessTokenType() AccessTokenType {
 	return c.accessTokenType
 }
 
-func (c *testClient) ResponseTypes() []oidc.ResponseType {
+func (c *testClient) ResponseTypes() []protocol.ResponseType {
 	return c.responseTypes
 }
 
@@ -175,11 +175,11 @@ type requestVerifier struct {
 	client Client
 }
 
-func (s *requestVerifier) VerifyAuthRequest(ctx context.Context, r *Request[oidc.AuthRequest]) (*ClientRequest[oidc.AuthRequest], error) {
+func (s *requestVerifier) VerifyAuthRequest(ctx context.Context, r *Request[protocol.AuthRequest]) (*ClientRequest[protocol.AuthRequest], error) {
 	if s.client == nil {
 		return nil, protocol.ErrServerError()
 	}
-	return &ClientRequest[oidc.AuthRequest]{
+	return &ClientRequest[protocol.AuthRequest]{
 		Request: r,
 		Client:  s.client,
 	}, nil
@@ -393,7 +393,7 @@ func Test_webServer_authorizeHandler(t *testing.T) {
 func Test_webServer_authorize(t *testing.T) {
 	type args struct {
 		ctx context.Context
-		r   *Request[oidc.AuthRequest]
+		r   *Request[protocol.AuthRequest]
 	}
 	tests := []struct {
 		name    string
@@ -407,10 +407,10 @@ func Test_webServer_authorize(t *testing.T) {
 			server: &requestVerifier{},
 			args: args{
 				ctx: context.Background(),
-				r: &Request[oidc.AuthRequest]{
-					Data: &oidc.AuthRequest{
-						Scopes:       oidc.SpaceDelimitedArray{"openid"},
-						ResponseType: oidc.ResponseTypeCode,
+				r: &Request[protocol.AuthRequest]{
+					Data: &protocol.AuthRequest{
+						Scopes:       protocol.SpaceDelimitedArray{"openid"},
+						ResponseType: protocol.ResponseTypeCode,
 						ClientID:     "web",
 						RedirectURI:  "https://registered.com/callback",
 						MaxAge:       gu.Ptr[uint](300),
@@ -426,10 +426,10 @@ func Test_webServer_authorize(t *testing.T) {
 			},
 			args: args{
 				ctx: context.Background(),
-				r: &Request[oidc.AuthRequest]{
-					Data: &oidc.AuthRequest{
-						Scopes:       oidc.SpaceDelimitedArray{"openid"},
-						ResponseType: oidc.ResponseTypeCode,
+				r: &Request[protocol.AuthRequest]{
+					Data: &protocol.AuthRequest{
+						Scopes:       protocol.SpaceDelimitedArray{"openid"},
+						ResponseType: protocol.ResponseTypeCode,
 						ClientID:     "web",
 						MaxAge:       gu.Ptr[uint](300),
 					},
@@ -444,14 +444,14 @@ func Test_webServer_authorize(t *testing.T) {
 			},
 			args: args{
 				ctx: context.Background(),
-				r: &Request[oidc.AuthRequest]{
-					Data: &oidc.AuthRequest{
-						Scopes:       oidc.SpaceDelimitedArray{"openid"},
-						ResponseType: oidc.ResponseTypeCode,
+				r: &Request[protocol.AuthRequest]{
+					Data: &protocol.AuthRequest{
+						Scopes:       protocol.SpaceDelimitedArray{"openid"},
+						ResponseType: protocol.ResponseTypeCode,
 						ClientID:     "web",
 						RedirectURI:  "https://registered.com/callback",
 						MaxAge:       gu.Ptr[uint](300),
-						Prompt:       []string{oidc.PromptNone, oidc.PromptLogin},
+						Prompt:       []string{protocol.PromptNone, protocol.PromptLogin},
 					},
 				},
 			},
@@ -464,13 +464,13 @@ func Test_webServer_authorize(t *testing.T) {
 			},
 			args: args{
 				ctx: context.Background(),
-				r: &Request[oidc.AuthRequest]{
-					Data: &oidc.AuthRequest{
-						ResponseType: oidc.ResponseTypeCode,
+				r: &Request[protocol.AuthRequest]{
+					Data: &protocol.AuthRequest{
+						ResponseType: protocol.ResponseTypeCode,
 						ClientID:     "web",
 						RedirectURI:  "https://registered.com/callback",
 						MaxAge:       gu.Ptr[uint](300),
-						Prompt:       []string{oidc.PromptNone},
+						Prompt:       []string{protocol.PromptNone},
 					},
 				},
 			},
@@ -485,14 +485,14 @@ func Test_webServer_authorize(t *testing.T) {
 			},
 			args: args{
 				ctx: context.Background(),
-				r: &Request[oidc.AuthRequest]{
-					Data: &oidc.AuthRequest{
-						Scopes:       oidc.SpaceDelimitedArray{"openid"},
-						ResponseType: oidc.ResponseTypeCode,
+				r: &Request[protocol.AuthRequest]{
+					Data: &protocol.AuthRequest{
+						Scopes:       protocol.SpaceDelimitedArray{"openid"},
+						ResponseType: protocol.ResponseTypeCode,
 						ClientID:     "web",
 						RedirectURI:  "https://example.com/callback",
 						MaxAge:       gu.Ptr[uint](300),
-						Prompt:       []string{oidc.PromptNone},
+						Prompt:       []string{protocol.PromptNone},
 					},
 				},
 			},
@@ -507,14 +507,14 @@ func Test_webServer_authorize(t *testing.T) {
 			},
 			args: args{
 				ctx: context.Background(),
-				r: &Request[oidc.AuthRequest]{
-					Data: &oidc.AuthRequest{
-						Scopes:       oidc.SpaceDelimitedArray{"openid"},
-						ResponseType: oidc.ResponseTypeIDToken,
+				r: &Request[protocol.AuthRequest]{
+					Data: &protocol.AuthRequest{
+						Scopes:       protocol.SpaceDelimitedArray{"openid"},
+						ResponseType: protocol.ResponseTypeIDToken,
 						ClientID:     "web",
 						RedirectURI:  "https://registered.com/callback",
 						MaxAge:       gu.Ptr[uint](300),
-						Prompt:       []string{oidc.PromptNone},
+						Prompt:       []string{protocol.PromptNone},
 					},
 				},
 			},
@@ -528,17 +528,17 @@ func Test_webServer_authorize(t *testing.T) {
 			},
 			args: args{
 				ctx: context.Background(),
-				r: &Request[oidc.AuthRequest]{
+				r: &Request[protocol.AuthRequest]{
 					URL: &url.URL{
 						Path: "/authorize",
 					},
-					Data: &oidc.AuthRequest{
-						Scopes:       oidc.SpaceDelimitedArray{"openid"},
-						ResponseType: oidc.ResponseTypeCode,
+					Data: &protocol.AuthRequest{
+						Scopes:       protocol.SpaceDelimitedArray{"openid"},
+						ResponseType: protocol.ResponseTypeCode,
 						ClientID:     "web",
 						RedirectURI:  "https://registered.com/callback",
 						MaxAge:       gu.Ptr[uint](300),
-						Prompt:       []string{oidc.PromptNone},
+						Prompt:       []string{protocol.PromptNone},
 					},
 				},
 			},

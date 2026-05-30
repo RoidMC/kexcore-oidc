@@ -11,14 +11,13 @@ import (
 
 	"golang.org/x/text/language"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
-	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/pkg/storm"
 )
 
 const (
-	CustomScope                 = "custom_scope"
-	CustomClaim                 = "custom_claim"
+	CustomScope                  = "custom_scope"
+	CustomClaim                  = "custom_claim"
 	CustomScopeImpersonatePrefix = "custom_scope:impersonate:"
 )
 
@@ -34,8 +33,8 @@ type AuthRequest struct {
 	MaxAuthAge    *time.Duration
 	UserID        string
 	Scopes        []string
-	ResponseType  oidc.ResponseType
-	ResponseMode  oidc.ResponseMode
+	ResponseType  protocol.ResponseType
+	ResponseMode  protocol.ResponseMode
 	Nonce         string
 	CodeChallenge *OIDCCodeChallenge
 
@@ -55,28 +54,35 @@ func (a *AuthRequest) LogValue() slog.Value {
 	)
 }
 
-func (a *AuthRequest) GetID() string                          { return a.ID }
-func (a *AuthRequest) GetACR() string                         { return "" }
-func (a *AuthRequest) GetAMR() []string                       { if a.done { return []string{"pwd"} }; return nil }
-func (a *AuthRequest) GetAudience() []string                  { return []string{a.ApplicationID} }
-func (a *AuthRequest) GetAuthTime() time.Time                 { return a.authTime }
-func (a *AuthRequest) GetClientID() string                    { return a.ApplicationID }
-func (a *AuthRequest) GetCodeChallenge() *protocol.CodeChallenge  { return CodeChallengeToOIDC(a.CodeChallenge) }
+func (a *AuthRequest) GetID() string  { return a.ID }
+func (a *AuthRequest) GetACR() string { return "" }
+func (a *AuthRequest) GetAMR() []string {
+	if a.done {
+		return []string{"pwd"}
+	}
+	return nil
+}
+func (a *AuthRequest) GetAudience() []string  { return []string{a.ApplicationID} }
+func (a *AuthRequest) GetAuthTime() time.Time { return a.authTime }
+func (a *AuthRequest) GetClientID() string    { return a.ApplicationID }
+func (a *AuthRequest) GetCodeChallenge() *protocol.CodeChallenge {
+	return CodeChallengeToOIDC(a.CodeChallenge)
+}
 func (a *AuthRequest) GetNonce() string                       { return a.Nonce }
 func (a *AuthRequest) GetRedirectURI() string                 { return a.CallbackURI }
-func (a *AuthRequest) GetResponseType() oidc.ResponseType     { return a.ResponseType }
-func (a *AuthRequest) GetResponseMode() oidc.ResponseMode     { return a.ResponseMode }
+func (a *AuthRequest) GetResponseType() protocol.ResponseType { return a.ResponseType }
+func (a *AuthRequest) GetResponseMode() protocol.ResponseMode { return a.ResponseMode }
 func (a *AuthRequest) GetScopes() []string                    { return a.Scopes }
 func (a *AuthRequest) GetState() string                       { return a.TransferState }
 func (a *AuthRequest) GetSubject() string                     { return a.UserID }
 func (a *AuthRequest) Done() bool                             { return a.done }
 func (a *AuthRequest) GetSessionID() string                   { return a.sessionID }
 
-func PromptToInternal(oidcPrompt oidc.SpaceDelimitedArray) []string {
+func PromptToInternal(oidcPrompt protocol.SpaceDelimitedArray) []string {
 	prompts := make([]string, 0, len(oidcPrompt))
 	for _, p := range oidcPrompt {
 		switch p {
-		case oidc.PromptNone, oidc.PromptLogin, oidc.PromptConsent, oidc.PromptSelectAccount:
+		case protocol.PromptNone, protocol.PromptLogin, protocol.PromptConsent, protocol.PromptSelectAccount:
 			prompts = append(prompts, p)
 		}
 	}
@@ -91,7 +97,7 @@ func MaxAgeToInternal(maxAge *uint) *time.Duration {
 	return &dur
 }
 
-func authRequestToInternal(authReq *oidc.AuthRequest, userID string) *AuthRequest {
+func authRequestToInternal(authReq *protocol.AuthRequest, userID string) *AuthRequest {
 	var codeChallenge *OIDCCodeChallenge
 	if authReq.CodeChallenge != "" {
 		codeChallenge = &OIDCCodeChallenge{
@@ -138,16 +144,16 @@ type RefreshTokenRequest struct {
 	*RefreshToken
 }
 
-func (r *RefreshTokenRequest) GetAMR() []string                 { return r.AMR }
-func (r *RefreshTokenRequest) GetAudience() []string            { return r.Audience }
-func (r *RefreshTokenRequest) GetAuthTime() time.Time           { return r.AuthTime }
-func (r *RefreshTokenRequest) GetClientID() string              { return r.ApplicationID }
-func (r *RefreshTokenRequest) GetScopes() []string               { return r.Scopes }
-func (r *RefreshTokenRequest) GetSubject() string                { return r.UserID }
-func (r *RefreshTokenRequest) SetCurrentScopes(scopes []string)  { r.Scopes = scopes }
+func (r *RefreshTokenRequest) GetAMR() []string                          { return r.AMR }
+func (r *RefreshTokenRequest) GetAudience() []string                     { return r.Audience }
+func (r *RefreshTokenRequest) GetAuthTime() time.Time                    { return r.AuthTime }
+func (r *RefreshTokenRequest) GetClientID() string                       { return r.ApplicationID }
+func (r *RefreshTokenRequest) GetScopes() []string                       { return r.Scopes }
+func (r *RefreshTokenRequest) GetSubject() string                        { return r.UserID }
+func (r *RefreshTokenRequest) SetCurrentScopes(scopes []string)          { r.Scopes = scopes }
 func (r *RefreshTokenRequest) GetCodeChallenge() *protocol.CodeChallenge { return nil }
-func (r *RefreshTokenRequest) GetNonce() string                  { return "" }
-func (r *RefreshTokenRequest) GetID() string                     { return r.RefreshToken.ID }
-func (r *RefreshTokenRequest) GetSessionID() string              { return r.SessionID }
+func (r *RefreshTokenRequest) GetNonce() string                          { return "" }
+func (r *RefreshTokenRequest) GetID() string                             { return r.RefreshToken.ID }
+func (r *RefreshTokenRequest) GetSessionID() string                      { return r.SessionID }
 
 var _ storm.RefreshTokenRequest = (*RefreshTokenRequest)(nil)

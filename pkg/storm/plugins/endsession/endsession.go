@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -115,15 +114,15 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURI, http.StatusFound)
 }
 
-func parseEndSessionRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*oidc.EndSessionRequest, error) {
-	req := new(oidc.EndSessionRequest)
+func parseEndSessionRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*protocol.EndSessionRequest, error) {
+	req := new(protocol.EndSessionRequest)
 	if err := codec.Decode(req, form, converters); err != nil {
 		return nil, err
 	}
 	return req, nil
 }
 
-func validateEndSessionRequest(ctx context.Context, req *oidc.EndSessionRequest, p *Plugin) (*storm.EndSessionRequest, error) {
+func validateEndSessionRequest(ctx context.Context, req *protocol.EndSessionRequest, p *Plugin) (*storm.EndSessionRequest, error) {
 	session := &storm.EndSessionRequest{}
 
 	// Validate id_token_hint per OIDC Session Management §5.

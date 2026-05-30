@@ -73,7 +73,7 @@ type Storage struct {
 }
 
 type pushedAuthRequestEntry struct {
-	authReq   *oidc.AuthRequest
+	authReq   *protocol.AuthRequest
 	clientID  string
 	expiresAt time.Time
 }
@@ -367,7 +367,7 @@ func (s *Storage) CheckUsernamePasswordSimple(username, password string) error {
 
 // CreateAuthRequest implements the op.Storage interface
 // it will be called after parsing and validation of the authentication request
-func (s *Storage) CreateAuthRequest(ctx context.Context, authReq *oidc.AuthRequest, userID string) (op.AuthRequest, error) {
+func (s *Storage) CreateAuthRequest(ctx context.Context, authReq *protocol.AuthRequest, userID string) (op.AuthRequest, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -797,7 +797,7 @@ func (s *Storage) GetSM9MasterPublicKeyByIDAndClientID(ctx context.Context, keyI
 func (s *Storage) ValidateJWTProfileScopes(ctx context.Context, userID string, scopes []string) ([]string, error) {
 	allowedScopes := make([]string, 0)
 	for _, scope := range scopes {
-		if scope == oidc.ScopeOpenID {
+		if scope == protocol.ScopeOpenID {
 			allowedScopes = append(allowedScopes, scope)
 		}
 	}
@@ -888,18 +888,18 @@ func (s *Storage) setUserinfo(ctx context.Context, userInfo *oidc.UserInfo, user
 	}
 	for _, scope := range scopes {
 		switch scope {
-		case oidc.ScopeOpenID:
+		case protocol.ScopeOpenID:
 			userInfo.Subject = user.ID
-		case oidc.ScopeEmail:
+		case protocol.ScopeEmail:
 			userInfo.Email = user.Email
 			userInfo.EmailVerified = oidc.Bool(user.EmailVerified)
-		case oidc.ScopeProfile:
+		case protocol.ScopeProfile:
 			userInfo.PreferredUsername = user.Username
 			userInfo.Name = user.FirstName + " " + user.LastName
 			userInfo.FamilyName = user.LastName
 			userInfo.GivenName = user.FirstName
 			userInfo.Locale = oidc.NewLocale(user.PreferredLanguage)
-		case oidc.ScopePhone:
+		case protocol.ScopePhone:
 			userInfo.PhoneNumber = user.Phone
 			userInfo.PhoneNumberVerified = oidc.Bool(user.PhoneVerified)
 		case CustomScope:
@@ -929,7 +929,7 @@ func (s *Storage) ValidateTokenExchangeRequest(ctx context.Context, request op.T
 
 	allowedScopes := make([]string, 0)
 	for _, scope := range request.GetScopes() {
-		if scope == oidc.ScopeAddress {
+		if scope == protocol.ScopeAddress {
 			continue
 		}
 
@@ -1182,7 +1182,7 @@ func (s *Storage) ClientsForSession(ctx context.Context, sub, sid string) ([]op.
 
 // StorePushedAuthRequest implements the op.PushedAuthRequestStorage interface.
 // It stores the pushed authorization request and returns a request_uri.
-func (s *Storage) StorePushedAuthRequest(ctx context.Context, clientID string, authReq *oidc.AuthRequest, expiresIn time.Duration) (string, error) {
+func (s *Storage) StorePushedAuthRequest(ctx context.Context, clientID string, authReq *protocol.AuthRequest, expiresIn time.Duration) (string, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -1197,7 +1197,7 @@ func (s *Storage) StorePushedAuthRequest(ctx context.Context, clientID string, a
 
 // PushedAuthRequestByURI implements the op.PushedAuthRequestStorage interface.
 // It retrieves the stored authorization request by its request_uri.
-func (s *Storage) PushedAuthRequestByURI(ctx context.Context, clientID string, requestURI string) (*oidc.AuthRequest, error) {
+func (s *Storage) PushedAuthRequestByURI(ctx context.Context, clientID string, requestURI string) (*protocol.AuthRequest, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -1267,11 +1267,11 @@ func (s *Storage) CreateClient(ctx context.Context, req *op.RegistrationRequest,
 	return registration, nil
 }
 
-// convertResponseTypes converts []string to []oidc.ResponseType
-func convertResponseTypes(types []string) []oidc.ResponseType {
-	result := make([]oidc.ResponseType, len(types))
+// convertResponseTypes converts []string to []protocol.ResponseType
+func convertResponseTypes(types []string) []protocol.ResponseType {
+	result := make([]protocol.ResponseType, len(types))
 	for i, t := range types {
-		result[i] = oidc.ResponseType(t)
+		result[i] = protocol.ResponseType(t)
 	}
 	return result
 }

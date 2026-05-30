@@ -143,7 +143,7 @@ func TestDisplay_UnmarshalText(t *testing.T) {
 			args{
 				[]byte("page"),
 			},
-			res{DisplayPage},
+			res{Display("page")},
 			false,
 		},
 	}

@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -52,12 +51,12 @@ func (s *parTestServer) VerifyClient(ctx context.Context, r *op.Request[op.Clien
 	return client, nil
 }
 
-func (s *parTestServer) PushedAuthorizationRequest(ctx context.Context, r *op.ClientRequest[oidc.AuthRequest]) (*op.Response, error) {
+func (s *parTestServer) PushedAuthorizationRequest(ctx context.Context, r *op.ClientRequest[protocol.AuthRequest]) (*op.Response, error) {
 	authReq := r.Data
 	client := r.Client
 
 	if client.AuthMethod() == protocol.AuthMethodNone &&
-		authReq.ResponseType == oidc.ResponseTypeCode &&
+		authReq.ResponseType == protocol.ResponseTypeCode &&
 		authReq.CodeChallenge == "" {
 		return nil, protocol.ErrInvalidRequest().WithDescription("public clients must use PKCE (code_challenge) for pushed authorization requests with response_type=code")
 	}
@@ -80,7 +79,7 @@ func (s *parTestServer) PushedAuthorizationRequest(ctx context.Context, r *op.Cl
 		return nil, protocol.ErrServerError().WithDescription("unable to store pushed authorization request").WithParent(err)
 	}
 
-	return op.NewResponse(&oidc.PushedAuthResponse{
+	return op.NewResponse(&protocol.PushedAuthResponse{
 		RequestURI: requestURI,
 		ExpiresIn:  int(op.DefaultPushedAuthRequestLifetime / time.Second),
 	}), nil
@@ -94,11 +93,11 @@ type parStorageMock struct {
 }
 
 type parEntry struct {
-	authReq  *oidc.AuthRequest
+	authReq  *protocol.AuthRequest
 	clientID string
 }
 
-func (s *parStorageMock) StorePushedAuthRequest(_ context.Context, clientID string, authReq *oidc.AuthRequest, _ time.Duration) (string, error) {
+func (s *parStorageMock) StorePushedAuthRequest(_ context.Context, clientID string, authReq *protocol.AuthRequest, _ time.Duration) (string, error) {
 	if s.forceErr != nil {
 		return "", s.forceErr
 	}
@@ -108,7 +107,7 @@ func (s *parStorageMock) StorePushedAuthRequest(_ context.Context, clientID stri
 	return uri, nil
 }
 
-func (s *parStorageMock) PushedAuthRequestByURI(_ context.Context, clientID string, requestURI string) (*oidc.AuthRequest, error) {
+func (s *parStorageMock) PushedAuthRequestByURI(_ context.Context, clientID string, requestURI string) (*protocol.AuthRequest, error) {
 	entry, ok := s.store[requestURI]
 	if !ok {
 		return nil, protocol.ErrInvalidRequest().WithDescription("invalid or expired request_uri")
@@ -129,7 +128,7 @@ func newPARTestSetup(t *testing.T) *parTestSetup {
 	ctrl := gomock.NewController(t)
 	baseStorage := mock.NewMockStorage(ctrl)
 
-	newMockClient := func(id string, appType op.ApplicationType, authMethod protocol.AuthMethod, uris []string, responseTypes []oidc.ResponseType) op.Client {
+	newMockClient := func(id string, appType op.ApplicationType, authMethod protocol.AuthMethod, uris []string, responseTypes []protocol.ResponseType) op.Client {
 		c := mock.NewMockClient(ctrl)
 		c.EXPECT().GetID().AnyTimes().Return(id)
 		c.EXPECT().AuthMethod().AnyTimes().Return(authMethod)
@@ -152,10 +151,10 @@ func newPARTestSetup(t *testing.T) *parTestSetup {
 
 	webClient := newMockClient("web_client", op.ApplicationTypeWeb, protocol.AuthMethodBasic,
 		[]string{"https://registered.com/callback", "http://registered.com/callback"},
-		[]oidc.ResponseType{oidc.ResponseTypeCode})
+		[]protocol.ResponseType{protocol.ResponseTypeCode})
 	nativeClient := newMockClient("native_client", op.ApplicationTypeNative, protocol.AuthMethodNone,
 		[]string{"custom://callback", "http://localhost:9999/callback"},
-		[]oidc.ResponseType{oidc.ResponseTypeCode})
+		[]protocol.ResponseType{protocol.ResponseTypeCode})
 
 	baseStorage.EXPECT().GetClientByClientID(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
 		func(_ context.Context, id string) (op.Client, error) {
@@ -200,9 +199,9 @@ func (s *parTestSetup) doRequest(form url.Values, basicAuth ...string) *httptest
 	return rec
 }
 
-func (s *parTestSetup) parsePARResponse(rec *httptest.ResponseRecorder) oidc.PushedAuthResponse {
+func (s *parTestSetup) parsePARResponse(rec *httptest.ResponseRecorder) protocol.PushedAuthResponse {
 	s.t.Helper()
-	var resp oidc.PushedAuthResponse
+	var resp protocol.PushedAuthResponse
 	require.NoError(s.t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	return resp
 }
@@ -353,7 +352,7 @@ func TestPushedAuthRequest_UnsupportedScopeStripped(t *testing.T) {
 	entry, ok := s.storage.store[resp.RequestURI]
 	require.True(t, ok)
 	assert.NotContains(t, entry.authReq.Scopes, "admin:all")
-	assert.Contains(t, entry.authReq.Scopes, oidc.ScopeOpenID)
+	assert.Contains(t, entry.authReq.Scopes, protocol.ScopeOpenID)
 }
 
 func TestPushedAuthRequest_CacheControlAndJSON(t *testing.T) {
@@ -371,7 +370,7 @@ func TestPushedAuthRequest_CacheControlAndJSON(t *testing.T) {
 	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	assert.Contains(t, rec.Header().Get("Content-Type"), "application/json")
 
-	var resp oidc.PushedAuthResponse
+	var resp protocol.PushedAuthResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.NotEmpty(t, resp.RequestURI)
 	assert.Equal(t, 600, resp.ExpiresIn)

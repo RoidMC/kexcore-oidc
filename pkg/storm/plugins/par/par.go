@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -90,7 +89,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse the authorization request parameters
-	authReq := new(oidc.AuthRequest)
+	authReq := new(protocol.AuthRequest)
 	if err := codec.Decode(authReq, r.Form, p.converters); err != nil {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding auth request").WithParent(err), nil)
 		return
@@ -105,7 +104,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 	issuer := shared.IssuerFromContext(r.Context())
 
-	resp := &oidc.PushedAuthResponse{
+	resp := &protocol.PushedAuthResponse{
 		RequestURI: requestURI,
 		ExpiresIn:  int(p.lifetime.Seconds()),
 	}

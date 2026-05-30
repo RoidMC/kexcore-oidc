@@ -61,23 +61,23 @@ func ExpectValidClientID(s op.Storage) {
 			var appType op.ApplicationType
 			var authMethod protocol.AuthMethod
 			var accessTokenType op.AccessTokenType
-			var responseTypes []oidc.ResponseType
+			var responseTypes []protocol.ResponseType
 			switch id {
 			case "web_client":
 				appType = op.ApplicationTypeWeb
 				authMethod = protocol.AuthMethodBasic
 				accessTokenType = op.AccessTokenTypeBearer
-				responseTypes = []oidc.ResponseType{oidc.ResponseTypeCode}
+				responseTypes = []protocol.ResponseType{protocol.ResponseTypeCode}
 			case "native_client":
 				appType = op.ApplicationTypeNative
 				authMethod = protocol.AuthMethodNone
 				accessTokenType = op.AccessTokenTypeBearer
-				responseTypes = []oidc.ResponseType{oidc.ResponseTypeCode}
+				responseTypes = []protocol.ResponseType{protocol.ResponseTypeCode}
 			case "useragent_client":
 				appType = op.ApplicationTypeUserAgent
 				authMethod = protocol.AuthMethodBasic
 				accessTokenType = op.AccessTokenTypeJWT
-				responseTypes = []oidc.ResponseType{oidc.ResponseTypeIDToken}
+				responseTypes = []protocol.ResponseType{protocol.ResponseTypeIDToken}
 			}
 			return &ConfClient{id: id, appType: appType, authMethod: authMethod, accessTokenType: accessTokenType, responseTypes: responseTypes}, nil
 		})
@@ -88,7 +88,7 @@ type ConfClient struct {
 	appType         op.ApplicationType
 	authMethod      protocol.AuthMethod
 	accessTokenType op.AccessTokenType
-	responseTypes   []oidc.ResponseType
+	responseTypes   []protocol.ResponseType
 	grantTypes      []oidc.GrantType
 	devMode         bool
 }
@@ -134,7 +134,7 @@ func (c *ConfClient) AccessTokenType() op.AccessTokenType {
 	return c.accessTokenType
 }
 
-func (c *ConfClient) ResponseTypes() []oidc.ResponseType {
+func (c *ConfClient) ResponseTypes() []protocol.ResponseType {
 	return c.responseTypes
 }
 

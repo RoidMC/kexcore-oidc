@@ -484,8 +484,8 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 	// Determine if we need a refresh token
 	needsRefresh := false
 	if authReq, ok := request.(storm.AuthRequest); ok {
-		needsRefresh = slices.Contains(authReq.GetScopes(), oidc.ScopeOfflineAccess) &&
-			authReq.GetResponseType() == oidc.ResponseTypeCode &&
+		needsRefresh = slices.Contains(authReq.GetScopes(), protocol.ScopeOfflineAccess) &&
+			authReq.GetResponseType() == protocol.ResponseTypeCode &&
 			validateGrantType(client, oidc.GrantTypeRefreshToken)
 	}
 

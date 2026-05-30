@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
@@ -25,9 +25,9 @@ type PushedAuthRequestStorage interface {
 	// and returns a request_uri that can be used to reference it.
 	// The requestURI should be opaque and unique.
 	// expiresIn is the lifetime of the request_uri in seconds (RFC 9126 recommends 600).
-	StorePushedAuthRequest(ctx context.Context, clientID string, authReq *oidc.AuthRequest, expiresIn time.Duration) (requestURI string, err error)
+	StorePushedAuthRequest(ctx context.Context, clientID string, authReq *protocol.AuthRequest, expiresIn time.Duration) (requestURI string, err error)
 
 	// PushedAuthRequestByURI retrieves the stored authorization request by its request_uri.
 	// If the request_uri is expired or invalid, it should return an error.
-	PushedAuthRequestByURI(ctx context.Context, clientID string, requestURI string) (*oidc.AuthRequest, error)
+	PushedAuthRequestByURI(ctx context.Context, clientID string, requestURI string) (*protocol.AuthRequest, error)
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/muhlemmer/gu"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"golang.org/x/text/language"
 )
 
@@ -66,10 +67,9 @@ func (a *AuthenticationMethodsReferences) UnmarshalJSON(data []byte) error {
 type Display string
 
 func (d *Display) UnmarshalText(text []byte) error {
-	display := Display(text)
-	switch display {
-	case DisplayPage, DisplayPopup, DisplayTouch, DisplayWAP:
-		*d = display
+	switch Display(text) {
+	case Display(protocol.DisplayPage), Display(protocol.DisplayPopup), Display(protocol.DisplayTouch), Display(protocol.DisplayWAP):
+		*d = Display(text)
 	}
 	return nil
 }
@@ -390,7 +390,7 @@ func (ts *Time) UnmarshalJSON(data []byte) error {
 type RequestObject struct {
 	Issuer   string   `json:"iss"`
 	Audience Audience `json:"aud"`
-	AuthRequest
+	protocol.AuthRequest
 }
 
 func (r *RequestObject) GetIssuer() string {

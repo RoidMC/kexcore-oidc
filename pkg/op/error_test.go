@@ -53,12 +53,12 @@ func TestAuthRequestError(t *testing.T) {
 		{
 			name: "auth request, no redirect URI",
 			args: args{
-				authReq: &oidc.AuthRequest{
-					Scopes:       oidc.SpaceDelimitedArray{"a", "b"},
+				authReq: &protocol.AuthRequest{
+					Scopes:       protocol.SpaceDelimitedArray{"a", "b"},
 					ResponseType: "responseType",
 					ClientID:     "123",
 					State:        "state1",
-					ResponseMode: oidc.ResponseModeQuery,
+					ResponseMode: protocol.ResponseModeQuery,
 				},
 				err: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
@@ -83,13 +83,13 @@ func TestAuthRequestError(t *testing.T) {
 		{
 			name: "auth request, redirect disabled",
 			args: args{
-				authReq: &oidc.AuthRequest{
-					Scopes:       oidc.SpaceDelimitedArray{"a", "b"},
+				authReq: &protocol.AuthRequest{
+					Scopes:       protocol.SpaceDelimitedArray{"a", "b"},
 					ResponseType: "responseType",
 					ClientID:     "123",
 					RedirectURI:  "http://example.com/callback",
 					State:        "state1",
-					ResponseMode: oidc.ResponseModeQuery,
+					ResponseMode: protocol.ResponseModeQuery,
 				},
 				err: protocol.ErrInvalidRequestRedirectURI().WithDescription("oops"),
 			},
@@ -115,13 +115,13 @@ func TestAuthRequestError(t *testing.T) {
 		{
 			name: "auth request, url parse error",
 			args: args{
-				authReq: &oidc.AuthRequest{
-					Scopes:       oidc.SpaceDelimitedArray{"a", "b"},
+				authReq: &protocol.AuthRequest{
+					Scopes:       protocol.SpaceDelimitedArray{"a", "b"},
 					ResponseType: "responseType",
 					ClientID:     "123",
 					RedirectURI:  "can't parse this!\n",
 					State:        "state1",
-					ResponseMode: oidc.ResponseModeQuery,
+					ResponseMode: protocol.ResponseModeQuery,
 				},
 				err: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
@@ -150,13 +150,13 @@ func TestAuthRequestError(t *testing.T) {
 		{
 			name: "auth request redirect",
 			args: args{
-				authReq: &oidc.AuthRequest{
-					Scopes:       oidc.SpaceDelimitedArray{"a", "b"},
+				authReq: &protocol.AuthRequest{
+					Scopes:       protocol.SpaceDelimitedArray{"a", "b"},
 					ResponseType: "responseType",
 					ClientID:     "123",
 					RedirectURI:  "http://example.com/callback",
 					State:        "state1",
-					ResponseMode: oidc.ResponseModeQuery,
+					ResponseMode: protocol.ResponseModeQuery,
 				},
 				err: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
@@ -330,12 +330,12 @@ func TestTryErrorRedirect(t *testing.T) {
 			name: "auth request, no redirect URI",
 			args: args{
 				ctx: context.Background(),
-				authReq: &oidc.AuthRequest{
-					Scopes:       oidc.SpaceDelimitedArray{"a", "b"},
+				authReq: &protocol.AuthRequest{
+					Scopes:       protocol.SpaceDelimitedArray{"a", "b"},
 					ResponseType: "responseType",
 					ClientID:     "123",
 					State:        "state1",
-					ResponseMode: oidc.ResponseModeQuery,
+					ResponseMode: protocol.ResponseModeQuery,
 				},
 				parent: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
@@ -360,13 +360,13 @@ func TestTryErrorRedirect(t *testing.T) {
 			name: "auth request, redirect disabled",
 			args: args{
 				ctx: context.Background(),
-				authReq: &oidc.AuthRequest{
-					Scopes:       oidc.SpaceDelimitedArray{"a", "b"},
+				authReq: &protocol.AuthRequest{
+					Scopes:       protocol.SpaceDelimitedArray{"a", "b"},
 					ResponseType: "responseType",
 					ClientID:     "123",
 					RedirectURI:  "http://example.com/callback",
 					State:        "state1",
-					ResponseMode: oidc.ResponseModeQuery,
+					ResponseMode: protocol.ResponseModeQuery,
 				},
 				parent: protocol.ErrInvalidRequestRedirectURI().WithDescription("oops"),
 			},
@@ -392,13 +392,13 @@ func TestTryErrorRedirect(t *testing.T) {
 			name: "auth request, url parse error",
 			args: args{
 				ctx: context.Background(),
-				authReq: &oidc.AuthRequest{
-					Scopes:       oidc.SpaceDelimitedArray{"a", "b"},
+				authReq: &protocol.AuthRequest{
+					Scopes:       protocol.SpaceDelimitedArray{"a", "b"},
 					ResponseType: "responseType",
 					ClientID:     "123",
 					RedirectURI:  "can't parse this!\n",
 					State:        "state1",
-					ResponseMode: oidc.ResponseModeQuery,
+					ResponseMode: protocol.ResponseModeQuery,
 				},
 				parent: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
@@ -432,13 +432,13 @@ func TestTryErrorRedirect(t *testing.T) {
 			name: "auth request redirect",
 			args: args{
 				ctx: context.Background(),
-				authReq: &oidc.AuthRequest{
-					Scopes:       oidc.SpaceDelimitedArray{"a", "b"},
+				authReq: &protocol.AuthRequest{
+					Scopes:       protocol.SpaceDelimitedArray{"a", "b"},
 					ResponseType: "responseType",
 					ClientID:     "123",
 					RedirectURI:  "http://example.com/callback",
 					State:        "state1",
-					ResponseMode: oidc.ResponseModeQuery,
+					ResponseMode: protocol.ResponseModeQuery,
 				},
 				parent: protocol.ErrInteractionRequired().WithDescription("sign in"),
 			},
@@ -653,10 +653,10 @@ func TestWriteError(t *testing.T) {
 		},
 		{
 			name: "status with oidc error",
-		err: NewStatusError(
-			protocol.ErrUnauthorizedClient().WithDescription("oops"),
-			http.StatusUnauthorized,
-		),
+			err: NewStatusError(
+				protocol.ErrUnauthorizedClient().WithDescription("oops"),
+				http.StatusUnauthorized,
+			),
 			wantStatus: http.StatusUnauthorized,
 			wantBody: `{
 				"error":"unauthorized_client",

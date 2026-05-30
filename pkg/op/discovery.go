@@ -20,12 +20,12 @@ type DiscoverStorage interface {
 }
 
 var DefaultSupportedScopes = []string{
-	oidc.ScopeOpenID,
-	oidc.ScopeProfile,
-	oidc.ScopeEmail,
-	oidc.ScopePhone,
-	oidc.ScopeAddress,
-	oidc.ScopeOfflineAccess,
+	protocol.ScopeOpenID,
+	protocol.ScopeProfile,
+	protocol.ScopeEmail,
+	protocol.ScopePhone,
+	protocol.ScopeAddress,
+	protocol.ScopeOfflineAccess,
 }
 
 func discoveryHandler(c Configuration, s DiscoverStorage) func(http.ResponseWriter, *http.Request) {
@@ -131,9 +131,9 @@ func Scopes(c Configuration) []string {
 
 func ResponseTypes(c Configuration) []string {
 	return []string{
-		string(oidc.ResponseTypeCode),
-		string(oidc.ResponseTypeIDTokenOnly),
-		string(oidc.ResponseTypeIDToken),
+		string(protocol.ResponseTypeCode),
+		string(protocol.ResponseTypeIDTokenOnly),
+		string(protocol.ResponseTypeIDToken),
 	} // TODO: ok for now, check later if dynamic needed
 }
 
