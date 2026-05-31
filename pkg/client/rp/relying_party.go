@@ -23,8 +23,8 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
 )
 
 const (
@@ -780,12 +780,12 @@ func (t tokenEndpointCaller) TokenEndpoint() string {
 }
 
 type RefreshTokenRequest struct {
-	RefreshToken        string                   `schema:"refresh_token"`
+	RefreshToken        string                       `schema:"refresh_token"`
 	Scopes              protocol.SpaceDelimitedArray `schema:"scope,omitempty"`
-	ClientID            string                   `schema:"client_id,omitempty"`
-	ClientSecret        string                   `schema:"client_secret,omitempty"`
-	ClientAssertion     string                   `schema:"client_assertion,omitempty"`
-	ClientAssertionType string                   `schema:"client_assertion_type,omitempty"`
+	ClientID            string                       `schema:"client_id,omitempty"`
+	ClientSecret        string                       `schema:"client_secret,omitempty"`
+	ClientAssertion     string                       `schema:"client_assertion,omitempty"`
+	ClientAssertionType string                       `schema:"client_assertion_type,omitempty"`
 	GrantType           protocol.GrantType           `schema:"grant_type"`
 }
 

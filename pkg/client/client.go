@@ -21,7 +21,7 @@ import (
 	"golang.org/x/oauth2"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/logctx"
+	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
 )
 
 var (

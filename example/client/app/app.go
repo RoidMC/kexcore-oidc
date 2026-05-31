@@ -22,8 +22,8 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/logctx"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
 )
 
 var (
