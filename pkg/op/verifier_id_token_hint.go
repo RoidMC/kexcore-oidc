@@ -57,31 +57,31 @@ func VerifyIDTokenHint[C protocol.Claims](ctx context.Context, token string, v *
 	}
 	payload, err := protocol.ParseToken(decrypted, &claims)
 	if err != nil {
-		return nilClaims, mapVerifierError(err)
+		return nilClaims, err
 	}
 
 	if err := protocol.CheckIssuer(claims, v.Issuer); err != nil {
-		return nilClaims, mapVerifierError(err)
+		return nilClaims, err
 	}
 
 	if err = protocol.CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, v.KeySet); err != nil {
-		return nilClaims, mapVerifierError(err)
+		return nilClaims, err
 	}
 
 	if err = protocol.CheckAuthorizationContextClassReference(claims, v.ACR); err != nil {
-		return nilClaims, mapVerifierError(err)
+		return nilClaims, err
 	}
 
 	if err = protocol.CheckExpiration(claims, v.Offset); err != nil {
-		return claims, IDTokenHintExpiredError{mapVerifierError(err)}
+		return claims, IDTokenHintExpiredError{err}
 	}
 
 	if err = protocol.CheckIssuedAt(claims, v.MaxAgeIAT, v.Offset); err != nil {
-		return claims, IDTokenHintExpiredError{mapVerifierError(err)}
+		return claims, IDTokenHintExpiredError{err}
 	}
 
 	if err = protocol.CheckAuthTime(claims, v.MaxAge); err != nil {
-		return claims, IDTokenHintExpiredError{mapVerifierError(err)}
+		return claims, IDTokenHintExpiredError{err}
 	}
 	return claims, nil
 }

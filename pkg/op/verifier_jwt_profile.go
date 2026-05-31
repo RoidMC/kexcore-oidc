@@ -8,9 +8,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/emmansun/gmsm/sm9"
@@ -80,19 +78,19 @@ func VerifyJWTAssertion(ctx context.Context, assertion string, v *JWTProfileVeri
 	request := new(protocol.JWTTokenRequest)
 	payload, err := protocol.ParseToken(assertion, request)
 	if err != nil {
-		return nil, mapVerifierError(err)
+		return nil, err
 	}
 
 	if err = protocol.CheckAudience(request, v.Issuer); err != nil {
-		return nil, mapVerifierError(err)
+		return nil, err
 	}
 
 	if err = protocol.CheckExpiration(request, v.Offset); err != nil {
-		return nil, mapVerifierError(err)
+		return nil, err
 	}
 
 	if err = protocol.CheckIssuedAt(request, v.MaxAgeIAT, v.Offset); err != nil {
-		return nil, mapVerifierError(err)
+		return nil, err
 	}
 
 	if err = v.CheckSubject(request); err != nil {
@@ -104,55 +102,9 @@ func VerifyJWTAssertion(ctx context.Context, assertion string, v *JWTProfileVeri
 		keySet = &jwtProfileKeySet{storage: v.Storage, clientID: request.Issuer}
 	}
 	if err = protocol.CheckSignature(ctx, assertion, payload, request, nil, keySet); err != nil {
-		return nil, mapVerifierError(err)
+		return nil, err
 	}
 	return request, nil
-}
-
-func mapVerifierError(err error) error {
-	pairs := []struct {
-		oidcSentinel, protocolSentinel error
-	}{
-		{protocol.ErrParse, protocol.ErrParse},
-		{protocol.ErrAudience, protocol.ErrAudience},
-		{protocol.ErrExpired, protocol.ErrExpired},
-		{protocol.ErrIatInFuture, protocol.ErrIatInFuture},
-		{protocol.ErrIatMissing, protocol.ErrIatMissing},
-		{protocol.ErrIatToOld, protocol.ErrIatToOld},
-		{protocol.ErrSubjectInvalid, protocol.ErrSubjectInvalid},
-		{protocol.ErrIssuerInvalid, protocol.ErrIssuerInvalid},
-		{protocol.ErrSignatureMissing, protocol.ErrSignatureMissing},
-		{protocol.ErrSignatureMultiple, protocol.ErrSignatureMultiple},
-		{protocol.ErrSignatureUnsupportedAlg, protocol.ErrSignatureUnsupportedAlg},
-		{protocol.ErrSignatureInvalidPayload, protocol.ErrSignatureInvalidPayload},
-		{protocol.ErrSignatureInvalid, protocol.ErrSignatureInvalid},
-		{protocol.ErrAuthTimeNotPresent, protocol.ErrAuthTimeNotPresent},
-		{protocol.ErrAuthTimeToOld, protocol.ErrAuthTimeToOld},
-		{protocol.ErrAcrInvalid, protocol.ErrAcrInvalid},
-	}
-	for _, p := range pairs {
-		if !errors.Is(err, p.oidcSentinel) {
-			continue
-		}
-		suffix := strings.TrimPrefix(err.Error(), p.oidcSentinel.Error())
-		var innerErr error
-		if mu, ok := err.(interface{ Unwrap() []error }); ok {
-			for _, w := range mu.Unwrap() {
-				if w != p.oidcSentinel {
-					innerErr = w
-					break
-				}
-			}
-		}
-		if innerErr != nil {
-			return fmt.Errorf("%w (%w)", p.protocolSentinel, innerErr)
-		}
-		if suffix == "" {
-			return p.protocolSentinel
-		}
-		return fmt.Errorf("%w%s", p.protocolSentinel, suffix)
-	}
-	return err
 }
 
 // JWTProfileKeyStorage interface for fetching keys by ID and client ID
