@@ -319,34 +319,34 @@ func removeUserinfoScopes(scopes []string) []string {
 //   - "A128GCM": AES-128-GCM
 func encryptIDToken(signedToken string, c Crypto, alg, enc string) (string, error) {
 	switch alg {
-	case oidc.JWEAlgDir:
+	case protocol.JWEAlgDir:
 		keyProvider, ok := c.(TokenEncryptionKeyProvider)
 		if !ok || keyProvider.TokenEncryptionKey() == nil {
 			return "", fmt.Errorf("token encryption requested but Crypto does not implement TokenEncryptionKeyProvider")
 		}
 		key := keyProvider.TokenEncryptionKey()
 		switch enc {
-		case oidc.JWEEncSM4GCM:
-			return oidc.EncryptToken(signedToken, key)
-		case oidc.JWEEncA256GCM:
-			return oidc.EncryptTokenA256GCM(signedToken, key)
-		case oidc.JWEEncA128GCM:
-			return oidc.EncryptTokenA128GCM(signedToken, key)
+		case protocol.JWEEncSM4GCM:
+			return protocol.EncryptToken(signedToken, key)
+		case protocol.JWEEncA256GCM:
+			return protocol.EncryptTokenA256GCM(signedToken, key)
+		case protocol.JWEEncA128GCM:
+			return protocol.EncryptTokenA128GCM(signedToken, key)
 		default:
 			return "", fmt.Errorf("unsupported JWE content encryption: %s", enc)
 		}
-	case oidc.JWEAlgSM23:
+	case protocol.JWEAlgSM23:
 		pkProvider, ok := c.(SM2TokenEncryptionPublicKeyProvider)
 		if !ok || pkProvider.SM2TokenEncryptionPublicKey() == nil {
 			return "", fmt.Errorf("SM2 encryption requested but Crypto does not implement SM2TokenEncryptionPublicKeyProvider")
 		}
-		return oidc.EncryptTokenSM2(signedToken, pkProvider.SM2TokenEncryptionPublicKey())
-	case oidc.JWEAlgSM93:
+		return protocol.EncryptTokenSM2(signedToken, pkProvider.SM2TokenEncryptionPublicKey())
+	case protocol.JWEAlgSM93:
 		pkProvider, ok := c.(SM9TokenEncryptionPublicKeyProvider)
 		if !ok || pkProvider.SM9TokenEncryptionMasterPublicKey() == nil {
 			return "", fmt.Errorf("SM9 encryption requested but Crypto does not implement SM9TokenEncryptionPublicKeyProvider")
 		}
-		return oidc.EncryptTokenSM9(signedToken, pkProvider.SM9TokenEncryptionMasterPublicKey(), pkProvider.SM9TokenEncryptionUID())
+		return protocol.EncryptTokenSM9(signedToken, pkProvider.SM9TokenEncryptionMasterPublicKey(), pkProvider.SM9TokenEncryptionUID())
 	default:
 		return "", fmt.Errorf("unsupported JWE key management algorithm: %s", alg)
 	}

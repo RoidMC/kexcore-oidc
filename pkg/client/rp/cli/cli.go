@@ -7,13 +7,14 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
 	loginPath = "/login"
 )
 
-func CodeFlow[C oidc.IDClaims](ctx context.Context, relyingParty rp.RelyingParty, callbackPath, port string, stateProvider func() string) *oidc.Tokens[C] {
+func CodeFlow[C protocol.IDClaims](ctx context.Context, relyingParty rp.RelyingParty, callbackPath, port string, stateProvider func() string) *oidc.Tokens[C] {
 	codeflowCtx, codeflowCancel := context.WithCancel(ctx)
 	defer codeflowCancel()
 

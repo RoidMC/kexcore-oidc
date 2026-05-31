@@ -27,7 +27,7 @@ func TestVerifyTokens(t *testing.T) {
 		KeySet:            tu.KeySet{},
 		MaxAge:            2 * time.Minute,
 		ACR:               tu.ACRVerify,
-		AZP:               oidc.DefaultAZPVerifier(tu.ValidClientID),
+		AZP:               protocol.DefaultAZPVerifier(tu.ValidClientID),
 		Nonce:             func(context.Context) string { return tu.ValidNonce },
 		ClientID:          tu.ValidClientID,
 	}
@@ -106,7 +106,7 @@ func TestVerifyIDToken(t *testing.T) {
 		KeySet:            tu.KeySet{},
 		MaxAge:            2 * time.Minute,
 		ACR:               tu.ACRVerify,
-		AZP:               oidc.DefaultAZPVerifier(tu.ValidClientID),
+		AZP:               protocol.DefaultAZPVerifier(tu.ValidClientID),
 		Nonce:             func(context.Context) string { return tu.ValidNonce },
 		ClientID:          tu.ValidClientID,
 	}

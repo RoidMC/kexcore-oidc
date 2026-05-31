@@ -10,7 +10,6 @@ import (
 	"net/http"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"golang.org/x/text/language"
 )
@@ -262,13 +261,13 @@ func IDTokenEncryptionAlgValues(c Configuration) []string {
 
 	var algs []string
 	if _, ok := cr.(TokenEncryptionKeyProvider); ok {
-		algs = append(algs, oidc.JWEAlgDir)
+		algs = append(algs, protocol.JWEAlgDir)
 	}
 	if _, ok := cr.(SM2TokenEncryptionPublicKeyProvider); ok {
-		algs = append(algs, oidc.JWEAlgSM23)
+		algs = append(algs, protocol.JWEAlgSM23)
 	}
 	if _, ok := cr.(SM9TokenEncryptionPublicKeyProvider); ok {
-		algs = append(algs, oidc.JWEAlgSM93)
+		algs = append(algs, protocol.JWEAlgSM93)
 	}
 	if len(algs) == 0 {
 		return nil
@@ -296,15 +295,15 @@ func IDTokenEncryptionEncValues(c Configuration) []string {
 	}
 
 	if _, ok := cr.(TokenEncryptionKeyProvider); ok {
-		addEnc(oidc.JWEEncSM4GCM)
-		addEnc(oidc.JWEEncA256GCM)
-		addEnc(oidc.JWEEncA128GCM)
+		addEnc(protocol.JWEEncSM4GCM)
+		addEnc(protocol.JWEEncA256GCM)
+		addEnc(protocol.JWEEncA128GCM)
 	}
 	if _, ok := cr.(SM2TokenEncryptionPublicKeyProvider); ok {
-		addEnc(oidc.JWEEncSM4GCM)
+		addEnc(protocol.JWEEncSM4GCM)
 	}
 	if _, ok := cr.(SM9TokenEncryptionPublicKeyProvider); ok {
-		addEnc(oidc.JWEEncSM4GCM)
+		addEnc(protocol.JWEEncSM4GCM)
 	}
 	if len(encs) == 0 {
 		return nil

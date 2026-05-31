@@ -97,7 +97,7 @@ func VerifyLogoutToken(ctx context.Context, token string, v *LogoutTokenVerifier
 	var claims oidc.LogoutTokenClaims
 
 	// 1. Parse the JWT payload.
-	payload, err := oidc.ParseToken(token, &claims)
+	payload, err := protocol.ParseToken(token, &claims)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse logout token: %w", err)
 	}
@@ -109,11 +109,11 @@ func VerifyLogoutToken(ctx context.Context, token string, v *LogoutTokenVerifier
 
 	// 3. Verify the issuer matches the expected OP.
 	if claims.Issuer != v.Issuer {
-		return nil, fmt.Errorf("%w: expected %q but was %q", oidc.ErrIssuerInvalid, v.Issuer, claims.Issuer)
+		return nil, fmt.Errorf("%w: expected %q but was %q", protocol.ErrIssuerInvalid, v.Issuer, claims.Issuer)
 	}
 
 	// 4. Verify the signature.
-	if err := oidc.CheckSignature(ctx, token, payload, &claims, v.SupportedSignAlgs, v.KeySet); err != nil {
+	if err := protocol.CheckSignature(ctx, token, payload, &claims, v.SupportedSignAlgs, v.KeySet); err != nil {
 		return nil, err
 	}
 
@@ -134,10 +134,10 @@ func VerifyLogoutToken(ctx context.Context, token string, v *LogoutTokenVerifier
 	}
 
 	// 7. Verify iat and exp.
-	if err := oidc.CheckIssuedAt(&claims, 0, time.Second); err != nil {
+	if err := protocol.CheckIssuedAt(&claims, 0, time.Second); err != nil {
 		return nil, err
 	}
-	if err := oidc.CheckExpiration(&claims, 0); err != nil {
+	if err := protocol.CheckExpiration(&claims, 0); err != nil {
 		return nil, err
 	}
 
@@ -155,5 +155,5 @@ func verifyLogoutAudience(claims *oidc.LogoutTokenClaims, expectedClientID strin
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: expected %q", oidc.ErrAudience, expectedClientID)
+	return fmt.Errorf("%w: expected %q", protocol.ErrAudience, expectedClientID)
 }

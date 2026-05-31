@@ -16,7 +16,7 @@ import (
 
 // VerifyTokens implement the Token Response Validation as defined in OIDC specification
 // https://openid.net/specs/openid-connect-core-1_0.html#TokenResponseValidation
-func VerifyTokens[C oidc.IDClaims](ctx context.Context, accessToken, idToken string, v *IDTokenVerifier) (claims C, err error) {
+func VerifyTokens[C protocol.IDClaims](ctx context.Context, accessToken, idToken string, v *IDTokenVerifier) (claims C, err error) {
 	ctx, span := client.Tracer.Start(ctx, "VerifyTokens")
 	defer span.End()
 
@@ -34,17 +34,17 @@ func VerifyTokens[C oidc.IDClaims](ctx context.Context, accessToken, idToken str
 
 // VerifyIDToken validates the id token according to
 // https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation
-func VerifyIDToken[C oidc.Claims](ctx context.Context, token string, v *IDTokenVerifier) (claims C, err error) {
+func VerifyIDToken[C protocol.IDClaims](ctx context.Context, token string, v *IDTokenVerifier) (claims C, err error) {
 	ctx, span := client.Tracer.Start(ctx, "VerifyIDToken")
 	defer span.End()
 
 	var nilClaims C
 
-	decrypted, err := oidc.DecryptToken(token)
+	decrypted, err := protocol.DecryptToken(token)
 	if err != nil {
 		// If a decryption key is configured, try with that key.
 		if v.DecryptionKey != nil {
-			decrypted, err = oidc.DecryptTokenWithKey(token, v.DecryptionKey)
+			decrypted, err = protocol.DecryptTokenWithKey(token, v.DecryptionKey)
 			if err != nil {
 				return nilClaims, err
 			}
@@ -52,57 +52,57 @@ func VerifyIDToken[C oidc.Claims](ctx context.Context, token string, v *IDTokenV
 			return nilClaims, err
 		}
 	}
-	payload, err := oidc.ParseToken(decrypted, &claims)
+	payload, err := protocol.ParseToken(decrypted, &claims)
 	if err != nil {
 		return nilClaims, err
 	}
 
-	if err := oidc.CheckSubject(claims); err != nil {
+	if err := protocol.CheckSubject(claims); err != nil {
 		return nilClaims, err
 	}
 
-	if err = oidc.CheckIssuer(claims, v.Issuer); err != nil {
+	if err = protocol.CheckIssuer(claims, v.Issuer); err != nil {
 		return nilClaims, err
 	}
 
-	if err = oidc.CheckAudience(claims, v.ClientID); err != nil {
+	if err = protocol.CheckAudience(claims, v.ClientID); err != nil {
 		return nilClaims, err
 	}
 
-	if err = oidc.CheckAZPVerifier(claims, v.AZP); err != nil {
+	if err = protocol.CheckAZPVerifier(claims, v.AZP); err != nil {
 		return nilClaims, err
 	}
 
-	if err = oidc.CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, v.KeySet); err != nil {
+	if err = protocol.CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, v.KeySet); err != nil {
 		return nilClaims, err
 	}
 
-	if err = oidc.CheckExpiration(claims, v.Offset); err != nil {
+	if err = protocol.CheckExpiration(claims, v.Offset); err != nil {
 		return nilClaims, err
 	}
 
-	if err = oidc.CheckIssuedAt(claims, v.MaxAgeIAT, v.Offset); err != nil {
+	if err = protocol.CheckIssuedAt(claims, v.MaxAgeIAT, v.Offset); err != nil {
 		return nilClaims, err
 	}
 
 	if v.Nonce != nil {
-		if err = oidc.CheckNonce(claims, v.Nonce(ctx)); err != nil {
+		if err = protocol.CheckNonce(claims, v.Nonce(ctx)); err != nil {
 			return nilClaims, err
 		}
 	}
 
-	if err = oidc.CheckAuthorizationContextClassReference(claims, v.ACR); err != nil {
+	if err = protocol.CheckAuthorizationContextClassReference(claims, v.ACR); err != nil {
 		return nilClaims, err
 	}
 
-	if err = oidc.CheckAuthTime(claims, v.MaxAge); err != nil {
+	if err = protocol.CheckAuthTime(claims, v.MaxAge); err != nil {
 		return nilClaims, err
 	}
 
 	return claims, nil
 }
 
-type IDTokenVerifier oidc.Verifier
+type IDTokenVerifier protocol.Verifier
 
 // VerifyAccessToken validates the access token according to
 // https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowTokenValidation
@@ -116,7 +116,7 @@ func VerifyAccessToken(accessToken, atHash string, sigAlgorithm string) error {
 		return err
 	}
 	if actual != atHash {
-		return oidc.ErrAtHash
+		return protocol.ErrAtHash
 	}
 	return nil
 }
@@ -131,7 +131,7 @@ func NewIDTokenVerifier(issuer, clientID string, keySet protocol.KeySet, options
 		Nonce: func(_ context.Context) string {
 			return ""
 		},
-		AZP: oidc.DefaultAZPVerifier(clientID),
+		AZP: protocol.DefaultAZPVerifier(clientID),
 	}
 
 	for _, opts := range options {
@@ -167,14 +167,14 @@ func WithNonce(nonce func(context.Context) string) VerifierOption {
 }
 
 // WithACRVerifier sets the verifier for the acr claim
-func WithACRVerifier(verifier oidc.ACRVerifier) VerifierOption {
+func WithACRVerifier(verifier protocol.ACRVerifier) VerifierOption {
 	return func(v *IDTokenVerifier) {
 		v.ACR = verifier
 	}
 }
 
 // WithAZPVerifier sets the verifier for the azp claim
-func WithAZPVerifier(verifier oidc.AZPVerifier) VerifierOption {
+func WithAZPVerifier(verifier protocol.AZPVerifier) VerifierOption {
 	return func(v *IDTokenVerifier) {
 		v.AZP = verifier
 	}

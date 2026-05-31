@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
-type IDTokenHintVerifier oidc.Verifier
+type IDTokenHintVerifier protocol.Verifier
 
 type IDTokenHintVerifierOpt func(*IDTokenHintVerifier)
 
@@ -46,42 +45,42 @@ func (e IDTokenHintExpiredError) Is(err error) bool {
 // In case of an expired token both the Claims and first encountered expiry related error
 // is returned of type [IDTokenHintExpiredError]. In that case the caller can choose to still
 // trust the token for cases like logout, as signature and other verifications succeeded.
-func VerifyIDTokenHint[C oidc.Claims](ctx context.Context, token string, v *IDTokenHintVerifier) (claims C, err error) {
+func VerifyIDTokenHint[C protocol.Claims](ctx context.Context, token string, v *IDTokenHintVerifier) (claims C, err error) {
 	ctx, span := Tracer.Start(ctx, "VerifyIDTokenHint")
 	defer span.End()
 
 	var nilClaims C
 
-	decrypted, err := oidc.DecryptToken(token)
+	decrypted, err := protocol.DecryptToken(token)
 	if err != nil {
 		return nilClaims, err
 	}
-	payload, err := oidc.ParseToken(decrypted, &claims)
+	payload, err := protocol.ParseToken(decrypted, &claims)
 	if err != nil {
 		return nilClaims, mapVerifierError(err)
 	}
 
-	if err := oidc.CheckIssuer(claims, v.Issuer); err != nil {
+	if err := protocol.CheckIssuer(claims, v.Issuer); err != nil {
 		return nilClaims, mapVerifierError(err)
 	}
 
-	if err = oidc.CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, v.KeySet); err != nil {
+	if err = protocol.CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, v.KeySet); err != nil {
 		return nilClaims, mapVerifierError(err)
 	}
 
-	if err = oidc.CheckAuthorizationContextClassReference(claims, v.ACR); err != nil {
+	if err = protocol.CheckAuthorizationContextClassReference(claims, v.ACR); err != nil {
 		return nilClaims, mapVerifierError(err)
 	}
 
-	if err = oidc.CheckExpiration(claims, v.Offset); err != nil {
+	if err = protocol.CheckExpiration(claims, v.Offset); err != nil {
 		return claims, IDTokenHintExpiredError{mapVerifierError(err)}
 	}
 
-	if err = oidc.CheckIssuedAt(claims, v.MaxAgeIAT, v.Offset); err != nil {
+	if err = protocol.CheckIssuedAt(claims, v.MaxAgeIAT, v.Offset); err != nil {
 		return claims, IDTokenHintExpiredError{mapVerifierError(err)}
 	}
 
-	if err = oidc.CheckAuthTime(claims, v.MaxAge); err != nil {
+	if err = protocol.CheckAuthTime(claims, v.MaxAge); err != nil {
 		return claims, IDTokenHintExpiredError{mapVerifierError(err)}
 	}
 	return claims, nil

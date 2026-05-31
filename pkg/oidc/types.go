@@ -17,7 +17,7 @@ import (
 )
 
 // Tokens represents an OAuth2 token response that includes OIDC claims.
-type Tokens[C IDClaims] struct {
+type Tokens[C protocol.IDClaims] struct {
 	*oauth2.Token
 	IDTokenClaims C
 	IDToken       string
@@ -108,9 +108,21 @@ type AccessTokenClaims = protocol.AccessTokenClaims
 
 type IDTokenClaims = protocol.IDTokenClaims
 
+type AccessTokenVerifier = protocol.AccessTokenVerifier
+
+type IDTokenHintVerifier = protocol.IDTokenHintVerifier
+
+type IDTokenHintExpiredError = protocol.IDTokenHintExpiredError
+
 var (
 	NewAccessTokenClaims = protocol.NewAccessTokenClaims
 	NewIDTokenClaims     = protocol.NewIDTokenClaims
+)
+
+var (
+	ErrKeyMultiple         = protocol.ErrKeyMultiple
+	ErrKeyNone             = protocol.ErrKeyNone
+	ErrInvalidRefreshToken = protocol.ErrInvalidRefreshToken
 )
 
 var NewJWTProfileAssertionFromKeyJSON = protocol.NewJWTProfileAssertionFromKeyJSON

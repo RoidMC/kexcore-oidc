@@ -18,7 +18,6 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -26,7 +25,7 @@ import (
 // a jwtProfileKeyStorage and a function to check
 // the subject in a token.
 type JWTProfileVerifier struct {
-	oidc.Verifier
+	protocol.Verifier
 	Storage      JWTProfileKeyStorage
 	keySet       protocol.KeySet
 	CheckSubject func(request *protocol.JWTTokenRequest) error
@@ -44,7 +43,7 @@ func NewJWTProfileVerifierKeySet(keySet protocol.KeySet, issuer string, maxAgeIA
 
 func newJWTProfileVerifier(storage JWTProfileKeyStorage, keySet protocol.KeySet, issuer string, maxAgeIAT, offset time.Duration, opts ...JWTProfileVerifierOption) *JWTProfileVerifier {
 	j := &JWTProfileVerifier{
-		Verifier: oidc.Verifier{
+		Verifier: protocol.Verifier{
 			Issuer:    issuer,
 			MaxAgeIAT: maxAgeIAT,
 			Offset:    offset,
@@ -79,20 +78,20 @@ func VerifyJWTAssertion(ctx context.Context, assertion string, v *JWTProfileVeri
 	defer span.End()
 
 	request := new(protocol.JWTTokenRequest)
-	payload, err := oidc.ParseToken(assertion, request)
+	payload, err := protocol.ParseToken(assertion, request)
 	if err != nil {
 		return nil, mapVerifierError(err)
 	}
 
-	if err = oidc.CheckAudience(request, v.Issuer); err != nil {
+	if err = protocol.CheckAudience(request, v.Issuer); err != nil {
 		return nil, mapVerifierError(err)
 	}
 
-	if err = oidc.CheckExpiration(request, v.Offset); err != nil {
+	if err = protocol.CheckExpiration(request, v.Offset); err != nil {
 		return nil, mapVerifierError(err)
 	}
 
-	if err = oidc.CheckIssuedAt(request, v.MaxAgeIAT, v.Offset); err != nil {
+	if err = protocol.CheckIssuedAt(request, v.MaxAgeIAT, v.Offset); err != nil {
 		return nil, mapVerifierError(err)
 	}
 
@@ -104,7 +103,7 @@ func VerifyJWTAssertion(ctx context.Context, assertion string, v *JWTProfileVeri
 	if keySet == nil {
 		keySet = &jwtProfileKeySet{storage: v.Storage, clientID: request.Issuer}
 	}
-	if err = oidc.CheckSignature(ctx, assertion, payload, request, nil, keySet); err != nil {
+	if err = protocol.CheckSignature(ctx, assertion, payload, request, nil, keySet); err != nil {
 		return nil, mapVerifierError(err)
 	}
 	return request, nil
@@ -114,22 +113,22 @@ func mapVerifierError(err error) error {
 	pairs := []struct {
 		oidcSentinel, protocolSentinel error
 	}{
-		{oidc.ErrParse, protocol.ErrParse},
-		{oidc.ErrAudience, protocol.ErrAudience},
-		{oidc.ErrExpired, protocol.ErrExpired},
-		{oidc.ErrIatInFuture, protocol.ErrIatInFuture},
-		{oidc.ErrIatMissing, protocol.ErrIatMissing},
-		{oidc.ErrIatToOld, protocol.ErrIatToOld},
-		{oidc.ErrSubjectInvalid, protocol.ErrSubjectInvalid},
-		{oidc.ErrIssuerInvalid, protocol.ErrIssuerInvalid},
-		{oidc.ErrSignatureMissing, protocol.ErrSignatureMissing},
-		{oidc.ErrSignatureMultiple, protocol.ErrSignatureMultiple},
-		{oidc.ErrSignatureUnsupportedAlg, protocol.ErrSignatureUnsupportedAlg},
-		{oidc.ErrSignatureInvalidPayload, protocol.ErrSignatureInvalidPayload},
-		{oidc.ErrSignatureInvalid, protocol.ErrSignatureInvalid},
-		{oidc.ErrAuthTimeNotPresent, protocol.ErrAuthTimeNotPresent},
-		{oidc.ErrAuthTimeToOld, protocol.ErrAuthTimeToOld},
-		{oidc.ErrAcrInvalid, protocol.ErrAcrInvalid},
+		{protocol.ErrParse, protocol.ErrParse},
+		{protocol.ErrAudience, protocol.ErrAudience},
+		{protocol.ErrExpired, protocol.ErrExpired},
+		{protocol.ErrIatInFuture, protocol.ErrIatInFuture},
+		{protocol.ErrIatMissing, protocol.ErrIatMissing},
+		{protocol.ErrIatToOld, protocol.ErrIatToOld},
+		{protocol.ErrSubjectInvalid, protocol.ErrSubjectInvalid},
+		{protocol.ErrIssuerInvalid, protocol.ErrIssuerInvalid},
+		{protocol.ErrSignatureMissing, protocol.ErrSignatureMissing},
+		{protocol.ErrSignatureMultiple, protocol.ErrSignatureMultiple},
+		{protocol.ErrSignatureUnsupportedAlg, protocol.ErrSignatureUnsupportedAlg},
+		{protocol.ErrSignatureInvalidPayload, protocol.ErrSignatureInvalidPayload},
+		{protocol.ErrSignatureInvalid, protocol.ErrSignatureInvalid},
+		{protocol.ErrAuthTimeNotPresent, protocol.ErrAuthTimeNotPresent},
+		{protocol.ErrAuthTimeToOld, protocol.ErrAuthTimeToOld},
+		{protocol.ErrAcrInvalid, protocol.ErrAcrInvalid},
 	}
 	for _, p := range pairs {
 		if !errors.Is(err, p.oidcSentinel) {

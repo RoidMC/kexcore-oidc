@@ -184,7 +184,7 @@ func ParseAuthorizeRequest(r *http.Request, decoder httphelper.Decoder) (*protoc
 // and copies the token claims into the auth request
 func ParseRequestObject(ctx context.Context, authReq *protocol.AuthRequest, storage Storage, issuer string) error {
 	requestObject := new(oidc.RequestObject)
-	payload, err := oidc.ParseToken(authReq.RequestParam, requestObject)
+	payload, err := protocol.ParseToken(authReq.RequestParam, requestObject)
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func ParseRequestObject(ctx context.Context, authReq *protocol.AuthRequest, stor
 		return protocol.ErrInvalidRequest().WithDescription("issuer missing in audience")
 	}
 	keySet := &jwtProfileKeySet{storage: storage, clientID: requestObject.Issuer}
-	if err = oidc.CheckSignature(ctx, authReq.RequestParam, payload, requestObject, nil, keySet); err != nil {
+	if err = protocol.CheckSignature(ctx, authReq.RequestParam, payload, requestObject, nil, keySet); err != nil {
 		return protocol.ErrInvalidRequest().WithParent(err).WithDescription("invalid request signature")
 	}
 	CopyRequestObjectToAuthRequest(authReq, requestObject)

@@ -481,7 +481,7 @@ func GenerateAndStoreCodeChallengeWithRequest(r *http.Request, w http.ResponseWr
 // but not received in the token response.
 var ErrMissingIDToken = errors.New("id_token missing")
 
-func verifyTokenResponse[C oidc.IDClaims](ctx context.Context, token *oauth2.Token, rp RelyingParty) (*oidc.Tokens[C], error) {
+func verifyTokenResponse[C protocol.IDClaims](ctx context.Context, token *oauth2.Token, rp RelyingParty) (*oidc.Tokens[C], error) {
 	ctx, span := client.Tracer.Start(ctx, "verifyTokenResponse")
 	defer span.End()
 
@@ -501,7 +501,7 @@ func verifyTokenResponse[C oidc.IDClaims](ctx context.Context, token *oauth2.Tok
 
 // CodeExchange handles the oauth2 code exchange, extracting and validating the id_token
 // returning it parsed together with the oauth2 tokens (access, refresh)
-func CodeExchange[C oidc.IDClaims](ctx context.Context, code string, rp RelyingParty, opts ...CodeExchangeOpt) (tokens *oidc.Tokens[C], err error) {
+func CodeExchange[C protocol.IDClaims](ctx context.Context, code string, rp RelyingParty, opts ...CodeExchangeOpt) (tokens *oidc.Tokens[C], err error) {
 	ctx, codeExchangeSpan := client.Tracer.Start(ctx, "CodeExchange")
 	defer codeExchangeSpan.End()
 
@@ -546,13 +546,13 @@ func ClientCredentials(ctx context.Context, rp RelyingParty, endpointParams url.
 	return config.Token(ctx)
 }
 
-type CodeExchangeCallback[C oidc.IDClaims] func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[C], state string, rp RelyingParty)
+type CodeExchangeCallback[C protocol.IDClaims] func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[C], state string, rp RelyingParty)
 
 // CodeExchangeHandler extends the `CodeExchange` method with an http handler
 // including cookie handling for secure `state` transfer
 // and optional PKCE code verifier checking.
 // Custom parameters can optionally be set to the token URL.
-func CodeExchangeHandler[C oidc.IDClaims](callback CodeExchangeCallback[C], rp RelyingParty, urlParam ...URLParamOpt) http.HandlerFunc {
+func CodeExchangeHandler[C protocol.IDClaims](callback CodeExchangeCallback[C], rp RelyingParty, urlParam ...URLParamOpt) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, span := client.Tracer.Start(r.Context(), "CodeExchangeHandler")
 		r = r.WithContext(ctx)
@@ -602,12 +602,12 @@ type SubjectGetter interface {
 	GetSubject() string
 }
 
-type CodeExchangeUserinfoCallback[C oidc.IDClaims, U SubjectGetter] func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[C], state string, provider RelyingParty, info U)
+type CodeExchangeUserinfoCallback[C protocol.IDClaims, U SubjectGetter] func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[C], state string, provider RelyingParty, info U)
 
 // UserinfoCallback wraps the callback function of the CodeExchangeHandler
 // and calls the userinfo endpoint with the access token
 // on success it will pass the userinfo into its callback function as well
-func UserinfoCallback[C oidc.IDClaims, U SubjectGetter](f CodeExchangeUserinfoCallback[C, U]) CodeExchangeCallback[C] {
+func UserinfoCallback[C protocol.IDClaims, U SubjectGetter](f CodeExchangeUserinfoCallback[C, U]) CodeExchangeCallback[C] {
 	return func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[C], state string, rp RelyingParty) {
 		ctx, span := client.Tracer.Start(r.Context(), "UserinfoCallback")
 		r = r.WithContext(ctx)
@@ -803,7 +803,7 @@ func (r RefreshTokenRequest) Auth(req *http.Request) {
 // In case the RP is not OAuth2 only and an IDToken was part of the response,
 // the IDToken and AccessToken will be verified
 // and the IDToken and IDTokenClaims fields will be populated in the returned object.
-func RefreshTokens[C oidc.IDClaims](ctx context.Context, rp RelyingParty, refreshToken, clientAssertion, clientAssertionType string) (*oidc.Tokens[C], error) {
+func RefreshTokens[C protocol.IDClaims](ctx context.Context, rp RelyingParty, refreshToken, clientAssertion, clientAssertionType string) (*oidc.Tokens[C], error) {
 	ctx, span := client.Tracer.Start(ctx, "RefreshTokens")
 	defer span.End()
 

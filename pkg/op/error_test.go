@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -514,7 +513,7 @@ func TestAsStatusError(t *testing.T) {
 		{
 			name: "oidc error",
 			args: args{
-				err:        oidc.ErrAcrInvalid,
+				err:        protocol.ErrAcrInvalid,
 				statusCode: http.StatusBadRequest,
 			},
 			want: "Bad Request: acr is invalid",

@@ -33,11 +33,11 @@ func TestJWEEncryptDecrypt_SM4GCM(t *testing.T) {
 
 	signedToken := "header.payload.signature"
 
-	encrypted, err := oidc.EncryptToken(signedToken, key)
+	encrypted, err := protocol.EncryptToken(signedToken, key)
 	require.NoError(t, err)
 	require.NotEmpty(t, encrypted)
 
-	decrypted, err := oidc.DecryptTokenWithKey(encrypted, key)
+	decrypted, err := protocol.DecryptTokenWithKey(encrypted, key)
 	require.NoError(t, err)
 	assert.Equal(t, signedToken, string(decrypted))
 }
@@ -48,7 +48,7 @@ func TestJWEDecrypt_CorruptedJWE(t *testing.T) {
 	require.NoError(t, err)
 
 	signedToken := "header.payload.signature"
-	encrypted, err := oidc.EncryptToken(signedToken, key)
+	encrypted, err := protocol.EncryptToken(signedToken, key)
 	require.NoError(t, err)
 
 	// Tamper with the ciphertext part.
@@ -56,7 +56,7 @@ func TestJWEDecrypt_CorruptedJWE(t *testing.T) {
 	parts[3] = "tampered"
 	tampered := strings.Join(parts, ".")
 
-	_, err = oidc.DecryptTokenWithKey(tampered, key)
+	_, err = protocol.DecryptTokenWithKey(tampered, key)
 	assert.Error(t, err)
 }
 
@@ -70,10 +70,10 @@ func TestJWEDecrypt_WrongKey(t *testing.T) {
 	require.NoError(t, err)
 
 	signedToken := "header.payload.signature"
-	encrypted, err := oidc.EncryptToken(signedToken, key)
+	encrypted, err := protocol.EncryptToken(signedToken, key)
 	require.NoError(t, err)
 
-	_, err = oidc.DecryptTokenWithKey(encrypted, wrongKey)
+	_, err = protocol.DecryptTokenWithKey(encrypted, wrongKey)
 	assert.Error(t, err, "decryption with wrong key should fail")
 }
 
@@ -263,7 +263,7 @@ func TestEncryptIDToken_SM4GCM(t *testing.T) {
 	_, err := rand.Read(key)
 	require.NoError(t, err)
 
-	encrypted, err := oidc.EncryptToken(signedToken, key)
+	encrypted, err := protocol.EncryptToken(signedToken, key)
 	require.NoError(t, err)
 	assert.NotEqual(t, signedToken, encrypted, "encrypted token should differ from original")
 
@@ -310,10 +310,10 @@ func TestJWERoundTrip_LargePayload(t *testing.T) {
 	}
 	signedToken := string(largePayload)
 
-	encrypted, err := oidc.EncryptToken(signedToken, key)
+	encrypted, err := protocol.EncryptToken(signedToken, key)
 	require.NoError(t, err)
 
-	decrypted, err := oidc.DecryptTokenWithKey(encrypted, key)
+	decrypted, err := protocol.DecryptTokenWithKey(encrypted, key)
 	require.NoError(t, err)
 	assert.Equal(t, signedToken, string(decrypted))
 }

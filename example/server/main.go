@@ -18,7 +18,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/example/server/exampleop"
 	"github.com/roidmc/kexcore-oidc/example/server/storage"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
@@ -60,13 +60,13 @@ func main() {
 			"https://www.certification.openid.net/test/a/kexcore-test/callback",
 		),
 		// JWE 加密演示客户端
-		storage.EncryptedWebClient("web-dir-sm4", "secret", oidc.JWEAlgDir, oidc.JWEEncSM4GCM,
+		storage.EncryptedWebClient("web-dir-sm4", "secret", protocol.JWEAlgDir, protocol.JWEEncSM4GCM,
 			cfg.RedirectURI...,
 		),
-		storage.EncryptedWebClient("web-sm2", "secret", oidc.JWEAlgSM23, oidc.JWEEncSM4GCM,
+		storage.EncryptedWebClient("web-sm2", "secret", protocol.JWEAlgSM23, protocol.JWEEncSM4GCM,
 			cfg.RedirectURI...,
 		),
-		storage.EncryptedWebClient("web-sm9", "secret", oidc.JWEAlgSM93, oidc.JWEEncSM4GCM,
+		storage.EncryptedWebClient("web-sm9", "secret", protocol.JWEAlgSM93, protocol.JWEEncSM4GCM,
 			cfg.RedirectURI...,
 		),
 		// Back-Channel Logout 演示客户端
@@ -179,9 +179,9 @@ func (m *myCrypto) Decrypt(s string) (string, error) {
 // myJWEEnc returns the JWE content encryption algorithm string for this crypto method.
 func (m *myCrypto) myJWEEnc() string {
 	if m.method == "sm4" {
-		return oidc.JWEEncSM4GCM
+		return protocol.JWEEncSM4GCM
 	}
-	return oidc.JWEEncA256GCM
+	return protocol.JWEEncA256GCM
 }
 
 // SM2TokenEncryptionPublicKey returns the SM2 public key for SGD_SM2_3 JWE key wrapping.

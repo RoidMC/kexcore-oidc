@@ -6,7 +6,6 @@ import (
 	"time"
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,7 +14,7 @@ import (
 
 func TestNewJWTProfileVerifier(t *testing.T) {
 	want := &op.JWTProfileVerifier{
-		Verifier: oidc.Verifier{
+		Verifier: protocol.Verifier{
 			Issuer:    tu.ValidIssuer,
 			MaxAgeIAT: time.Minute,
 			Offset:    time.Second,

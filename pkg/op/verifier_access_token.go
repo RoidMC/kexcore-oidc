@@ -3,11 +3,10 @@ package op
 import (
 	"context"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
-type AccessTokenVerifier oidc.Verifier
+type AccessTokenVerifier protocol.Verifier
 
 type AccessTokenVerifierOpt func(*AccessTokenVerifier)
 
@@ -30,30 +29,30 @@ func NewAccessTokenVerifier(issuer string, keySet protocol.KeySet, opts ...Acces
 }
 
 // VerifyAccessToken validates the access token (issuer, signature and expiration).
-func VerifyAccessToken[C oidc.Claims](ctx context.Context, token string, v *AccessTokenVerifier) (claims C, err error) {
+func VerifyAccessToken[C protocol.Claims](ctx context.Context, token string, v *AccessTokenVerifier) (claims C, err error) {
 	ctx, span := Tracer.Start(ctx, "VerifyAccessToken")
 	defer span.End()
 
 	var nilClaims C
 
-	decrypted, err := oidc.DecryptToken(token)
+	decrypted, err := protocol.DecryptToken(token)
 	if err != nil {
 		return nilClaims, err
 	}
-	payload, err := oidc.ParseToken(decrypted, &claims)
+	payload, err := protocol.ParseToken(decrypted, &claims)
 	if err != nil {
 		return nilClaims, err
 	}
 
-	if err := oidc.CheckIssuer(claims, v.Issuer); err != nil {
+	if err := protocol.CheckIssuer(claims, v.Issuer); err != nil {
 		return nilClaims, err
 	}
 
-	if err = oidc.CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, v.KeySet); err != nil {
+	if err = protocol.CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, v.KeySet); err != nil {
 		return nilClaims, err
 	}
 
-	if err = oidc.CheckExpiration(claims, v.Offset); err != nil {
+	if err = protocol.CheckExpiration(claims, v.Offset); err != nil {
 		return nilClaims, err
 	}
 

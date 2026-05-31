@@ -34,6 +34,9 @@ const (
 	JWEEncA128GCM = "A128GCM"
 )
 
+// Verifier caries configuration for the various token verification
+// functions. Use package specific constructor functions to know
+// which values need to be set.
 type Verifier struct {
 	Issuer            string
 	MaxAgeIAT         time.Duration
@@ -48,8 +51,11 @@ type Verifier struct {
 	DecryptionKey     []byte
 }
 
+// ACRVerifier specifies the function to be used by the `DefaultVerifier` for validating the acr claim
 type ACRVerifier func(string) error
 
+// DefaultACRVerifier implements `ACRVerifier` returning an error
+// if none of the provided values matches the acr claim
 func DefaultACRVerifier(possibleValues []string) ACRVerifier {
 	return func(acr string) error {
 		if !slices.Contains(possibleValues, acr) {
@@ -59,8 +65,11 @@ func DefaultACRVerifier(possibleValues []string) ACRVerifier {
 	}
 }
 
+// AZPVerifier specifies the function to be used by the `DefaultVerifier` for validating the azp claim
 type AZPVerifier func(string) error
 
+// DefaultAZPVerifier implements `AZPVerifier` returning an error
+// if the azp claim is set and doesn't match the clientID.
 func DefaultAZPVerifier(clientID string) AZPVerifier {
 	return func(azp string) error {
 		if azp != "" && azp != clientID {
@@ -160,10 +169,17 @@ func (c *accessTokenClaims) SetSignatureAlgorithm(alg string)               { c.
 
 // --- DecryptToken / EncryptToken ---
 
+// DecryptToken detects whether tokenString is a JWE (5-part compact serialization)
+// or a plain JWS/signed token. If it is a JWE, decryption needs a key which must be
+// provided via context. If no key is available and the token is JWE, an error is returned.
+//
+// For OP-side decryption (access tokens), use the Crypto interface.
+// For RP-side decryption (ID tokens), pass a Decrypter via the verifier options.
 func DecryptToken(tokenString string) (string, error) {
 	return decryptToken(tokenString, nil)
 }
 
+// DecryptTokenWithKey is like DecryptToken but uses the provided key for decryption.
 func DecryptTokenWithKey(tokenString string, key []byte) (string, error) {
 	return decryptToken(tokenString, key)
 }
@@ -186,6 +202,8 @@ func decryptToken(tokenString string, key []byte) (string, error) {
 	return tokenString, nil
 }
 
+// jweDecrypt decrypts a JWE compact serialization using a symmetric key.
+// It tries AES256GCM first (standard), then SM4-GCM (GM/T mode).
 func jweDecrypt(compact string, key []byte) ([]byte, error) {
 	parts := strings.Split(compact, ".")
 	if len(parts) != 5 {
@@ -266,18 +284,26 @@ func decryptAESGCMKW(compact string, key []byte) ([]byte, error) {
 	return decrypted, nil
 }
 
+// EncryptToken wraps a signed JWT (3-part) in JWE "dir" mode using SM4-GCM.
+// This is used by the OP to optionally encrypt ID tokens before returning them.
+// For AES-GCM, use EncryptTokenA256GCM or EncryptTokenA128GCM.
 func EncryptToken(signedToken string, key []byte) (string, error) {
 	return encryptTokenDir(signedToken, key, JWEEncSM4GCM)
 }
 
+// EncryptTokenA256GCM wraps a signed JWT in JWE "dir" mode using AES-256-GCM.
 func EncryptTokenA256GCM(signedToken string, key []byte) (string, error) {
 	return encryptTokenDir(signedToken, key, JWEEncA256GCM)
 }
 
+// EncryptTokenA128GCM wraps a signed JWT in JWE "dir" mode using AES-128-GCM.
 func EncryptTokenA128GCM(signedToken string, key []byte) (string, error) {
 	return encryptTokenDir(signedToken, key, JWEEncA128GCM)
 }
 
+// EncryptTokenSM2 wraps a signed JWT in JWE using SM2 public-key encryption
+// (SGD_SM2_3 key wrapping with SGD_SM4_GCM content encryption) per GM/T 0125.3.
+// The publicKey is the recipient's SM2 public key (typically the RP's SM2 key).
 func EncryptTokenSM2(signedToken string, publicKey *ecdsa.PublicKey) (string, error) {
 	jweToken, err := crypto.SM2EncryptJWE(publicKey, []byte(signedToken))
 	if err != nil {
@@ -286,6 +312,10 @@ func EncryptTokenSM2(signedToken string, publicKey *ecdsa.PublicKey) (string, er
 	return string(jweToken), nil
 }
 
+// EncryptTokenSM9 wraps a signed JWT in JWE using SM9 identity-based encryption
+// (SGD_SM9_3 key wrapping with SGD_SM4_GCM content encryption) per GM/T 0125.3.
+// masterPubKey is the SM9 master public key of the recipient. uid is the
+// recipient's identity (used for encryption, can be nil).
 func EncryptTokenSM9(signedToken string, masterPubKey *sm9.EncryptMasterPublicKey, uid []byte) (string, error) {
 	jweToken, err := crypto.SM9EncryptJWE(masterPubKey, uid, crypto.SGD_SM4_GCM, []byte(signedToken))
 	if err != nil {
@@ -294,6 +324,11 @@ func EncryptTokenSM9(signedToken string, masterPubKey *sm9.EncryptMasterPublicKe
 	return string(jweToken), nil
 }
 
+// encryptTokenDir performs direct symmetric encryption (alg=dir) of a payload.
+// It uses the specified content encryption algorithm (enc) to encrypt the payload.
+//
+// TODO: When adding new ciphers, a registry-based dispatch (map[enc]encryptFunc)
+// would eliminate the need to modify the switch statement.
 func encryptTokenDir(payload string, key []byte, enc string) (string, error) {
 	header := map[string]string{"alg": "dir", "enc": enc}
 	headerJSON, err := json.Marshal(header)
@@ -364,13 +399,24 @@ func CheckAudience(claims Claims, clientID string) error {
 	if !slices.Contains(claims.GetAudience(), clientID) {
 		return fmt.Errorf("%w: Audience must contain client_id %q", ErrAudience, clientID)
 	}
+	// TODO: check aud trusted
 	return nil
 }
 
+// CheckAuthorizedParty checks azp (authorized party) claim requirements.
+//
+// If the ID Token contains multiple audiences, the Client SHOULD verify that an azp Claim is present.
+// If an azp Claim is present, the Client MAY verify that its client_id is the Claim Value.
+// https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation
 func CheckAuthorizedParty(claims Claims, clientID string) error {
 	return CheckAZPVerifier(claims, DefaultAZPVerifier(clientID))
 }
 
+// CheckAZPVerifier checks azp (authorized party) claim requirements.
+//
+// If the ID Token contains multiple audiences, the Client SHOULD verify that an azp Claim is present.
+// If an azp Claim is present, the Client MAY verify that its client_id is the Claim Value.
+// https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation
 func CheckAZPVerifier(claims Claims, azp AZPVerifier) error {
 	if len(claims.GetAudience()) > 1 {
 		if claims.GetAuthorizedParty() == "" {

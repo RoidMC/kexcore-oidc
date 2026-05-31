@@ -29,7 +29,7 @@ func Test_verifyTokenResponse(t *testing.T) {
 		KeySet:            tu.KeySet{},
 		MaxAge:            2 * time.Minute,
 		ACR:               tu.ACRVerify,
-		AZP:               oidc.DefaultAZPVerifier(tu.ValidClientID),
+		AZP:               protocol.DefaultAZPVerifier(tu.ValidClientID),
 		Nonce:             func(context.Context) string { return tu.ValidNonce },
 	}
 	tests := []struct {
@@ -78,7 +78,7 @@ func Test_verifyTokenResponse(t *testing.T) {
 				})
 				return token, nil
 			},
-			wantErr: oidc.ErrParse,
+			wantErr: protocol.ErrParse,
 		},
 		{
 			name:       "success, with id_token",
