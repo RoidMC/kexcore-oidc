@@ -5,23 +5,23 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc/grants/tokenexchange"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
-// TokenExchangeRP extends the `RelyingParty` interface for the *draft* oauth2 `Token Exchange`
+// TokenExchangeRP extends the `RelyingParty` interface for OAuth 2.0 Token Exchange (RFC 8693).
 type TokenExchangeRP interface {
 	RelyingParty
 
-	// TokenExchange implement the `Token Exchange Grant` exchanging some token for an other
-	TokenExchange(context.Context, *tokenexchange.TokenExchangeRequest) (*oauth2.Token, error)
+	// TokenExchange implements the Token Exchange Grant, exchanging one token for another.
+	TokenExchange(context.Context, *protocol.TokenExchangeRequest) (*oauth2.Token, error)
 }
 
 // DelegationTokenExchangeRP extends the `TokenExchangeRP` interface
-// for the specific `delegation token` request
+// for the specific delegation token request.
 type DelegationTokenExchangeRP interface {
 	TokenExchangeRP
 
-	// DelegationTokenExchange implement the `Token Exchange Grant`
-	// providing an access token in request for a `delegation` token for a given resource / audience
-	DelegationTokenExchange(context.Context, string, ...tokenexchange.TokenExchangeOption) (*oauth2.Token, error)
+	// DelegationTokenExchange implements the Token Exchange Grant,
+	// providing an access token in request for a delegation token for a given resource/audience.
+	DelegationTokenExchange(context.Context, *protocol.TokenExchangeRequest) (*oauth2.Token, error)
 }
