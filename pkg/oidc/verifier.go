@@ -23,6 +23,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // Supported JWE key management algorithms (alg).
@@ -100,7 +101,7 @@ type Verifier struct {
 	MaxAge            time.Duration
 	ACR               ACRVerifier
 	AZP               AZPVerifier
-	KeySet            KeySet
+	KeySet            protocol.KeySet
 	Nonce             func(ctx context.Context) string
 	DecryptionKey     []byte
 }
@@ -412,7 +413,7 @@ func CheckAZPVerifier(claims Claims, azp AZPVerifier) error {
 	return nil
 }
 
-func CheckSignature(ctx context.Context, token string, payload []byte, claims ClaimsSignature, supportedSigAlgs []string, set KeySet) error {
+func CheckSignature(ctx context.Context, token string, payload []byte, claims ClaimsSignature, supportedSigAlgs []string, set protocol.KeySet) error {
 	jwsMsg, err := jws.Parse([]byte(token))
 	if err != nil {
 		return ErrParse

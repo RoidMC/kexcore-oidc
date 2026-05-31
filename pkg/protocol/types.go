@@ -161,6 +161,49 @@ func (b *Bool) UnmarshalJSON(data []byte) error {
 }
 
 // ---------------------------------------------------------------------------
+// OIDC Core §2 — Authentication Methods References (AMR)
+// ---------------------------------------------------------------------------
+
+type AuthenticationMethodsReferences []string
+
+func (a *AuthenticationMethodsReferences) UnmarshalJSON(data []byte) error {
+	var dst any
+	if err := json.Unmarshal(data, &dst); err != nil {
+		return fmt.Errorf("protocol.AMR: %w", err)
+	}
+
+	switch v := dst.(type) {
+	case nil:
+		*a = nil
+	case string:
+		*a = AuthenticationMethodsReferences{v}
+	case []any:
+		refs := make([]string, 0, len(v))
+		for _, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return fmt.Errorf("protocol.AMR: unsupported array element type: %T", item)
+			}
+			refs = append(refs, s)
+		}
+		*a = AuthenticationMethodsReferences(refs)
+	default:
+		return fmt.Errorf("protocol.AMR: unsupported type: %T", v)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// OIDC Core §2 — Max Age
+// ---------------------------------------------------------------------------
+
+type MaxAge *uint
+
+func NewMaxAge(i uint) MaxAge {
+	return &i
+}
+
+// ---------------------------------------------------------------------------
 // OIDC Core §3.1.2.1 — Authorization Request Parameters
 // ---------------------------------------------------------------------------
 

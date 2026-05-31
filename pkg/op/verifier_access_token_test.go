@@ -7,6 +7,8 @@ import (
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+		
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +16,7 @@ import (
 func TestNewAccessTokenVerifier(t *testing.T) {
 	type args struct {
 		issuer string
-		keySet oidc.KeySet
+		keySet protocol.KeySet
 		opts   []AccessTokenVerifierOpt
 	}
 	tests := []struct {

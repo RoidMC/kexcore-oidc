@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type AccessTokenVerifier oidc.Verifier
@@ -17,7 +18,7 @@ func WithSupportedAccessTokenSigningAlgorithms(algs ...string) AccessTokenVerifi
 }
 
 // NewAccessTokenVerifier returns a AccessTokenVerifier suitable for access token verification.
-func NewAccessTokenVerifier(issuer string, keySet oidc.KeySet, opts ...AccessTokenVerifierOpt) *AccessTokenVerifier {
+func NewAccessTokenVerifier(issuer string, keySet protocol.KeySet, opts ...AccessTokenVerifierOpt) *AccessTokenVerifier {
 	verifier := &AccessTokenVerifier{
 		Issuer: issuer,
 		KeySet: keySet,

@@ -28,7 +28,7 @@ import (
 type JWTProfileVerifier struct {
 	oidc.Verifier
 	Storage      JWTProfileKeyStorage
-	keySet       oidc.KeySet
+	keySet       protocol.KeySet
 	CheckSubject func(request *protocol.JWTTokenRequest) error
 }
 
@@ -38,11 +38,11 @@ func NewJWTProfileVerifier(storage JWTProfileKeyStorage, issuer string, maxAgeIA
 }
 
 // NewJWTProfileVerifierKeySet creates an oidc.Verifier for JWT Profile assertions (authorization grant and client authentication)
-func NewJWTProfileVerifierKeySet(keySet oidc.KeySet, issuer string, maxAgeIAT, offset time.Duration, opts ...JWTProfileVerifierOption) *JWTProfileVerifier {
+func NewJWTProfileVerifierKeySet(keySet protocol.KeySet, issuer string, maxAgeIAT, offset time.Duration, opts ...JWTProfileVerifierOption) *JWTProfileVerifier {
 	return newJWTProfileVerifier(nil, keySet, issuer, maxAgeIAT, offset, opts...)
 }
 
-func newJWTProfileVerifier(storage JWTProfileKeyStorage, keySet oidc.KeySet, issuer string, maxAgeIAT, offset time.Duration, opts ...JWTProfileVerifierOption) *JWTProfileVerifier {
+func newJWTProfileVerifier(storage JWTProfileKeyStorage, keySet protocol.KeySet, issuer string, maxAgeIAT, offset time.Duration, opts ...JWTProfileVerifierOption) *JWTProfileVerifier {
 	j := &JWTProfileVerifier{
 		Verifier: oidc.Verifier{
 			Issuer:    issuer,
@@ -191,7 +191,7 @@ func (k *jwtProfileKeySet) VerifySignature(ctx context.Context, rawToken []byte)
 		return nil, fmt.Errorf("error parsing token: %w", err)
 	}
 
-	keyID, _ := oidc.GetKeyIDAndAlg(jwsMsg)
+	keyID, _ := protocol.GetKeyIDAndAlg(jwsMsg)
 	key, err := k.storage.GetKeyByIDAndClientID(ctx, keyID, k.clientID)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching keys: %w", err)

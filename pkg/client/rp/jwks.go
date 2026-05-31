@@ -20,10 +20,10 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
-func NewRemoteKeySet(httpClient *http.Client, jwksURL string, opts ...func(*remoteKeySet)) oidc.KeySet {
+func NewRemoteKeySet(httpClient *http.Client, jwksURL string, opts ...func(*remoteKeySet)) protocol.KeySet {
 	keyset := &remoteKeySet{httpClient: httpClient, jwksURL: jwksURL}
 	for _, opt := range opts {
 		opt(keyset)
@@ -105,7 +105,7 @@ func (r *remoteKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]
 		return nil, fmt.Errorf("oidc: error parsing JWS: %w", err)
 	}
 
-	keyID, alg := oidc.GetKeyIDAndAlg(jwsMsg)
+	keyID, alg := protocol.GetKeyIDAndAlg(jwsMsg)
 	if alg == "" {
 		alg = r.defaultAlg
 	}
@@ -165,7 +165,7 @@ func (r *remoteKeySet) verifySignatureCached(rawToken []byte, jwsMsg *jws.Messag
 		jwkKeys = append(jwkKeys, key)
 	}
 
-	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, jwkKeys...)
+	key, err := protocol.FindMatchingKey(keyID, protocol.KeyUseSignature, alg, jwkKeys...)
 	if err != nil {
 		return nil, nil
 	}
@@ -219,7 +219,7 @@ func (r *remoteKeySet) verifySignatureRemote(ctx context.Context, rawToken []byt
 		jwkKeys = append(jwkKeys, key)
 	}
 
-	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, jwkKeys...)
+	key, err := protocol.FindMatchingKey(keyID, protocol.KeyUseSignature, alg, jwkKeys...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to validate signature: %w", err)
 	}

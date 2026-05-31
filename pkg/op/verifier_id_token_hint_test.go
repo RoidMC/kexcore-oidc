@@ -17,7 +17,7 @@ import (
 func TestNewIDTokenHintVerifier(t *testing.T) {
 	type args struct {
 		issuer string
-		keySet oidc.KeySet
+		keySet protocol.KeySet
 		opts   []IDTokenHintVerifierOpt
 	}
 	tests := []struct {

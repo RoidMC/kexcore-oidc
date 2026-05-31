@@ -12,6 +12,8 @@ import (
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+		
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -320,7 +322,7 @@ func TestNewIDTokenVerifier(t *testing.T) {
 	type args struct {
 		issuer   string
 		clientID string
-		keySet   oidc.KeySet
+		keySet   protocol.KeySet
 		options  []VerifierOption
 	}
 	tests := []struct {

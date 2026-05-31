@@ -9,11 +9,13 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jws"
 )
 
+// KeyStore provides access to a set of JSON Web Keys and the signature algorithms they support.
 type KeyStore interface {
 	KeySet(ctx context.Context) ([]Key, error)
 	SignatureAlgorithms(ctx context.Context) ([]string, error)
 }
 
+// Key represents a single JSON Web Key with metadata.
 type Key interface {
 	ID() string
 	Algorithm() string
@@ -21,18 +23,26 @@ type Key interface {
 	Key() jwk.Key
 }
 
+// SigningKey represents a key used for signing operations.
 type SigningKey interface {
 	ID() string
 	Algorithm() string
 	Key() jwk.Key
 }
 
+// KeyUseSignature is the JWK "use" value that indicates a key is intended for digital signatures.
 const KeyUseSignature = "sig"
 
+// KeySet represents a set of JSON Web Keys
+//   - remotely fetch via discovery and jwks_uri -> `remoteKeySet`
+//   - held by the OP itself in storage -> `openIDKeySet`
+//   - dynamically aggregated by request for OAuth JWT Profile Assertion -> `jwtProfileKeySet`
 type KeySet interface {
+	// VerifySignature verifies the signature with the given keyset and returns the raw payload
 	VerifySignature(ctx context.Context, rawToken []byte) (payload []byte, err error)
 }
 
+// GetKeyIDAndAlg returns the `kid` and `alg` claim from the JWS header.
 func GetKeyIDAndAlg(jwsMsg *jws.Message) (string, string) {
 	keyID := ""
 	alg := ""
@@ -45,6 +55,11 @@ func GetKeyIDAndAlg(jwsMsg *jws.Message) (string, string) {
 	return keyID, alg
 }
 
+// FindMatchingKey searches the given JSON Web Keys for the requested key ID, usage and alg type.
+//
+// It returns the key immediately on an exact (id, usage, type) match.
+//
+// It returns a specific error if none (ErrKeyNone) or multiple (ErrKeyMultiple) match.
 func FindMatchingKey(keyID, use, expectedAlg string, keys ...jwk.Key) (key jwk.Key, err error) {
 	var validKeys []jwk.Key
 	for _, k := range keys {

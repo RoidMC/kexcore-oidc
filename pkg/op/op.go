@@ -305,8 +305,8 @@ type Provider struct {
 	insecure                bool
 	endpoints               *Endpoints
 	storage                 Storage
-	accessTokenKeySet       oidc.KeySet
-	idTokenHinKeySet        oidc.KeySet
+	accessTokenKeySet       protocol.KeySet
+	idTokenHinKeySet        protocol.KeySet
 	crypto                  Crypto
 	decoder                 *schema.Decoder
 	encoder                 httphelper.Encoder
@@ -534,7 +534,7 @@ func (o *OpenIDKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]
 		return nil, fmt.Errorf("error parsing token: %w", err)
 	}
 
-	keyID, alg := oidc.GetKeyIDAndAlg(jwsMsg)
+	keyID, alg := protocol.GetKeyIDAndAlg(jwsMsg)
 
 	// SM9 keys cannot be imported into jwx (identity-based cryptography).
 	// Find the matching key directly from the storage keySet.
@@ -563,7 +563,7 @@ func (o *OpenIDKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]
 		jwkKeys = append(jwkKeys, jk)
 	}
 
-	key, err := oidc.FindMatchingKey(keyID, oidc.KeyUseSignature, alg, jwkKeys...)
+	key, err := protocol.FindMatchingKey(keyID, protocol.KeyUseSignature, alg, jwkKeys...)
 	if err != nil {
 		return nil, fmt.Errorf("invalid signature: %w", err)
 	}
@@ -791,7 +791,7 @@ func WithHttpInterceptors(interceptors ...HttpInterceptor) Option {
 
 // WithAccessTokenKeySet allows passing a KeySet with public keys for Access Token verification.
 // The default KeySet uses the [Storage] interface
-func WithAccessTokenKeySet(keySet oidc.KeySet) Option {
+func WithAccessTokenKeySet(keySet protocol.KeySet) Option {
 	return func(o *Provider) error {
 		o.accessTokenKeySet = keySet
 		return nil
@@ -807,7 +807,7 @@ func WithAccessTokenVerifierOpts(opts ...AccessTokenVerifierOpt) Option {
 
 // WithIDTokenHintKeySet allows passing a KeySet with public keys for ID Token Hint verification.
 // The default KeySet uses the [Storage] interface.
-func WithIDTokenHintKeySet(keySet oidc.KeySet) Option {
+func WithIDTokenHintKeySet(keySet protocol.KeySet) Option {
 	return func(o *Provider) error {
 		o.idTokenHinKeySet = keySet
 		return nil

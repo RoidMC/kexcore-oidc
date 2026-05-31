@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ['1.26.3']
+        go: ['1.26.3', 'latest']
     name: Go ${{ matrix.go }} test
     steps:
       - uses: actions/checkout@v6

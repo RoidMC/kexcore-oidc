@@ -11,6 +11,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // VerifyTokens implement the Token Response Validation as defined in OIDC specification
@@ -121,7 +122,7 @@ func VerifyAccessToken(accessToken, atHash string, sigAlgorithm string) error {
 }
 
 // NewIDTokenVerifier returns a oidc.Verifier suitable for ID token verification.
-func NewIDTokenVerifier(issuer, clientID string, keySet oidc.KeySet, options ...VerifierOption) *IDTokenVerifier {
+func NewIDTokenVerifier(issuer, clientID string, keySet protocol.KeySet, options ...VerifierOption) *IDTokenVerifier {
 	v := &IDTokenVerifier{
 		Issuer:   issuer,
 		ClientID: clientID,

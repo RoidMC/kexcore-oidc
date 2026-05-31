@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type IDTokenHintVerifier oidc.Verifier
@@ -17,7 +18,7 @@ func WithSupportedIDTokenHintSigningAlgorithms(algs ...string) IDTokenHintVerifi
 	}
 }
 
-func NewIDTokenHintVerifier(issuer string, keySet oidc.KeySet, opts ...IDTokenHintVerifierOpt) *IDTokenHintVerifier {
+func NewIDTokenHintVerifier(issuer string, keySet protocol.KeySet, opts ...IDTokenHintVerifierOpt) *IDTokenHintVerifier {
 	verifier := &IDTokenHintVerifier{
 		Issuer: issuer,
 		KeySet: keySet,

@@ -6,52 +6,19 @@
 package oidc
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 	"time"
 
-	"github.com/muhlemmer/gu"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type Audience = protocol.Audience
 
-type AuthenticationMethodsReferences []string
+type AuthenticationMethodsReferences = protocol.AuthenticationMethodsReferences
 
-func (a *AuthenticationMethodsReferences) UnmarshalJSON(data []byte) error {
-	var dst any
-	if err := json.Unmarshal(data, &dst); err != nil {
-		return fmt.Errorf("oidc amr: %w", err)
-	}
-
-	switch v := dst.(type) {
-	case nil:
-		*a = nil
-	case string:
-		*a = AuthenticationMethodsReferences{v}
-	case []any:
-		refs, err := gu.AssertInterfaces[string](v)
-		if err != nil {
-			return fmt.Errorf("oidc amr: %w", err)
-		}
-		*a = AuthenticationMethodsReferences(refs)
-	default:
-		return fmt.Errorf("oidc amr: unsupported type: %T", v)
-	}
-	return nil
-}
-
-type Display string
-
-func (d *Display) UnmarshalText(text []byte) error {
-	switch Display(text) {
-	case Display(protocol.DisplayPage), Display(protocol.DisplayPopup), Display(protocol.DisplayTouch), Display(protocol.DisplayWAP):
-		*d = Display(text)
-	}
-	return nil
-}
+type Display = protocol.Display
 
 type GrantType = protocol.GrantType
 
@@ -84,19 +51,17 @@ type Locales = protocol.Locales
 
 var ParseLocales = protocol.ParseLocales
 
-type MaxAge *uint
+type MaxAge = protocol.MaxAge
 
-func NewMaxAge(i uint) MaxAge {
-	return &i
-}
+var NewMaxAge = protocol.NewMaxAge
 
 type SpaceDelimitedArray = protocol.SpaceDelimitedArray
 
 type Prompt = protocol.SpaceDelimitedArray
 
-type ResponseType string
+type ResponseType = protocol.ResponseType
 
-type ResponseMode string
+type ResponseMode = protocol.ResponseMode
 
 // NewEncoder returns an Encoder that knows how to encode
 // SpaceDelimitedArray and Locales values into url.Values.

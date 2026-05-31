@@ -14,6 +14,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // BackChannelLogoutHandler is an HTTP handler that receives and validates
@@ -40,7 +41,7 @@ type LogoutTokenVerifier struct {
 	ClientID string
 
 	// KeySet is the OP's public key set for signature verification.
-	KeySet oidc.KeySet
+	KeySet protocol.KeySet
 
 	// SupportedSignAlgs are the accepted signature algorithms.
 	SupportedSignAlgs []string
