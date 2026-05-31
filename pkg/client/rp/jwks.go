@@ -285,20 +285,17 @@ func (r *remoteKeySet) updateKeys(ctx context.Context) {
 	// Sync keys and finish inflight when that's done.
 	keys, gmKeys, err := r.fetchRemoteKeys(ctx)
 
-	r.inflight.done(keys, gmKeys, err)
-
-	// Lock to update the keys and indicate that there is no longer an
-	// inflight request.
+	// Lock to update cached keys, notify waiters, and free inflight atomically.
+	// This prevents a race where a new goroutine enters keysFromRemote between
+	// inflight.done() and inflight = nil, causing a duplicate fetch.
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if err == nil {
 		r.cachedKeys = keys
 		r.cachedGMKeys = gmKeys
 	}
-
-	// Free inflight so a different request can run.
+	r.inflight.done(keys, gmKeys, err)
 	r.inflight = nil
+	r.mu.Unlock()
 }
 
 func (r *remoteKeySet) fetchRemoteKeys(ctx context.Context) (jwk.Set, []crypto.JWKSKey, error) {
