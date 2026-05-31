@@ -11,8 +11,17 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
+
+// Tokens represents an OAuth2 token response that includes OIDC claims.
+type Tokens[C IDClaims] struct {
+	*oauth2.Token
+	IDTokenClaims C
+	IDToken       string
+}
 
 type Audience = protocol.Audience
 
@@ -62,6 +71,49 @@ type Prompt = protocol.SpaceDelimitedArray
 type ResponseType = protocol.ResponseType
 
 type ResponseMode = protocol.ResponseMode
+
+type ActorClaims = protocol.ActorClaims
+
+type AccessTokenResponse = protocol.AccessTokenResponse
+
+type TokenExchangeResponse = protocol.TokenExchangeResponse
+
+type LogoutTokenClaims = protocol.LogoutTokenClaims
+
+type JWTProfileAssertionClaims = protocol.JWTProfileAssertionClaims
+
+type AssertionOption = protocol.AssertionOption
+
+const (
+	BearerToken               = protocol.BearerToken
+	PrefixBearer              = protocol.PrefixBearer
+	BackChannelLogoutEventKey = protocol.BackChannelLogoutEventKey
+)
+
+var (
+	AppendClientIDToAudience                 = protocol.AppendClientIDToAudience
+	ClaimHash                                = protocol.ClaimHash
+	GenerateJWTProfileToken                  = protocol.GenerateJWTProfileToken
+	NewJWTProfileAssertion                   = protocol.NewJWTProfileAssertion
+	NewJWTProfileAssertionFromFileData       = protocol.NewJWTProfileAssertionFromFileData
+	NewJWTProfileAssertionStringFromFileData = protocol.NewJWTProfileAssertionStringFromFileData
+	NewLogoutTokenClaims                     = protocol.NewLogoutTokenClaims
+	JWTProfileDelegatedSubject               = protocol.JWTProfileDelegatedSubject
+	JWTProfileCustomClaim                    = protocol.JWTProfileCustomClaim
+)
+
+type TokenClaims = protocol.TokenClaims
+
+type AccessTokenClaims = protocol.AccessTokenClaims
+
+type IDTokenClaims = protocol.IDTokenClaims
+
+var (
+	NewAccessTokenClaims = protocol.NewAccessTokenClaims
+	NewIDTokenClaims     = protocol.NewIDTokenClaims
+)
+
+var NewJWTProfileAssertionFromKeyJSON = protocol.NewJWTProfileAssertionFromKeyJSON
 
 // NewEncoder returns an Encoder that knows how to encode
 // SpaceDelimitedArray and Locales values into url.Values.

@@ -12,7 +12,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -28,7 +28,7 @@ func (testClientJWTProfile) JWTProfileVerifier(context.Context) *op.JWTProfileVe
 func TestClientJWTAuth(t *testing.T) {
 	type args struct {
 		ctx      context.Context
-		ca       oidc.ClientAssertionParams
+		ca       protocol.ClientAssertionParams
 		verifier op.ClientJWTProfile
 	}
 	tests := []struct {
@@ -41,7 +41,7 @@ func TestClientJWTAuth(t *testing.T) {
 			name: "empty assertion",
 			args: args{
 				context.Background(),
-				oidc.ClientAssertionParams{},
+				protocol.ClientAssertionParams{},
 				testClientJWTProfile{},
 			},
 			wantErr: op.ErrNoClientCredentials,
@@ -50,7 +50,7 @@ func TestClientJWTAuth(t *testing.T) {
 			name: "verification error",
 			args: args{
 				context.Background(),
-				oidc.ClientAssertionParams{
+				protocol.ClientAssertionParams{
 					ClientAssertion: "foo",
 				},
 				testClientJWTProfile{},

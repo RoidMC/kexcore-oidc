@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -412,7 +411,7 @@ func (s *LegacyServer) authenticateResourceClient(ctx context.Context, cc *Clien
 
 	if cc.ClientAssertion != "" {
 		if jp, ok := s.provider.(ClientJWTProfile); ok {
-			return ClientJWTAuth(ctx, oidc.ClientAssertionParams{ClientAssertion: cc.ClientAssertion}, jp)
+			return ClientJWTAuth(ctx, protocol.ClientAssertionParams{ClientAssertion: cc.ClientAssertion}, jp)
 		}
 		return "", protocol.ErrInvalidClient().WithDescription("client_assertion not supported")
 	}
@@ -430,7 +429,7 @@ func (s *LegacyServer) Introspect(ctx context.Context, r *Request[IntrospectionR
 	if err != nil {
 		return nil, err
 	}
-	response := new(oidc.IntrospectionResponse)
+	response := new(protocol.IntrospectionResponse)
 	tokenID, subject, ok := getTokenIDAndSubject(ctx, s.provider, r.Data.Token)
 	if !ok {
 		return NewResponse(response), nil

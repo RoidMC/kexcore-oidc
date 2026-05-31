@@ -11,7 +11,6 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	jwk "github.com/lestrrat-go/jwx/v4/jwk"
-	oidc "github.com/roidmc/kexcore-oidc/pkg/oidc"
 	op "github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -264,7 +263,7 @@ func (mr *MockStorageMockRecorder) SaveAuthCode(arg0, arg1, arg2 interface{}) *g
 }
 
 // SetIntrospectionFromToken mocks base method.
-func (m *MockStorage) SetIntrospectionFromToken(arg0 context.Context, arg1 *oidc.IntrospectionResponse, arg2, arg3, arg4 string) error {
+func (m *MockStorage) SetIntrospectionFromToken(arg0 context.Context, arg1 *protocol.IntrospectionResponse, arg2, arg3, arg4 string) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetIntrospectionFromToken", arg0, arg1, arg2, arg3, arg4)
 	ret0, _ := ret[0].(error)

@@ -1,12 +1,12 @@
 {
-	"iss": "zitadel",
-	"sub": "hello@me.com",
+	"iss": "kexcore",
+	"sub": "kexcore@example.com",
 	"aud": [
 		"foo",
 		"bar"
 	],
 	"jti": "900",
-	"azp": "just@me.com",
+	"azp": "bob@example.com",
 	"nonce": "6969",
 	"acr": "something",
 	"amr": [

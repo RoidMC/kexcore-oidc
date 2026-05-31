@@ -13,7 +13,6 @@ import (
 	"time"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -139,7 +138,7 @@ type ClientJWTProfile interface {
 	JWTProfileVerifier(context.Context) *JWTProfileVerifier
 }
 
-func ClientJWTAuth(ctx context.Context, ca oidc.ClientAssertionParams, verifier ClientJWTProfile) (clientID string, err error) {
+func ClientJWTAuth(ctx context.Context, ca protocol.ClientAssertionParams, verifier ClientJWTProfile) (clientID string, err error) {
 	ctx, span := Tracer.Start(ctx, "ClientJWTAuth")
 	defer span.End()
 
@@ -184,7 +183,7 @@ type ClientProvider interface {
 
 type clientData struct {
 	ClientID string `schema:"client_id"`
-	oidc.ClientAssertionParams
+	protocol.ClientAssertionParams
 }
 
 // ClientIDFromRequest parses the request form and tries to obtain the client ID

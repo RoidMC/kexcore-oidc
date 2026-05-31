@@ -15,6 +15,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rs"
 	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
@@ -48,7 +49,7 @@ func main() {
 		if !ok {
 			return
 		}
-		resp, err := rs.Introspect[*oidc.IntrospectionResponse](r.Context(), provider, token)
+		resp, err := rs.Introspect[*protocol.IntrospectionResponse](r.Context(), provider, token)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
@@ -69,7 +70,7 @@ func main() {
 		if !ok {
 			return
 		}
-		resp, err := rs.Introspect[*oidc.IntrospectionResponse](r.Context(), provider, token)
+		resp, err := rs.Introspect[*protocol.IntrospectionResponse](r.Context(), provider, token)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return

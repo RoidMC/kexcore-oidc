@@ -394,7 +394,7 @@ func (s *Storage) createRefreshToken(_ context.Context, accessTokenID string, re
 // storm.IntrospectStore
 // =================================================================
 
-func (s *Storage) SetIntrospectionFromToken(_ context.Context, resp *oidc.IntrospectionResponse, tokenID, subject, clientID string) error {
+func (s *Storage) SetIntrospectionFromToken(_ context.Context, resp *protocol.IntrospectionResponse, tokenID, subject, clientID string) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 

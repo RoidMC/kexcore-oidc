@@ -7,7 +7,6 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"golang.org/x/text/language"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
@@ -163,7 +162,7 @@ type RefreshTokenRequest interface {
 
 // IntrospectStore is required by the Introspection plugin.
 type IntrospectStore interface {
-	SetIntrospectionFromToken(ctx context.Context, resp *oidc.IntrospectionResponse, tokenID, subject, clientID string) error
+	SetIntrospectionFromToken(ctx context.Context, resp *protocol.IntrospectionResponse, tokenID, subject, clientID string) error
 }
 
 // UserinfoStore is required by the UserInfo plugin.

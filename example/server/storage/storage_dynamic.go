@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -223,7 +223,7 @@ func (s *multiStorage) SetUserinfoFromToken(ctx context.Context, userinfo *proto
 
 // SetIntrospectionFromToken implements the op.Storage interface
 // it will be called for the introspection endpoint, so we read the token and pass the information from that to the private function
-func (s *multiStorage) SetIntrospectionFromToken(ctx context.Context, introspection *oidc.IntrospectionResponse, tokenID, subject, clientID string) error {
+func (s *multiStorage) SetIntrospectionFromToken(ctx context.Context, introspection *protocol.IntrospectionResponse, tokenID, subject, clientID string) error {
 	storage, err := s.storageFromContext(ctx)
 	if err != nil {
 		return err

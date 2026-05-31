@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -33,7 +32,7 @@ func Introspect(w http.ResponseWriter, r *http.Request, introspector Introspecto
 	defer span.End()
 	r = r.WithContext(ctx)
 
-	response := new(oidc.IntrospectionResponse)
+	response := new(protocol.IntrospectionResponse)
 	token, clientID, err := ParseTokenIntrospectionRequest(r, introspector)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -62,7 +61,7 @@ func ParseTokenIntrospectionRequest(r *http.Request, introspector Introspector) 
 		return "", "", protocol.ErrInvalidClient().WithParent(ErrNoClientCredentials)
 	}
 
-	req := new(oidc.IntrospectionRequest)
+	req := new(protocol.IntrospectionRequest)
 	err = introspector.Decoder().Decode(req, r.Form)
 	if err != nil {
 		return "", "", errors.New("unable to parse request")
@@ -73,5 +72,5 @@ func ParseTokenIntrospectionRequest(r *http.Request, introspector Introspector) 
 
 type IntrospectionRequest struct {
 	*ClientCredentials
-	*oidc.IntrospectionRequest
+	*protocol.IntrospectionRequest
 }

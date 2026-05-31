@@ -15,7 +15,6 @@ import (
 	"github.com/muhlemmer/gu"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/logctx"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/rs/cors"
 	"github.com/zitadel/schema"
@@ -435,7 +434,7 @@ func (s *webServer) introspectionHandler(w http.ResponseWriter, r *http.Request)
 		WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client must be authenticated"), s.getLogger(r.Context()))
 		return
 	}
-	request, err := decodeRequest[oidc.IntrospectionRequest](s.decoder, r, false)
+	request, err := decodeRequest[protocol.IntrospectionRequest](s.decoder, r, false)
 	if err != nil {
 		WriteError(w, r, err, s.getLogger(r.Context()))
 		return

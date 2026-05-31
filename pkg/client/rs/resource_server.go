@@ -8,7 +8,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type ResourceServer interface {
@@ -133,7 +133,7 @@ func Introspect[R any](ctx context.Context, rp ResourceServer, token string) (re
 	if err != nil {
 		return resp, err
 	}
-	req, err := httphelper.FormRequest(ctx, rp.IntrospectionURL(), &oidc.IntrospectionRequest{Token: token}, client.Encoder, authFn)
+	req, err := httphelper.FormRequest(ctx, rp.IntrospectionURL(), &protocol.IntrospectionRequest{Token: token}, client.Encoder, authFn)
 	if err != nil {
 		return resp, err
 	}

@@ -6,6 +6,6 @@
 	"exp": 12345,
 	"foo": "bar",
 	"iat": 12000,
-	"iss": "zitadel",
-	"sub": "hello@me.com"
+	"iss": "kexcore",
+	"sub": "kexcore@example.com"
 }

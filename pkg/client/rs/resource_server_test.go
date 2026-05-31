@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -210,7 +210,7 @@ func TestIntrospect(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Introspect[*oidc.IntrospectionResponse](tt.args.ctx, tt.args.rp, tt.args.token)
+			_, err := Introspect[*protocol.IntrospectionResponse](tt.args.ctx, tt.args.rp, tt.args.token)
 			if tt.wantErr {
 				assert.Error(t, err)
 				return

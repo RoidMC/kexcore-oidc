@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -109,11 +108,11 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	tokenID, subject, ok := resolveToken(r.Context(), p.crypto, p.keyStore, shared.IssuerFromContext(r.Context()), token)
 	if !ok {
 		// Return inactive token response per RFC 7662 §2.2
-		shared.JSONResponse(w, &oidc.IntrospectionResponse{Active: false}, http.StatusOK)
+		shared.JSONResponse(w, &protocol.IntrospectionResponse{Active: false}, http.StatusOK)
 		return
 	}
 
-	resp := &oidc.IntrospectionResponse{Active: true}
+	resp := &protocol.IntrospectionResponse{Active: true}
 	if err := p.store.SetIntrospectionFromToken(r.Context(), resp, tokenID, subject, clientID); err != nil {
 		shared.WriteError(w, r, err, nil)
 		return

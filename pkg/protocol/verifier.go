@@ -158,38 +158,6 @@ func (c *accessTokenClaims) GetAuthTime() time.Time                         { re
 func (c *accessTokenClaims) GetAuthorizedParty() string                     { return c.AZP }
 func (c *accessTokenClaims) SetSignatureAlgorithm(alg string)               { c.SigAlg = alg }
 
-type IDTokenClaims struct {
-	Issuer          string   `json:"iss,omitempty"`
-	Subject         string   `json:"sub,omitempty"`
-	Audience        audience `json:"aud,omitempty"`
-	Expiration      int64    `json:"exp,omitempty"`
-	IssuedAt        int64    `json:"iat,omitempty"`
-	AuthTime        int64    `json:"auth_time,omitempty"`
-	NotBefore       int64    `json:"nbf,omitempty"`
-	Nonce           string   `json:"nonce,omitempty"`
-	AZP             string   `json:"azp,omitempty"`
-	ACR             string   `json:"acr,omitempty"`
-	AMR             amr      `json:"amr,omitempty"`
-	ClientID        string   `json:"client_id,omitempty"`
-	AccessTokenHash string   `json:"at_hash,omitempty"`
-	CodeHash        string   `json:"c_hash,omitempty"`
-	SessionID       string   `json:"sid,omitempty"`
-	SigAlg          string   `json:"-"`
-}
-
-func (c *IDTokenClaims) GetIssuer() string                              { return c.Issuer }
-func (c *IDTokenClaims) GetSubject() string                             { return c.Subject }
-func (c *IDTokenClaims) GetAudience() []string                          { return []string(c.Audience) }
-func (c *IDTokenClaims) GetExpiration() time.Time                       { return time.Unix(c.Expiration, 0) }
-func (c *IDTokenClaims) GetIssuedAt() time.Time                         { return time.Unix(c.IssuedAt, 0) }
-func (c *IDTokenClaims) GetNonce() string                               { return c.Nonce }
-func (c *IDTokenClaims) GetAuthenticationContextClassReference() string { return c.ACR }
-func (c *IDTokenClaims) GetAuthTime() time.Time                         { return time.Unix(c.AuthTime, 0) }
-func (c *IDTokenClaims) GetAuthorizedParty() string                     { return c.AZP }
-func (c *IDTokenClaims) SetSignatureAlgorithm(alg string)               { c.SigAlg = alg }
-func (c *IDTokenClaims) GetSignatureAlgorithm() string                  { return c.SigAlg }
-func (c *IDTokenClaims) GetAccessTokenHash() string                     { return c.AccessTokenHash }
-
 // --- DecryptToken / EncryptToken ---
 
 func DecryptToken(tokenString string) (string, error) {
