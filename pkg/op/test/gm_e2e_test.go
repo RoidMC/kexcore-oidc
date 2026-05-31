@@ -18,7 +18,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
@@ -99,7 +99,7 @@ func TestGM_E2E_SM2_SignAndVerify(t *testing.T) {
 	pubKey := &privKey.PublicKey
 
 	now := time.Now()
-	claims := oidc.NewAccessTokenClaims(
+	claims := protocol.NewAccessTokenClaims(
 		"https://gm.example.com",
 		"sm2-user",
 		[]string{"gm-client"},
@@ -117,7 +117,7 @@ func TestGM_E2E_SM2_SignAndVerify(t *testing.T) {
 		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
 	)
 
-	verified, err := op.VerifyAccessToken[*oidc.AccessTokenClaims](context.Background(), token, verifier)
+	verified, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	requireNoErr(t, err)
 	assertEqual(t, claims.GetSubject(), verified.GetSubject())
 }
@@ -126,7 +126,7 @@ func TestGM_E2E_SM2_WrongKey(t *testing.T) {
 	privKey, _ := crypto.SM2GenerateKey()
 	otherKey, _ := crypto.SM2GenerateKey()
 
-	claims := oidc.NewAccessTokenClaims(
+	claims := protocol.NewAccessTokenClaims(
 		"https://gm.example.com", "sm2-user",
 		[]string{"gm-client"}, time.Now().Add(5*time.Minute),
 		"jti-sm2", "gm-client", time.Second,
@@ -140,14 +140,14 @@ func TestGM_E2E_SM2_WrongKey(t *testing.T) {
 		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
 	)
 
-	_, err := op.VerifyAccessToken[*oidc.AccessTokenClaims](context.Background(), token, verifier)
+	_, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	assertErr(t, err)
 }
 
 func TestGM_E2E_SM2_WrongIssuer(t *testing.T) {
 	privKey, _ := crypto.SM2GenerateKey()
 
-	claims := oidc.NewAccessTokenClaims(
+	claims := protocol.NewAccessTokenClaims(
 		"https://evil.example.com", "sm2-user",
 		[]string{"gm-client"}, time.Now().Add(5*time.Minute),
 		"jti-sm2", "gm-client", time.Second,
@@ -161,14 +161,14 @@ func TestGM_E2E_SM2_WrongIssuer(t *testing.T) {
 		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
 	)
 
-	_, err := op.VerifyAccessToken[*oidc.AccessTokenClaims](context.Background(), token, verifier)
+	_, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	assertErr(t, err)
 }
 
 func TestGM_E2E_SM2_ExpiredToken(t *testing.T) {
 	privKey, _ := crypto.SM2GenerateKey()
 
-	claims := oidc.NewAccessTokenClaims(
+	claims := protocol.NewAccessTokenClaims(
 		"https://gm.example.com", "sm2-user",
 		[]string{"gm-client"}, time.Now().Add(-time.Hour),
 		"jti-sm2", "gm-client", time.Second,
@@ -182,7 +182,7 @@ func TestGM_E2E_SM2_ExpiredToken(t *testing.T) {
 		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
 	)
 
-	_, err := op.VerifyAccessToken[*oidc.AccessTokenClaims](context.Background(), token, verifier)
+	_, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	assertErr(t, err)
 }
 
@@ -231,7 +231,7 @@ func TestGM_E2E_SM9_SignAndVerify(t *testing.T) {
 	requireNoErr(t, err)
 
 	now := time.Now()
-	claims := oidc.NewAccessTokenClaims(
+	claims := protocol.NewAccessTokenClaims(
 		"https://gm.example.com",
 		"sm9-user",
 		[]string{"gm-client"},
@@ -249,7 +249,7 @@ func TestGM_E2E_SM9_SignAndVerify(t *testing.T) {
 		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM9),
 	)
 
-	verified, err := op.VerifyAccessToken[*oidc.AccessTokenClaims](context.Background(), token, verifier)
+	verified, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	requireNoErr(t, err)
 	assertEqual(t, claims.GetSubject(), verified.GetSubject())
 }
@@ -260,7 +260,7 @@ func TestGM_E2E_SM9_WrongUID(t *testing.T) {
 
 	aliceKey, _ := crypto.SM9GenerateSignUserKey(masterPrivKey, []byte("alice"))
 
-	claims := oidc.NewAccessTokenClaims(
+	claims := protocol.NewAccessTokenClaims(
 		"https://gm.example.com", "sm9-user",
 		[]string{"gm-client"}, time.Now().Add(5*time.Minute),
 		"jti-sm9", "gm-client", time.Second,
@@ -275,7 +275,7 @@ func TestGM_E2E_SM9_WrongUID(t *testing.T) {
 		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM9),
 	)
 
-	_, err := op.VerifyAccessToken[*oidc.AccessTokenClaims](context.Background(), token, verifier)
+	_, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	assertErr(t, err)
 }
 

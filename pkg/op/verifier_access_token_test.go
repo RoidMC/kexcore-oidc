@@ -6,7 +6,6 @@ import (
 	"time"
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 		
 	"github.com/stretchr/testify/assert"
@@ -70,7 +69,7 @@ func TestVerifyAccessToken(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		tokenClaims func() (string, *oidc.AccessTokenClaims)
+		tokenClaims func() (string, *protocol.AccessTokenClaims)
 		wantErr     bool
 	}{
 		{
@@ -79,17 +78,17 @@ func TestVerifyAccessToken(t *testing.T) {
 		},
 		{
 			name:        "parse err",
-			tokenClaims: func() (string, *oidc.AccessTokenClaims) { return "~~~~", nil },
+			tokenClaims: func() (string, *protocol.AccessTokenClaims) { return "~~~~", nil },
 			wantErr:     true,
 		},
 		{
 			name:        "invalid signature",
-			tokenClaims: func() (string, *oidc.AccessTokenClaims) { return tu.InvalidSignatureToken, nil },
+			tokenClaims: func() (string, *protocol.AccessTokenClaims) { return tu.InvalidSignatureToken, nil },
 			wantErr:     true,
 		},
 		{
 			name: "wrong issuer",
-			tokenClaims: func() (string, *oidc.AccessTokenClaims) {
+			tokenClaims: func() (string, *protocol.AccessTokenClaims) {
 				return tu.NewAccessToken(
 					"foo", tu.ValidSubject, tu.ValidAudience,
 					tu.ValidExpiration, tu.ValidJWTID, tu.ValidClientID,
@@ -100,7 +99,7 @@ func TestVerifyAccessToken(t *testing.T) {
 		},
 		{
 			name: "expired",
-			tokenClaims: func() (string, *oidc.AccessTokenClaims) {
+			tokenClaims: func() (string, *protocol.AccessTokenClaims) {
 				return tu.NewAccessToken(
 					tu.ValidIssuer, tu.ValidSubject, tu.ValidAudience,
 					tu.ValidExpiration.Add(-time.Hour), tu.ValidJWTID, tu.ValidClientID,
@@ -114,7 +113,7 @@ func TestVerifyAccessToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			token, want := tt.tokenClaims()
 
-			got, err := VerifyAccessToken[*oidc.AccessTokenClaims](context.Background(), token, verifier)
+			got, err := VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, got)

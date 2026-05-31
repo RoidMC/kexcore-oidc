@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"errors"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -144,4 +146,21 @@ func Test_unmarshalJSONMulti(t *testing.T) {
 			assert.Equal(t, tt.want, tt.args.destinations)
 		})
 	}
+}
+
+func TestNewEncoder(t *testing.T) {
+	type request struct {
+		Scopes SpaceDelimitedArray `schema:"scope"`
+	}
+	a := request{
+		Scopes: SpaceDelimitedArray{"foo", "bar"},
+	}
+
+	values := make(url.Values)
+	NewEncoder().Encode(a, values)
+	assert.Equal(t, url.Values{"scope": []string{"foo bar"}}, values)
+
+	var b request
+	b.Scopes = strings.Split(values.Get("scope"), " ")
+	assert.Equal(t, a, b)
 }

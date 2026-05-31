@@ -21,7 +21,6 @@ import (
 
 	"github.com/muhlemmer/gu"
 	"github.com/roidmc/kexcore-oidc/example/server/storage"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
@@ -86,7 +85,7 @@ func TestParseDeviceCodeRequest(t *testing.T) {
 		{
 			name: "missing grant type",
 			req: &protocol.DeviceAuthorizationRequest{
-				Scopes:   oidc.SpaceDelimitedArray{"foo", "bar"},
+				Scopes:   protocol.SpaceDelimitedArray{"foo", "bar"},
 				ClientID: "web",
 			},
 			wantErr: true,
@@ -94,7 +93,7 @@ func TestParseDeviceCodeRequest(t *testing.T) {
 		{
 			name: "client not found",
 			req: &protocol.DeviceAuthorizationRequest{
-				Scopes:   oidc.SpaceDelimitedArray{"foo", "bar"},
+				Scopes:   protocol.SpaceDelimitedArray{"foo", "bar"},
 				ClientID: "foobar",
 			},
 			wantErr: true,

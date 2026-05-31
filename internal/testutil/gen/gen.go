@@ -9,7 +9,7 @@ import (
 	"os"
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 var custom = map[string]any{
@@ -32,7 +32,7 @@ func main() {
 		tu.ValidExpiration.AddDate(99, 0, 0), tu.ValidJWTID,
 		tu.ValidClientID, tu.ValidSkew, custom,
 	)
-	atHash, err := oidc.ClaimHash(accessToken, tu.SignatureAlgorithm)
+	atHash, err := protocol.ClaimHash(accessToken, tu.SignatureAlgorithm)
 	if err != nil {
 		panic(err)
 	}

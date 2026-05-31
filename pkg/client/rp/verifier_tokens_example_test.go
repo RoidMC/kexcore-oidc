@@ -6,22 +6,22 @@ import (
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // MyCustomClaims extends the TokenClaims base,
-// so it implements the oidc.Claims interface.
+// so it implements the protocol.Claims interface.
 // Instead of carrying a map, we add the needed fields to the struct for type-safe access.
 type MyCustomClaims struct {
-	oidc.TokenClaims
-	NotBefore       oidc.Time `json:"nbf,omitempty"`
+	protocol.TokenClaims
+	NotBefore       protocol.Time `json:"nbf,omitempty"`
 	AccessTokenHash string    `json:"at_hash,omitempty"`
 	Foo             string    `json:"foo,omitempty"`
 	Bar             *Nested   `json:"bar,omitempty"`
 }
 
 // GetAccessTokenHash is required to implement
-// the oidc.IDClaims interface.
+// the protocol.IDClaims interface.
 func (c *MyCustomClaims) GetAccessTokenHash() string {
 	return c.AccessTokenHash
 }

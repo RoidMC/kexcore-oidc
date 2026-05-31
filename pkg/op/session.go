@@ -14,7 +14,6 @@ import (
 	"path"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -94,7 +93,7 @@ func ValidateEndSessionRequest(ctx context.Context, req *protocol.EndSessionRequ
 		UILocales:   req.UILocales,
 	}
 	if req.IdTokenHint != "" {
-		claims, err := VerifyIDTokenHint[*oidc.IDTokenClaims](ctx, req.IdTokenHint, ender.IDTokenHintVerifier(ctx))
+		claims, err := VerifyIDTokenHint[*protocol.IDTokenClaims](ctx, req.IdTokenHint, ender.IDTokenHintVerifier(ctx))
 		if err != nil && !errors.As(err, &IDTokenHintExpiredError{}) {
 			return nil, protocol.ErrInvalidRequest().WithDescription("id_token_hint invalid").WithParent(err)
 		}

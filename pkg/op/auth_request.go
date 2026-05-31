@@ -22,7 +22,6 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -183,7 +182,7 @@ func ParseAuthorizeRequest(r *http.Request, decoder httphelper.Decoder) (*protoc
 // ParseRequestObject parse the `request` parameter, validates the token including the signature
 // and copies the token claims into the auth request
 func ParseRequestObject(ctx context.Context, authReq *protocol.AuthRequest, storage Storage, issuer string) error {
-	requestObject := new(oidc.RequestObject)
+	requestObject := new(protocol.RequestObject)
 	payload, err := protocol.ParseToken(authReq.RequestParam, requestObject)
 	if err != nil {
 		return err
@@ -211,7 +210,7 @@ func ParseRequestObject(ctx context.Context, authReq *protocol.AuthRequest, stor
 
 // CopyRequestObjectToAuthRequest overwrites present values from the Request Object into the auth request
 // and clears the `RequestParam` of the auth request
-func CopyRequestObjectToAuthRequest(authReq *protocol.AuthRequest, requestObject *oidc.RequestObject) {
+func CopyRequestObjectToAuthRequest(authReq *protocol.AuthRequest, requestObject *protocol.RequestObject) {
 	if slices.Contains(authReq.Scopes, protocol.ScopeOpenID) && len(requestObject.Scopes) > 0 {
 		authReq.Scopes = requestObject.Scopes
 	}
@@ -295,7 +294,7 @@ func ValidateAuthReqPrompt(prompts []string, maxAge *uint) (_ *uint, err error) 
 			return nil, protocol.ErrInvalidRequest().WithDescription("The prompt parameter `none` must only be used as a single value")
 		}
 		if prompt == protocol.PromptLogin {
-			maxAge = oidc.NewMaxAge(0)
+			maxAge = protocol.NewMaxAge(0)
 		}
 	}
 	return maxAge, nil
@@ -440,7 +439,7 @@ func ValidateAuthReqIDTokenHint(ctx context.Context, idTokenHint string, verifie
 	if idTokenHint == "" {
 		return "", nil
 	}
-	claims, err := VerifyIDTokenHint[*oidc.TokenClaims](ctx, idTokenHint, verifier)
+	claims, err := VerifyIDTokenHint[*protocol.TokenClaims](ctx, idTokenHint, verifier)
 	if err != nil && !errors.As(err, &IDTokenHintExpiredError{}) {
 		return "", protocol.ErrLoginRequired().WithDescription("The id_token_hint is invalid. " +
 			"If you have any questions, you may contact the administrator of the application.").WithParent(err)

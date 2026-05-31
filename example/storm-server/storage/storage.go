@@ -24,7 +24,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 )
@@ -422,8 +421,8 @@ func (s *Storage) SetIntrospectionFromToken(_ context.Context, resp *protocol.In
 	resp.ClientID = token.ApplicationID
 	resp.Subject = token.Subject
 	resp.Audience = token.Audience
-	resp.Scope = oidc.SpaceDelimitedArray(token.Scopes)
-	resp.TokenType = oidc.BearerToken
+	resp.Scope = protocol.SpaceDelimitedArray(token.Scopes)
+	resp.TokenType = protocol.BearerToken
 	if !token.Expiration.IsZero() {
 		resp.Expiration = protocol.FromTime(token.Expiration)
 		resp.NotBefore = protocol.FromTime(token.Expiration)
@@ -478,7 +477,7 @@ func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *protocol.Use
 			userinfo.Name = user.FirstName + " " + user.LastName
 			userinfo.FamilyName = user.LastName
 			userinfo.GivenName = user.FirstName
-			userinfo.Locale = oidc.NewLocale(user.PreferredLanguage)
+			userinfo.Locale = protocol.NewLocale(user.PreferredLanguage)
 		case protocol.ScopePhone:
 			userinfo.PhoneNumber = user.Phone
 			userinfo.PhoneNumberVerified = protocol.Bool(user.PhoneVerified)

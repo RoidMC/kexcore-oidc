@@ -14,7 +14,6 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -179,7 +178,7 @@ type StorageNotFoundError interface {
 type EndSessionRequest struct {
 	UserID            string
 	ClientID          string
-	IDTokenHintClaims *oidc.IDTokenClaims
+	IDTokenHintClaims *protocol.IDTokenClaims
 	RedirectURI       string
 	LogoutHint        string
 	UILocales         []language.Tag

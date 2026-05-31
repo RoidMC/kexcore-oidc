@@ -9,7 +9,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -114,7 +113,7 @@ func ExchangeToken(
 	Audience []string,
 	Scopes []string,
 	RequestedTokenType protocol.TokenType,
-) (*oidc.TokenExchangeResponse, error) {
+) (*protocol.TokenExchangeResponse, error) {
 	ctx, span := client.Tracer.Start(ctx, "ExchangeToken")
 	defer span.End()
 

@@ -6,7 +6,6 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -14,13 +13,13 @@ const (
 	loginPath = "/login"
 )
 
-func CodeFlow[C protocol.IDClaims](ctx context.Context, relyingParty rp.RelyingParty, callbackPath, port string, stateProvider func() string) *oidc.Tokens[C] {
+func CodeFlow[C protocol.IDClaims](ctx context.Context, relyingParty rp.RelyingParty, callbackPath, port string, stateProvider func() string) *protocol.Tokens[C] {
 	codeflowCtx, codeflowCancel := context.WithCancel(ctx)
 	defer codeflowCancel()
 
-	tokenChan := make(chan *oidc.Tokens[C], 1)
+	tokenChan := make(chan *protocol.Tokens[C], 1)
 
-	callback := func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[C], state string, rp rp.RelyingParty) {
+	callback := func(w http.ResponseWriter, r *http.Request, tokens *protocol.Tokens[C], state string, rp rp.RelyingParty) {
 		tokenChan <- tokens
 		msg := "<p><strong>Success!</strong></p>"
 		msg = msg + "<p>You are authenticated and can now return to the CLI.</p>"

@@ -7,6 +7,8 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 	"golang.org/x/text/language"
 )
 
@@ -109,6 +111,68 @@ func TestNewAccessTokenClaims(t *testing.T) {
 	got.NotBefore = 0
 
 	assert.Equal(t, want, got)
+}
+
+// ============================================================================
+// Tokens
+// ============================================================================
+
+func TestTokens(t *testing.T) {
+	oauthToken := &oauth2.Token{
+		AccessToken:  "access-token",
+		RefreshToken: "refresh-token",
+		TokenType:    "Bearer",
+	}
+
+	claims := protocol.TokenClaims{
+		Issuer:  "kexcore",
+		Subject: "kexcore@example.com",
+	}
+
+	tokens := &protocol.Tokens[*protocol.IDTokenClaims]{
+		Token:         oauthToken,
+		IDTokenClaims: &protocol.IDTokenClaims{TokenClaims: claims},
+		IDToken:       "id-token-xxx",
+	}
+
+	assert.Equal(t, "access-token", tokens.AccessToken)
+	assert.Equal(t, "refresh-token", tokens.RefreshToken)
+	assert.Equal(t, "Bearer", tokens.TokenType)
+	assert.Equal(t, "id-token-xxx", tokens.IDToken)
+	assert.Equal(t, "kexcore", tokens.IDTokenClaims.Issuer)
+	assert.Equal(t, "kexcore@example.com", tokens.IDTokenClaims.Subject)
+}
+
+func TestTokens_EmbeddedOAuth2Methods(t *testing.T) {
+	oauthToken := &oauth2.Token{
+		AccessToken:  "at",
+		RefreshToken: "rt",
+		TokenType:    "Bearer",
+	}
+
+	tokens := &protocol.Tokens[*protocol.IDTokenClaims]{
+		Token: oauthToken,
+	}
+
+	require.Equal(t, "at", tokens.AccessToken)
+	require.Equal(t, "rt", tokens.RefreshToken)
+	require.Equal(t, "Bearer", tokens.TokenType)
+}
+
+func TestTokens_NilIDTokenClaims(t *testing.T) {
+	oauthToken := &oauth2.Token{
+		AccessToken: "at",
+		TokenType:   "Bearer",
+	}
+
+	tokens := &protocol.Tokens[*protocol.IDTokenClaims]{
+		Token:   oauthToken,
+		IDToken: "",
+	}
+
+	assert.NotNil(t, tokens.Token)
+	assert.Nil(t, tokens.IDTokenClaims)
+	assert.Empty(t, tokens.IDToken)
 }
 
 func TestIDTokenClaims_GetAccessTokenHash(t *testing.T) {

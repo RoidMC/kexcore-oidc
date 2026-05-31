@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -30,7 +29,7 @@ type BackChannelLogoutHandler struct {
 
 // LogoutCallback is called after a valid Logout Token is received.
 // The RP should use the sub and/or sid claims to terminate the appropriate sessions.
-type LogoutCallback func(ctx context.Context, claims *oidc.LogoutTokenClaims) error
+type LogoutCallback func(ctx context.Context, claims *protocol.LogoutTokenClaims) error
 
 // LogoutTokenVerifier verifies Logout Tokens according to the spec.
 type LogoutTokenVerifier struct {
@@ -90,11 +89,11 @@ func (h *BackChannelLogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 
 // VerifyLogoutToken validates a Logout Token according to the rules in
 // Section 2.6 of OpenID Connect Back-Channel Logout 1.0.
-func VerifyLogoutToken(ctx context.Context, token string, v *LogoutTokenVerifier) (*oidc.LogoutTokenClaims, error) {
+func VerifyLogoutToken(ctx context.Context, token string, v *LogoutTokenVerifier) (*protocol.LogoutTokenClaims, error) {
 	ctx, span := client.Tracer.Start(ctx, "VerifyLogoutToken")
 	defer span.End()
 
-	var claims oidc.LogoutTokenClaims
+	var claims protocol.LogoutTokenClaims
 
 	// 1. Parse the JWT payload.
 	payload, err := protocol.ParseToken(token, &claims)
@@ -121,8 +120,8 @@ func VerifyLogoutToken(ctx context.Context, token string, v *LogoutTokenVerifier
 	if claims.Events == nil {
 		return nil, errors.New("missing events claim")
 	}
-	if _, ok := claims.Events[oidc.BackChannelLogoutEventKey]; !ok {
-		return nil, fmt.Errorf("missing required event: %s", oidc.BackChannelLogoutEventKey)
+	if _, ok := claims.Events[protocol.BackChannelLogoutEventKey]; !ok {
+		return nil, fmt.Errorf("missing required event: %s", protocol.BackChannelLogoutEventKey)
 	}
 
 	// 6. Verify that nonce is NOT present.
@@ -149,7 +148,7 @@ func VerifyLogoutToken(ctx context.Context, token string, v *LogoutTokenVerifier
 	return &claims, nil
 }
 
-func verifyLogoutAudience(claims *oidc.LogoutTokenClaims, expectedClientID string) error {
+func verifyLogoutAudience(claims *protocol.LogoutTokenClaims, expectedClientID string) error {
 	for _, aud := range claims.Audience {
 		if aud == expectedClientID {
 			return nil

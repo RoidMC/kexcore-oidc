@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -34,7 +33,7 @@ type AccessTokenClient interface {
 	GrantTypes() []protocol.GrantType
 }
 
-func CreateTokenResponse(ctx context.Context, request IDTokenRequest, client Client, creator TokenCreator, createAccessToken bool, code, refreshToken string) (*oidc.AccessTokenResponse, error) {
+func CreateTokenResponse(ctx context.Context, request IDTokenRequest, client Client, creator TokenCreator, createAccessToken bool, code, refreshToken string) (*protocol.AccessTokenResponse, error) {
 	ctx, span := Tracer.Start(ctx, "CreateTokenResponse")
 	defer span.End()
 
@@ -76,11 +75,11 @@ func CreateTokenResponse(ctx context.Context, request IDTokenRequest, client Cli
 	}
 
 	exp := uint64(validity.Seconds())
-	return &oidc.AccessTokenResponse{
+	return &protocol.AccessTokenResponse{
 		AccessToken:  accessToken,
 		IDToken:      idToken,
 		RefreshToken: newRefreshToken,
-		TokenType:    oidc.BearerToken,
+		TokenType:    protocol.BearerToken,
 		ExpiresIn:    exp,
 		State:        state,
 		Scope:        request.GetScopes(),
@@ -157,14 +156,14 @@ func CreateBearerToken(tokenID, subject string, crypto Encrypter) (string, error
 }
 
 type TokenActorRequest interface {
-	GetActor() *oidc.ActorClaims
+	GetActor() *protocol.ActorClaims
 }
 
 func CreateJWT(ctx context.Context, issuer string, tokenRequest TokenRequest, exp time.Time, id string, client AccessTokenClient, storage Storage) (string, error) {
 	ctx, span := Tracer.Start(ctx, "CreateJWT")
 	defer span.End()
 
-	claims := oidc.NewAccessTokenClaims(issuer, tokenRequest.GetSubject(), tokenRequest.GetAudience(), exp, id, client.GetID(), client.ClockSkew())
+	claims := protocol.NewAccessTokenClaims(issuer, tokenRequest.GetSubject(), tokenRequest.GetAudience(), exp, id, client.GetID(), client.ClockSkew())
 	if client != nil {
 		restrictedScopes := client.RestrictAdditionalAccessTokenScopes()(tokenRequest.GetScopes())
 
@@ -226,7 +225,7 @@ func CreateIDToken(ctx context.Context, issuer string, request IDTokenRequest, v
 		acr = authRequest.GetACR()
 		nonce = authRequest.GetNonce()
 	}
-	claims := oidc.NewIDTokenClaims(issuer, request.GetSubject(), request.GetAudience(), exp, request.GetAuthTime(), nonce, acr, request.GetAMR(), request.GetClientID(), client.ClockSkew())
+	claims := protocol.NewIDTokenClaims(issuer, request.GetSubject(), request.GetAudience(), exp, request.GetAuthTime(), nonce, acr, request.GetAMR(), request.GetClientID(), client.ClockSkew())
 	if actorReq, ok := request.(TokenActorRequest); ok {
 		claims.Actor = actorReq.GetActor()
 	}
@@ -244,7 +243,7 @@ func CreateIDToken(ctx context.Context, issuer string, request IDTokenRequest, v
 		return "", err
 	}
 	if accessToken != "" {
-		atHash, err := oidc.ClaimHash(accessToken, signingKey.SignatureAlgorithm())
+		atHash, err := protocol.ClaimHash(accessToken, signingKey.SignatureAlgorithm())
 		if err != nil {
 			return "", err
 		}
@@ -274,7 +273,7 @@ func CreateIDToken(ctx context.Context, issuer string, request IDTokenRequest, v
 		claims.SetUserInfo(userInfo)
 	}
 	if code != "" {
-		codeHash, err := oidc.ClaimHash(code, signingKey.SignatureAlgorithm())
+		codeHash, err := protocol.ClaimHash(code, signingKey.SignatureAlgorithm())
 		if err != nil {
 			return "", err
 		}

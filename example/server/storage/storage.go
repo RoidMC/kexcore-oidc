@@ -25,7 +25,6 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -898,7 +897,7 @@ func (s *Storage) setUserinfo(ctx context.Context, userInfo *protocol.UserInfo, 
 			userInfo.Name = user.FirstName + " " + user.LastName
 			userInfo.FamilyName = user.LastName
 			userInfo.GivenName = user.FirstName
-			userInfo.Locale = oidc.NewLocale(user.PreferredLanguage)
+			userInfo.Locale = protocol.NewLocale(user.PreferredLanguage)
 		case protocol.ScopePhone:
 			userInfo.PhoneNumber = user.Phone
 			userInfo.PhoneNumberVerified = protocol.Bool(user.PhoneVerified)

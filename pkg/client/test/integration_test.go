@@ -39,7 +39,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/client/rs"
 	"github.com/roidmc/kexcore-oidc/pkg/client/tokenexchange"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -149,7 +148,7 @@ func testRelyingPartySession(t *testing.T, wrapServer bool, cookieSpec cookieSpe
 
 	t.Log("------- refresh tokens  ------")
 
-	newTokens, err := rp.RefreshTokens[*oidc.IDTokenClaims](CTX, provider, tokens.RefreshToken, "", "")
+	newTokens, err := rp.RefreshTokens[*protocol.IDTokenClaims](CTX, provider, tokens.RefreshToken, "", "")
 	require.NoError(t, err, "refresh token")
 	assert.NotNil(t, newTokens, "access token")
 	t.Logf("new access token %s", newTokens.AccessToken)
@@ -173,11 +172,11 @@ func testRelyingPartySession(t *testing.T, wrapServer bool, cookieSpec cookieSpe
 
 	t.Log("------ attempt refresh again (should fail) ------")
 	t.Log("trying original refresh token", tokens.RefreshToken)
-	_, err = rp.RefreshTokens[*oidc.IDTokenClaims](CTX, provider, tokens.RefreshToken, "", "")
+	_, err = rp.RefreshTokens[*protocol.IDTokenClaims](CTX, provider, tokens.RefreshToken, "", "")
 	assert.Errorf(t, err, "refresh with original")
 	if newTokens.RefreshToken != "" {
 		t.Log("trying replacement refresh token", newTokens.RefreshToken)
-		_, err = rp.RefreshTokens[*oidc.IDTokenClaims](CTX, provider, newTokens.RefreshToken, "", "")
+		_, err = rp.RefreshTokens[*protocol.IDTokenClaims](CTX, provider, newTokens.RefreshToken, "", "")
 		assert.Errorf(t, err, "refresh with replacement")
 	}
 }
@@ -251,7 +250,7 @@ func TestRelyingPartyWithSigningAlgsFromDiscovery(t *testing.T) {
 	capturedW = httptest.NewRecorder()
 	get = httptest.NewRequest("GET", codeBearingURL.String(), nil)
 	var idToken string
-	redirect := func(w http.ResponseWriter, r *http.Request, newTokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *protocol.UserInfo) {
+	redirect := func(w http.ResponseWriter, r *http.Request, newTokens *protocol.Tokens[*protocol.IDTokenClaims], state string, rp rp.RelyingParty, info *protocol.UserInfo) {
 		idToken = newTokens.IDToken
 		http.Redirect(w, r, targetURL, http.StatusFound)
 	}
@@ -264,7 +263,7 @@ func TestRelyingPartyWithSigningAlgsFromDiscovery(t *testing.T) {
 	}()
 
 	t.Log("------- verify id token ------")
-	_, err = rp.VerifyIDToken[*oidc.IDTokenClaims](CTX, idToken, provider.IDTokenVerifier())
+	_, err = rp.VerifyIDToken[*protocol.IDTokenClaims](CTX, idToken, provider.IDTokenVerifier())
 	require.NoError(t, err, "verify id token")
 }
 
@@ -302,17 +301,17 @@ func testResourceServerTokenExchange(t *testing.T, wrapServer bool) {
 		CTX,
 		resourceServer,
 		tokens.RefreshToken,
-		oidc.RefreshTokenType,
+		protocol.RefreshTokenType,
 		"",
 		"",
 		[]string{},
 		[]string{},
 		[]string{"profile", "custom_scope:impersonate:id2"},
-		oidc.RefreshTokenType,
+		protocol.RefreshTokenType,
 	)
 	require.NoError(t, err, "refresh token")
 	require.NotNil(t, tokenExchangeResponse, "token exchange response")
-	assert.Equal(t, tokenExchangeResponse.IssuedTokenType, oidc.RefreshTokenType)
+	assert.Equal(t, tokenExchangeResponse.IssuedTokenType, protocol.RefreshTokenType)
 	assert.NotEmpty(t, tokenExchangeResponse.AccessToken, "access token")
 	assert.NotEmpty(t, tokenExchangeResponse.RefreshToken, "refresh token")
 	assert.Equal(t, []string(tokenExchangeResponse.Scopes), []string{"profile", "custom_scope:impersonate:id2"})
@@ -333,20 +332,20 @@ func testResourceServerTokenExchange(t *testing.T, wrapServer bool) {
 		CTX,
 		resourceServer,
 		tokens.RefreshToken,
-		oidc.RefreshTokenType,
+		protocol.RefreshTokenType,
 		"",
 		"",
 		[]string{},
 		[]string{},
 		[]string{"profile", "custom_scope:impersonate:id2"},
-		oidc.RefreshTokenType,
+		protocol.RefreshTokenType,
 	)
 	require.Error(t, err, "refresh token")
 	assert.Contains(t, err.Error(), "subject_token is invalid")
 	require.Nil(t, tokenExchangeResponse, "token exchange response")
 }
 
-func RunAuthorizationCodeFlow(t *testing.T, opServer *httptest.Server, clientID, clientSecret string, cookieSpec cookieSpec) (provider rp.RelyingParty, tokens *oidc.Tokens[*oidc.IDTokenClaims]) {
+func RunAuthorizationCodeFlow(t *testing.T, opServer *httptest.Server, clientID, clientSecret string, cookieSpec cookieSpec) (provider rp.RelyingParty, tokens *protocol.Tokens[*protocol.IDTokenClaims]) {
 	targetURL := "http://local-site"
 	localURL, err := url.Parse(targetURL + "/login?requestID=1234")
 	require.NoError(t, err, "local url")
@@ -447,7 +446,7 @@ func RunAuthorizationCodeFlow(t *testing.T, opServer *httptest.Server, clientID,
 	}
 
 	var email string
-	redirect := func(w http.ResponseWriter, r *http.Request, newTokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *protocol.UserInfo) {
+	redirect := func(w http.ResponseWriter, r *http.Request, newTokens *protocol.Tokens[*protocol.IDTokenClaims], state string, rp rp.RelyingParty, info *protocol.UserInfo) {
 		tokens = newTokens
 		require.NotNil(t, tokens, "tokens")
 		require.NotNil(t, info, "info")

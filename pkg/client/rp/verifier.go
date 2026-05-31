@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -111,7 +110,7 @@ func VerifyAccessToken(accessToken, atHash string, sigAlgorithm string) error {
 		return nil
 	}
 
-	actual, err := oidc.ClaimHash(accessToken, sigAlgorithm)
+	actual, err := protocol.ClaimHash(accessToken, sigAlgorithm)
 	if err != nil {
 		return err
 	}
@@ -121,7 +120,7 @@ func VerifyAccessToken(accessToken, atHash string, sigAlgorithm string) error {
 	return nil
 }
 
-// NewIDTokenVerifier returns a oidc.Verifier suitable for ID token verification.
+// NewIDTokenVerifier returns a protocol.Verifier suitable for ID token verification.
 func NewIDTokenVerifier(issuer, clientID string, keySet protocol.KeySet, options ...VerifierOption) *IDTokenVerifier {
 	v := &IDTokenVerifier{
 		Issuer:   issuer,

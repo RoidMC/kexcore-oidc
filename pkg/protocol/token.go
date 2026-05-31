@@ -6,9 +6,17 @@ import (
 	"time"
 
 	"github.com/muhlemmer/gu"
+	"golang.org/x/oauth2"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 )
+
+// Tokens represents an OAuth2 token response that includes OIDC claims.
+type Tokens[C IDClaims] struct {
+	*oauth2.Token
+	IDTokenClaims C
+	IDToken       string
+}
 
 // BearerToken defines the token_type `Bearer`, which is returned in a successful token response.
 const (

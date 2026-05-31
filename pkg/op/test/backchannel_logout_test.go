@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -92,10 +91,10 @@ func TestLogoutTokenCreation(t *testing.T) {
 	signer := mustNewSigner(t)
 	now := time.Now()
 
-	claims := &oidc.LogoutTokenClaims{
+	claims := &protocol.LogoutTokenClaims{
 		Issuer:     "https://op.example.com",
 		Subject:    "user-123",
-		Audience:   oidc.Audience{"client-abc"},
+		Audience:   protocol.Audience{"client-abc"},
 		IssuedAt:   protocol.FromTime(now),
 		Expiration: protocol.FromTime(now.Add(5 * time.Minute)),
 		JWTID:      "lt-001",
@@ -116,10 +115,10 @@ func TestLogoutTokenCreation(t *testing.T) {
 func TestLogoutTokenClaimsMethods(t *testing.T) {
 	now := time.Now()
 
-	claims := &oidc.LogoutTokenClaims{
+	claims := &protocol.LogoutTokenClaims{
 		Issuer:     "https://op.example.com",
 		Subject:    "user-123",
-		Audience:   oidc.Audience{"client-abc", "client-def"},
+		Audience:   protocol.Audience{"client-abc", "client-def"},
 		IssuedAt:   protocol.FromTime(now),
 		Expiration: protocol.FromTime(now.Add(300)),
 		JWTID:      "lt-001",
@@ -171,10 +170,10 @@ func TestBackChannelLogout_SendLogoutToken(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
-	claims := &oidc.LogoutTokenClaims{
+	claims := &protocol.LogoutTokenClaims{
 		Issuer:     "https://op.example.com",
 		Subject:    "user-123",
-		Audience:   oidc.Audience{"client-abc"},
+		Audience:   protocol.Audience{"client-abc"},
 		IssuedAt:   protocol.FromTime(now),
 		Expiration: protocol.FromTime(now.Add(300)),
 		JWTID:      "lt-test-001",
@@ -215,10 +214,10 @@ func TestBackChannelLogout_SendToMultipleRPs(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
-	claims := &oidc.LogoutTokenClaims{
+	claims := &protocol.LogoutTokenClaims{
 		Issuer:     "https://op.example.com",
 		Subject:    "user-123",
-		Audience:   oidc.Audience{"client-1"},
+		Audience:   protocol.Audience{"client-1"},
 		IssuedAt:   protocol.FromTime(now),
 		Expiration: protocol.FromTime(now.Add(300)),
 		JWTID:      "lt-multi-001",
@@ -360,10 +359,10 @@ func TestBackChannelLogout_Integration(t *testing.T) {
 
 	// Verify we can sign a Logout Token.
 	now := time.Now()
-	claims := &oidc.LogoutTokenClaims{
+	claims := &protocol.LogoutTokenClaims{
 		Issuer:     "https://op.example.com",
 		Subject:    "user-123",
-		Audience:   oidc.Audience{"client-abc"},
+		Audience:   protocol.Audience{"client-abc"},
 		IssuedAt:   protocol.FromTime(now),
 		Expiration: protocol.FromTime(now.Add(300)),
 		JWTID:      "lt-integration-001",

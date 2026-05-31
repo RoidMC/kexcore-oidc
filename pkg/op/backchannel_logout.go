@@ -17,7 +17,6 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -228,16 +227,16 @@ func pushLogoutTokens(ctx context.Context, handler BackChannelLogoutHandler, sub
 // The JWT header typ is set to "logout+jwt" per OIDC Back-Channel Logout spec recommendation.
 func createLogoutToken(issuer, sub, sid, audience string, signer *crypto.Signer) (string, error) {
 	now := time.Now()
-	claims := &oidc.LogoutTokenClaims{
+	claims := &protocol.LogoutTokenClaims{
 		Issuer:     issuer,
 		Subject:    sub,
-		Audience:   oidc.Audience{audience},
-		IssuedAt:   oidc.Time(protocol.FromTime(now)),
-		Expiration: oidc.Time(protocol.FromTime(now.Add(5 * time.Minute))),
+		Audience:   protocol.Audience{audience},
+		IssuedAt:   protocol.Time(protocol.FromTime(now)),
+		Expiration: protocol.Time(protocol.FromTime(now.Add(5 * time.Minute))),
 		JWTID:      fmt.Sprintf("%s-%d", audience, now.UnixNano()),
 		SessionID:  sid,
 		Events: map[string]any{
-			oidc.BackChannelLogoutEventKey: struct{}{},
+			protocol.BackChannelLogoutEventKey: struct{}{},
 		},
 	}
 	signer.SetTokenType("logout+jwt")

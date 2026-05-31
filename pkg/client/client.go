@@ -22,11 +22,10 @@ import (
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/logctx"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 var (
-	Encoder = httphelper.Encoder(oidc.NewEncoder())
+	Encoder = httphelper.Encoder(protocol.NewEncoder())
 	Tracer  = otel.Tracer("github.com/zitadel/oidc/pkg/client")
 )
 
@@ -85,7 +84,7 @@ func callTokenEndpoint(ctx context.Context, request any, authFn any, caller Toke
 		basicAuthRequest.Auth(req)
 	}
 
-	tokenRes := new(oidc.AccessTokenResponse)
+	tokenRes := new(protocol.AccessTokenResponse)
 	if err := httphelper.HttpRequest(caller.HttpClient(), req, &tokenRes); err != nil {
 		return nil, err
 	}
@@ -206,7 +205,7 @@ func CallRevokeEndpoint(ctx context.Context, request any, authFn any, caller Rev
 	return nil
 }
 
-func CallTokenExchangeEndpoint(ctx context.Context, request any, authFn any, caller TokenEndpointCaller) (resp *oidc.TokenExchangeResponse, err error) {
+func CallTokenExchangeEndpoint(ctx context.Context, request any, authFn any, caller TokenEndpointCaller) (resp *protocol.TokenExchangeResponse, err error) {
 	ctx, span := Tracer.Start(ctx, "CallTokenExchangeEndpoint")
 	defer span.End()
 
@@ -214,7 +213,7 @@ func CallTokenExchangeEndpoint(ctx context.Context, request any, authFn any, cal
 	if err != nil {
 		return nil, err
 	}
-	tokenRes := new(oidc.TokenExchangeResponse)
+	tokenRes := new(protocol.TokenExchangeResponse)
 	if err := httphelper.HttpRequest(caller.HttpClient(), req, &tokenRes); err != nil {
 		return nil, err
 	}
@@ -279,7 +278,7 @@ func (r *DeviceAccessTokenRequest) Auth(req *http.Request) {
 	}
 }
 
-func CallDeviceAccessTokenEndpoint(ctx context.Context, request *DeviceAccessTokenRequest, caller TokenEndpointCaller) (*oidc.AccessTokenResponse, error) {
+func CallDeviceAccessTokenEndpoint(ctx context.Context, request *DeviceAccessTokenRequest, caller TokenEndpointCaller) (*protocol.AccessTokenResponse, error) {
 	ctx, span := Tracer.Start(ctx, "CallDeviceAccessTokenEndpoint")
 	defer span.End()
 
@@ -289,14 +288,14 @@ func CallDeviceAccessTokenEndpoint(ctx context.Context, request *DeviceAccessTok
 	}
 	request.Auth(req)
 
-	resp := new(oidc.AccessTokenResponse)
+	resp := new(protocol.AccessTokenResponse)
 	if err := httphelper.HttpRequest(caller.HttpClient(), req, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil
 }
 
-func PollDeviceAccessTokenEndpoint(ctx context.Context, interval time.Duration, request *DeviceAccessTokenRequest, caller TokenEndpointCaller) (*oidc.AccessTokenResponse, error) {
+func PollDeviceAccessTokenEndpoint(ctx context.Context, interval time.Duration, request *DeviceAccessTokenRequest, caller TokenEndpointCaller) (*protocol.AccessTokenResponse, error) {
 	ctx, span := Tracer.Start(ctx, "PollDeviceAccessTokenEndpoint")
 	defer span.End()
 

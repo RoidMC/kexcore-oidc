@@ -11,7 +11,6 @@ import (
 	"time"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -65,7 +64,7 @@ func ParseJWTProfileGrantRequest(r *http.Request, decoder httphelper.Decoder) (*
 
 // CreateJWTTokenResponse creates an access_token response for a JWT Profile Grant request
 // by default the access_token is an opaque string, but can be specified by implementing the JWTProfileTokenStorage interface
-func CreateJWTTokenResponse(ctx context.Context, tokenRequest TokenRequest, creator TokenCreator) (*oidc.AccessTokenResponse, error) {
+func CreateJWTTokenResponse(ctx context.Context, tokenRequest TokenRequest, creator TokenCreator) (*protocol.AccessTokenResponse, error) {
 	ctx, span := Tracer.Start(ctx, "CreateJWTTokenResponse")
 	defer span.End()
 
@@ -91,9 +90,9 @@ func CreateJWTTokenResponse(ctx context.Context, tokenRequest TokenRequest, crea
 	if err != nil {
 		return nil, err
 	}
-	return &oidc.AccessTokenResponse{
+	return &protocol.AccessTokenResponse{
 		AccessToken: accessToken,
-		TokenType:   oidc.BearerToken,
+		TokenType:   protocol.BearerToken,
 		ExpiresIn:   uint64(validity.Seconds()),
 		Scope:       tokenRequest.GetScopes(),
 	}, nil

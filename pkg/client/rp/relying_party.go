@@ -24,7 +24,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/logctx"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -481,27 +480,27 @@ func GenerateAndStoreCodeChallengeWithRequest(r *http.Request, w http.ResponseWr
 // but not received in the token response.
 var ErrMissingIDToken = errors.New("id_token missing")
 
-func verifyTokenResponse[C protocol.IDClaims](ctx context.Context, token *oauth2.Token, rp RelyingParty) (*oidc.Tokens[C], error) {
+func verifyTokenResponse[C protocol.IDClaims](ctx context.Context, token *oauth2.Token, rp RelyingParty) (*protocol.Tokens[C], error) {
 	ctx, span := client.Tracer.Start(ctx, "verifyTokenResponse")
 	defer span.End()
 
 	if rp.IsOAuth2Only() {
-		return &oidc.Tokens[C]{Token: token}, nil
+		return &protocol.Tokens[C]{Token: token}, nil
 	}
 	idTokenString, ok := token.Extra(idTokenKey).(string)
 	if !ok {
-		return &oidc.Tokens[C]{Token: token}, ErrMissingIDToken
+		return &protocol.Tokens[C]{Token: token}, ErrMissingIDToken
 	}
 	idToken, err := VerifyTokens[C](ctx, token.AccessToken, idTokenString, rp.IDTokenVerifier())
 	if err != nil {
 		return nil, err
 	}
-	return &oidc.Tokens[C]{Token: token, IDTokenClaims: idToken, IDToken: idTokenString}, nil
+	return &protocol.Tokens[C]{Token: token, IDTokenClaims: idToken, IDToken: idTokenString}, nil
 }
 
 // CodeExchange handles the oauth2 code exchange, extracting and validating the id_token
 // returning it parsed together with the oauth2 tokens (access, refresh)
-func CodeExchange[C protocol.IDClaims](ctx context.Context, code string, rp RelyingParty, opts ...CodeExchangeOpt) (tokens *oidc.Tokens[C], err error) {
+func CodeExchange[C protocol.IDClaims](ctx context.Context, code string, rp RelyingParty, opts ...CodeExchangeOpt) (tokens *protocol.Tokens[C], err error) {
 	ctx, codeExchangeSpan := client.Tracer.Start(ctx, "CodeExchange")
 	defer codeExchangeSpan.End()
 
@@ -546,7 +545,7 @@ func ClientCredentials(ctx context.Context, rp RelyingParty, endpointParams url.
 	return config.Token(ctx)
 }
 
-type CodeExchangeCallback[C protocol.IDClaims] func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[C], state string, rp RelyingParty)
+type CodeExchangeCallback[C protocol.IDClaims] func(w http.ResponseWriter, r *http.Request, tokens *protocol.Tokens[C], state string, rp RelyingParty)
 
 // CodeExchangeHandler extends the `CodeExchange` method with an http handler
 // including cookie handling for secure `state` transfer
@@ -602,13 +601,13 @@ type SubjectGetter interface {
 	GetSubject() string
 }
 
-type CodeExchangeUserinfoCallback[C protocol.IDClaims, U SubjectGetter] func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[C], state string, provider RelyingParty, info U)
+type CodeExchangeUserinfoCallback[C protocol.IDClaims, U SubjectGetter] func(w http.ResponseWriter, r *http.Request, tokens *protocol.Tokens[C], state string, provider RelyingParty, info U)
 
 // UserinfoCallback wraps the callback function of the CodeExchangeHandler
 // and calls the userinfo endpoint with the access token
 // on success it will pass the userinfo into its callback function as well
 func UserinfoCallback[C protocol.IDClaims, U SubjectGetter](f CodeExchangeUserinfoCallback[C, U]) CodeExchangeCallback[C] {
-	return func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[C], state string, rp RelyingParty) {
+	return func(w http.ResponseWriter, r *http.Request, tokens *protocol.Tokens[C], state string, rp RelyingParty) {
 		ctx, span := client.Tracer.Start(r.Context(), "UserinfoCallback")
 		r = r.WithContext(ctx)
 		defer span.End()
@@ -624,7 +623,7 @@ func UserinfoCallback[C protocol.IDClaims, U SubjectGetter](f CodeExchangeUserin
 
 // Userinfo will call the OIDC [UserInfo] Endpoint with the provided token and returns
 // the response in an instance of type U.
-// [*oidc.UserInfo] can be used as a good example, or use a custom type if type-safe
+// [*protocol.UserInfo] can be used as a good example, or use a custom type if type-safe
 // access to custom claims is needed.
 //
 // [UserInfo]: https://openid.net/specs/openid-connect-core-1_0.html#UserInfo
@@ -718,7 +717,7 @@ func withURLParam(key, value string) func() []oauth2.AuthCodeOption {
 // This is the generalized, unexported, function used by both
 // URLParamOpt and AuthURLOpt.
 func withPrompt(prompt ...string) func() []oauth2.AuthCodeOption {
-	return withURLParam("prompt", oidc.SpaceDelimitedArray(prompt).String())
+	return withURLParam("prompt", protocol.SpaceDelimitedArray(prompt).String())
 }
 
 type URLParamOpt func() []oauth2.AuthCodeOption
@@ -782,7 +781,7 @@ func (t tokenEndpointCaller) TokenEndpoint() string {
 
 type RefreshTokenRequest struct {
 	RefreshToken        string                   `schema:"refresh_token"`
-	Scopes              oidc.SpaceDelimitedArray `schema:"scope,omitempty"`
+	Scopes              protocol.SpaceDelimitedArray `schema:"scope,omitempty"`
 	ClientID            string                   `schema:"client_id,omitempty"`
 	ClientSecret        string                   `schema:"client_secret,omitempty"`
 	ClientAssertion     string                   `schema:"client_assertion,omitempty"`
@@ -803,7 +802,7 @@ func (r RefreshTokenRequest) Auth(req *http.Request) {
 // In case the RP is not OAuth2 only and an IDToken was part of the response,
 // the IDToken and AccessToken will be verified
 // and the IDToken and IDTokenClaims fields will be populated in the returned object.
-func RefreshTokens[C protocol.IDClaims](ctx context.Context, rp RelyingParty, refreshToken, clientAssertion, clientAssertionType string) (*oidc.Tokens[C], error) {
+func RefreshTokens[C protocol.IDClaims](ctx context.Context, rp RelyingParty, refreshToken, clientAssertion, clientAssertionType string) (*protocol.Tokens[C], error) {
 	ctx, span := client.Tracer.Start(ctx, "RefreshTokens")
 	defer span.End()
 

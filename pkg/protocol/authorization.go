@@ -144,3 +144,18 @@ func (a *AuthRequest) GetState() string {
 func (a *AuthRequest) GetResponseMode() ResponseMode {
 	return a.ResponseMode
 }
+
+// RequestObject represents an OIDC Request Object (JWS/JWE encoded AuthRequest).
+// OIDC Core 1.0 §6.1 — Passing a Request Object by Value
+// https://openid.net/specs/openid-connect-core-1_0.html#RequestObject
+type RequestObject struct {
+	Issuer   string   `json:"iss"`
+	Audience Audience `json:"aud"`
+	AuthRequest
+}
+
+func (r *RequestObject) GetIssuer() string {
+	return r.Issuer
+}
+
+func (*RequestObject) SetSignatureAlgorithm(algorithm string) {}

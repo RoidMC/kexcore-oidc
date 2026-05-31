@@ -7,7 +7,6 @@ import (
 	"time"
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 		
 	"github.com/stretchr/testify/assert"
@@ -80,7 +79,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		tokenClaims func() (string, *oidc.IDTokenClaims)
+		tokenClaims func() (string, *protocol.IDTokenClaims)
 		wantClaims  bool
 		wantErr     error
 	}{
@@ -91,17 +90,17 @@ func TestVerifyIDTokenHint(t *testing.T) {
 		},
 		{
 			name:        "parse err",
-			tokenClaims: func() (string, *oidc.IDTokenClaims) { return "~~~~", nil },
+			tokenClaims: func() (string, *protocol.IDTokenClaims) { return "~~~~", nil },
 			wantErr:     protocol.ErrParse,
 		},
 		{
 			name:        "invalid signature",
-			tokenClaims: func() (string, *oidc.IDTokenClaims) { return tu.InvalidSignatureToken, nil },
+			tokenClaims: func() (string, *protocol.IDTokenClaims) { return tu.InvalidSignatureToken, nil },
 			wantErr:     protocol.ErrSignatureUnsupportedAlg,
 		},
 		{
 			name: "wrong issuer",
-			tokenClaims: func() (string, *oidc.IDTokenClaims) {
+			tokenClaims: func() (string, *protocol.IDTokenClaims) {
 				return tu.NewIDToken(
 					"foo", tu.ValidSubject, tu.ValidAudience,
 					tu.ValidExpiration, tu.ValidAuthTime, tu.ValidNonce,
@@ -112,7 +111,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 		},
 		{
 			name: "wrong acr",
-			tokenClaims: func() (string, *oidc.IDTokenClaims) {
+			tokenClaims: func() (string, *protocol.IDTokenClaims) {
 				return tu.NewIDToken(
 					tu.ValidIssuer, tu.ValidSubject, tu.ValidAudience,
 					tu.ValidExpiration, tu.ValidAuthTime, tu.ValidNonce,
@@ -123,7 +122,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 		},
 		{
 			name: "expired",
-			tokenClaims: func() (string, *oidc.IDTokenClaims) {
+			tokenClaims: func() (string, *protocol.IDTokenClaims) {
 				return tu.NewIDToken(
 					tu.ValidIssuer, tu.ValidSubject, tu.ValidAudience,
 					tu.ValidExpiration.Add(-time.Hour), tu.ValidAuthTime, tu.ValidNonce,
@@ -135,7 +134,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 		},
 		{
 			name: "IAT too old",
-			tokenClaims: func() (string, *oidc.IDTokenClaims) {
+			tokenClaims: func() (string, *protocol.IDTokenClaims) {
 				return tu.NewIDToken(
 					tu.ValidIssuer, tu.ValidSubject, tu.ValidAudience,
 					tu.ValidExpiration, tu.ValidAuthTime, tu.ValidNonce,
@@ -147,7 +146,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 		},
 		{
 			name: "expired auth",
-			tokenClaims: func() (string, *oidc.IDTokenClaims) {
+			tokenClaims: func() (string, *protocol.IDTokenClaims) {
 				return tu.NewIDToken(
 					tu.ValidIssuer, tu.ValidSubject, tu.ValidAudience,
 					tu.ValidExpiration, tu.ValidAuthTime.Add(-time.Hour), tu.ValidNonce,
@@ -162,7 +161,7 @@ func TestVerifyIDTokenHint(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			token, want := tt.tokenClaims()
 
-			got, err := VerifyIDTokenHint[*oidc.IDTokenClaims](context.Background(), token, verifier)
+			got, err := VerifyIDTokenHint[*protocol.IDTokenClaims](context.Background(), token, verifier)
 			require.ErrorIs(t, err, tt.wantErr)
 			if tt.wantClaims {
 				assert.Equal(t, got, want, "claims")

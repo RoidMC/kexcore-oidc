@@ -5,16 +5,15 @@ import (
 	"fmt"
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // MyCustomClaims extends the TokenClaims base,
-// so it implements the oidc.Claims interface.
+// so it implements the protocol.Claims interface.
 // Instead of carrying a map, we add needed fields// to the struct for type safe access.
 type MyCustomClaims struct {
-	oidc.TokenClaims
+	protocol.TokenClaims
 	NotBefore            protocol.Time `json:"nbf,omitempty"`
 	CodeHash             string        `json:"c_hash,omitempty"`
 	SessionID            string        `json:"sid,omitempty"`

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -49,7 +48,7 @@ func DeviceAuthorization(ctx context.Context, scopes []string, rp RelyingParty, 
 // DeviceAccessToken attempts to obtain tokens from a Device Authorization,
 // by means of polling as defined in RFC, section 3.3 and 3.4:
 // https://www.rfc-editor.org/rfc/rfc8628#section-3.4
-func DeviceAccessToken(ctx context.Context, deviceCode string, interval time.Duration, rp RelyingParty) (resp *oidc.AccessTokenResponse, err error) {
+func DeviceAccessToken(ctx context.Context, deviceCode string, interval time.Duration, rp RelyingParty) (resp *protocol.AccessTokenResponse, err error) {
 	ctx, span := client.Tracer.Start(ctx, "DeviceAccessToken")
 	defer span.End()
 

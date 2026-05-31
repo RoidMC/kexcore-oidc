@@ -47,7 +47,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 var (
@@ -100,7 +100,7 @@ func main() {
 	logrus.Infof("successfully obtained token: %#v", token)
 
 	logrus.Infof("Going to refresh token")
-	refreshedToken, err := rp.RefreshTokens[*oidc.IDTokenClaims](ctx, provider, token.RefreshToken, "", "")
+	refreshedToken, err := rp.RefreshTokens[*protocol.IDTokenClaims](ctx, provider, token.RefreshToken, "", "")
 	if err != nil {
 		logrus.Fatal(err)
 	}

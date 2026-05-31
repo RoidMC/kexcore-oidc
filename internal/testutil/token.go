@@ -17,14 +17,13 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
-// KeySet implements oidc.KeySet
+// KeySet implements protocol.KeySet
 type KeySet struct{}
 
-// VerifySignature implements oidc.KeySet.
+// VerifySignature implements protocol.KeySet.
 func (KeySet) VerifySignature(ctx context.Context, rawToken []byte) (payload []byte, err error) {
 	if err = ctx.Err(); err != nil {
 		return nil, err
@@ -106,8 +105,8 @@ func claimsMap(claims any) map[string]any {
 	return dst
 }
 
-func NewIDTokenCustom(issuer, subject string, audience []string, expiration, authTime time.Time, nonce string, acr string, amr []string, clientID string, skew time.Duration, atHash string, custom map[string]any) (string, *oidc.IDTokenClaims) {
-	claims := oidc.NewIDTokenClaims(issuer, subject, audience, expiration, authTime, nonce, acr, amr, clientID, skew)
+func NewIDTokenCustom(issuer, subject string, audience []string, expiration, authTime time.Time, nonce string, acr string, amr []string, clientID string, skew time.Duration, atHash string, custom map[string]any) (string, *protocol.IDTokenClaims) {
+	claims := protocol.NewIDTokenClaims(issuer, subject, audience, expiration, authTime, nonce, acr, amr, clientID, skew)
 	claims.AccessTokenHash = atHash
 	claims.Claims = custom
 	token := signEncodeTokenClaims(claims)
@@ -119,12 +118,12 @@ func NewIDTokenCustom(issuer, subject string, audience []string, expiration, aut
 }
 
 // NewIDToken creates a new IDTokenClaims with passed data and returns a signed token and claims.
-func NewIDToken(issuer, subject string, audience []string, expiration, authTime time.Time, nonce string, acr string, amr []string, clientID string, skew time.Duration, atHash string) (string, *oidc.IDTokenClaims) {
+func NewIDToken(issuer, subject string, audience []string, expiration, authTime time.Time, nonce string, acr string, amr []string, clientID string, skew time.Duration, atHash string) (string, *protocol.IDTokenClaims) {
 	return NewIDTokenCustom(issuer, subject, audience, expiration, authTime, nonce, acr, amr, clientID, skew, atHash, nil)
 }
 
-func NewAccessTokenCustom(issuer, subject string, audience []string, expiration time.Time, jwtid, clientID string, skew time.Duration, custom map[string]any) (string, *oidc.AccessTokenClaims) {
-	claims := oidc.NewAccessTokenClaims(issuer, subject, audience, expiration, jwtid, clientID, skew)
+func NewAccessTokenCustom(issuer, subject string, audience []string, expiration time.Time, jwtid, clientID string, skew time.Duration, custom map[string]any) (string, *protocol.AccessTokenClaims) {
+	claims := protocol.NewAccessTokenClaims(issuer, subject, audience, expiration, jwtid, clientID, skew)
 	claims.Claims = custom
 	token := signEncodeTokenClaims(claims)
 
@@ -135,7 +134,7 @@ func NewAccessTokenCustom(issuer, subject string, audience []string, expiration 
 }
 
 // NewAcccessToken creates a new AccessTokenClaims with passed data and returns a signed token and claims.
-func NewAccessToken(issuer, subject string, audience []string, expiration time.Time, jwtid, clientID string, skew time.Duration) (string, *oidc.AccessTokenClaims) {
+func NewAccessToken(issuer, subject string, audience []string, expiration time.Time, jwtid, clientID string, skew time.Duration) (string, *protocol.AccessTokenClaims) {
 	return NewAccessTokenCustom(issuer, subject, audience, expiration, jwtid, clientID, skew, nil)
 }
 
@@ -178,14 +177,14 @@ var (
 // ValidIDToken returns a token and claims that are in the token.
 // It uses the Valid* global variables and the token will always
 // pass verification.
-func ValidIDToken() (string, *oidc.IDTokenClaims) {
+func ValidIDToken() (string, *protocol.IDTokenClaims) {
 	return NewIDToken(ValidIssuer, ValidSubject, ValidAudience, ValidExpiration, ValidAuthTime, ValidNonce, ValidACR, ValidAMR, ValidClientID, ValidSkew, "")
 }
 
 // ValidAccessToken returns a token and claims that are in the token.
 // It uses the Valid* global variables and the token always passes
 // verification within the same test run.
-func ValidAccessToken() (string, *oidc.AccessTokenClaims) {
+func ValidAccessToken() (string, *protocol.AccessTokenClaims) {
 	return NewAccessToken(ValidIssuer, ValidSubject, ValidAudience, ValidExpiration, ValidJWTID, ValidClientID, ValidSkew)
 }
 
@@ -193,7 +192,7 @@ func ValidJWTProfileAssertion() (string, *protocol.JWTTokenRequest) {
 	return NewJWTProfileAssertion(ValidClientID, ValidClientID, []string{ValidIssuer}, time.Now(), ValidExpiration)
 }
 
-// ACRVerify is a oidc.ACRVerifier func.
+// ACRVerify is a protocol.ACRVerifier func.
 func ACRVerify(acr string) error {
 	if acr != ValidACR {
 		return errors.New("invalid acr")

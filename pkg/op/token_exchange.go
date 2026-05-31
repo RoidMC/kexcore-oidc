@@ -8,7 +8,6 @@ import (
 	"time"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -307,7 +306,7 @@ func GetTokenIDAndSubjectFromToken(
 
 	switch tokenType {
 	case protocol.AccessTokenType:
-		var accessTokenClaims *oidc.AccessTokenClaims
+		var accessTokenClaims *protocol.AccessTokenClaims
 		tokenIDOrToken, subject, accessTokenClaims, ok = getTokenIDAndClaims(ctx, exchanger, token)
 		if !ok {
 			break
@@ -321,7 +320,7 @@ func GetTokenIDAndSubjectFromToken(
 
 		tokenIDOrToken, subject, ok = token, refreshTokenRequest.GetSubject(), true
 	case protocol.IDTokenType:
-		idTokenClaims, err := VerifyIDTokenHint[*oidc.IDTokenClaims](ctx, token, exchanger.IDTokenHintVerifier(ctx))
+		idTokenClaims, err := VerifyIDTokenHint[*protocol.IDTokenClaims](ctx, token, exchanger.IDTokenHintVerifier(ctx))
 		if err != nil {
 			break
 		}
@@ -372,7 +371,7 @@ func CreateTokenExchangeResponse(
 	tokenExchangeRequest TokenExchangeRequest,
 	client Client,
 	creator TokenCreator,
-) (_ *oidc.TokenExchangeResponse, err error) {
+) (_ *protocol.TokenExchangeResponse, err error) {
 	ctx, span := Tracer.Start(ctx, "CreateTokenExchangeResponse")
 	defer span.End()
 
@@ -388,7 +387,7 @@ func CreateTokenExchangeResponse(
 			return nil, err
 		}
 
-		tokenType = oidc.BearerToken
+		tokenType = protocol.BearerToken
 	case protocol.IDTokenType:
 		token, err = CreateIDToken(ctx, IssuerFromContext(ctx), tokenExchangeRequest, client.IDTokenLifetime(), "", "", creator.Storage(), client)
 		if err != nil {
@@ -405,9 +404,9 @@ func CreateTokenExchangeResponse(
 	}
 
 	exp := uint64(validity.Seconds())
-	return &oidc.TokenExchangeResponse{
+	return &protocol.TokenExchangeResponse{
 		AccessToken:     token,
-		IssuedTokenType: oidc.TokenType(tokenExchangeRequest.GetRequestedTokenType()),
+		IssuedTokenType: protocol.TokenType(tokenExchangeRequest.GetRequestedTokenType()),
 		TokenType:       tokenType,
 		ExpiresIn:       exp,
 		RefreshToken:    refreshToken,
@@ -415,7 +414,7 @@ func CreateTokenExchangeResponse(
 	}, nil
 }
 
-func getTokenIDAndClaims(ctx context.Context, userinfoProvider UserinfoProvider, accessToken string) (string, string, *oidc.AccessTokenClaims, bool) {
+func getTokenIDAndClaims(ctx context.Context, userinfoProvider UserinfoProvider, accessToken string) (string, string, *protocol.AccessTokenClaims, bool) {
 	tokenIDSubject, err := userinfoProvider.Crypto().Decrypt(accessToken)
 	if err == nil {
 		splitToken := strings.Split(tokenIDSubject, ":")
@@ -425,7 +424,7 @@ func getTokenIDAndClaims(ctx context.Context, userinfoProvider UserinfoProvider,
 
 		return splitToken[0], splitToken[1], nil, true
 	}
-	accessTokenClaims, err := VerifyAccessToken[*oidc.AccessTokenClaims](ctx, accessToken, userinfoProvider.AccessTokenVerifier(ctx))
+	accessTokenClaims, err := VerifyAccessToken[*protocol.AccessTokenClaims](ctx, accessToken, userinfoProvider.AccessTokenVerifier(ctx))
 	if err != nil {
 		return "", "", nil, false
 	}

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -321,7 +320,7 @@ func CheckDeviceAuthorizationState(ctx context.Context, clientID, deviceCode str
 	return state, protocol.ErrAuthorizationPending()
 }
 
-func CreateDeviceTokenResponse(ctx context.Context, tokenRequest TokenRequest, creator TokenCreator, client Client) (*oidc.AccessTokenResponse, error) {
+func CreateDeviceTokenResponse(ctx context.Context, tokenRequest TokenRequest, creator TokenCreator, client Client) (*protocol.AccessTokenResponse, error) {
 	/* TODO(v4):
 	Change the TokenRequest argument type to *DeviceAuthorizationState.
 	Breaking change that can not be done for v3.
@@ -334,10 +333,10 @@ func CreateDeviceTokenResponse(ctx context.Context, tokenRequest TokenRequest, c
 		return nil, err
 	}
 
-	response := &oidc.AccessTokenResponse{
+	response := &protocol.AccessTokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
-		TokenType:    oidc.BearerToken,
+		TokenType:    protocol.BearerToken,
 		ExpiresIn:    uint64(validity.Seconds()),
 		Scope:        tokenRequest.GetScopes(),
 	}

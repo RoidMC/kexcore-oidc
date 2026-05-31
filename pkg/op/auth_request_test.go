@@ -21,7 +21,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/example/server/storage"
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -202,10 +201,10 @@ func TestValidateAuthReqPrompt(t *testing.T) {
 			"no prompts but maxAge, ok",
 			args{
 				nil,
-				oidc.NewMaxAge(10),
+				protocol.NewMaxAge(10),
 			},
 			res{
-				oidc.NewMaxAge(10),
+				protocol.NewMaxAge(10),
 				nil,
 			},
 		},
@@ -213,10 +212,10 @@ func TestValidateAuthReqPrompt(t *testing.T) {
 			"prompt none, ok",
 			args{
 				[]string{"none"},
-				oidc.NewMaxAge(10),
+				protocol.NewMaxAge(10),
 			},
 			res{
-				oidc.NewMaxAge(10),
+				protocol.NewMaxAge(10),
 				nil,
 			},
 		},
@@ -224,7 +223,7 @@ func TestValidateAuthReqPrompt(t *testing.T) {
 			"prompt none with others, err",
 			args{
 				[]string{"none", "login"},
-				oidc.NewMaxAge(10),
+				protocol.NewMaxAge(10),
 			},
 			res{
 				nil,
@@ -238,7 +237,7 @@ func TestValidateAuthReqPrompt(t *testing.T) {
 				nil,
 			},
 			res{
-				oidc.NewMaxAge(0),
+				protocol.NewMaxAge(0),
 				nil,
 			},
 		},
@@ -246,10 +245,10 @@ func TestValidateAuthReqPrompt(t *testing.T) {
 			"prompt login with maxAge, ok",
 			args{
 				[]string{"login"},
-				oidc.NewMaxAge(10),
+				protocol.NewMaxAge(10),
 			},
 			res{
-				oidc.NewMaxAge(0),
+				protocol.NewMaxAge(0),
 				nil,
 			},
 		},

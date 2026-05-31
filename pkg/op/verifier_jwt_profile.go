@@ -21,7 +21,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
-// JWTProfileVerifier extends oidc.Verifier with
+// JWTProfileVerifier extends protocol.Verifier with
 // a jwtProfileKeyStorage and a function to check
 // the subject in a token.
 type JWTProfileVerifier struct {
@@ -31,12 +31,12 @@ type JWTProfileVerifier struct {
 	CheckSubject func(request *protocol.JWTTokenRequest) error
 }
 
-// NewJWTProfileVerifier creates an oidc.Verifier for JWT Profile assertions (authorization grant and client authentication)
+// NewJWTProfileVerifier creates an protocol.Verifier for JWT Profile assertions (authorization grant and client authentication)
 func NewJWTProfileVerifier(storage JWTProfileKeyStorage, issuer string, maxAgeIAT, offset time.Duration, opts ...JWTProfileVerifierOption) *JWTProfileVerifier {
 	return newJWTProfileVerifier(storage, nil, issuer, maxAgeIAT, offset, opts...)
 }
 
-// NewJWTProfileVerifierKeySet creates an oidc.Verifier for JWT Profile assertions (authorization grant and client authentication)
+// NewJWTProfileVerifierKeySet creates an protocol.Verifier for JWT Profile assertions (authorization grant and client authentication)
 func NewJWTProfileVerifierKeySet(keySet protocol.KeySet, issuer string, maxAgeIAT, offset time.Duration, opts ...JWTProfileVerifierOption) *JWTProfileVerifier {
 	return newJWTProfileVerifier(nil, keySet, issuer, maxAgeIAT, offset, opts...)
 }
@@ -180,7 +180,7 @@ type jwtProfileKeySet struct {
 	clientID string
 }
 
-// VerifySignature implements oidc.KeySet by getting the public key from Storage implementation
+// VerifySignature implements protocol.KeySet by getting the public key from Storage implementation
 func (k *jwtProfileKeySet) VerifySignature(ctx context.Context, rawToken []byte) (payload []byte, err error) {
 	ctx, span := Tracer.Start(ctx, "VerifySignature")
 	defer span.End()

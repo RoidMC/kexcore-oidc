@@ -7,7 +7,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/zitadel/schema"
 
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
@@ -55,11 +55,11 @@ func ExpectVerifier(a op.Authorizer, t *testing.T) {
 
 type Verifier struct{}
 
-func (v *Verifier) Verify(ctx context.Context, accessToken, idToken string) (*oidc.IDTokenClaims, error) {
+func (v *Verifier) Verify(ctx context.Context, accessToken, idToken string) (*protocol.IDTokenClaims, error) {
 	return nil, nil
 }
 
-func (v *Verifier) VerifyIDToken(ctx context.Context, idToken string) (*oidc.IDTokenClaims, error) {
+func (v *Verifier) VerifyIDToken(ctx context.Context, idToken string) (*protocol.IDTokenClaims, error) {
 	return nil, nil
 }
 

@@ -1,29 +1,31 @@
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright Zitadel
-// Modifications Copyright 2026 RoidMC Studios
-package oidc
+// Tests migrated from oidc/types_test.go
+
+package protocol_test
 
 import (
 	"bytes"
 	"encoding/json"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/text/language"
 )
+
+// ============================================================================
+// Audience
+// ============================================================================
 
 func TestAudience_UnmarshalText(t *testing.T) {
 	type args struct {
 		text []byte
 	}
 	type res struct {
-		audience Audience
+		audience protocol.Audience
 	}
 	tests := []struct {
 		name    string
@@ -63,7 +65,7 @@ func TestAudience_UnmarshalText(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			a := new(struct {
-				Audience Audience `json:"aud"`
+				Audience protocol.Audience `json:"aud"`
 			})
 			if err := json.Unmarshal(tt.args.text, &a); (err != nil) != tt.wantErr {
 				t.Errorf("UnmarshalText() error = %v, wantErr %v", err, tt.wantErr)
@@ -73,22 +75,26 @@ func TestAudience_UnmarshalText(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// AuthenticationMethodsReferences
+// ============================================================================
+
 func TestAuthenticationMethodsReferences_UnmarshalJSON(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		want    AuthenticationMethodsReferences
+		want    protocol.AuthenticationMethodsReferences
 		wantErr bool
 	}{
 		{
 			name:  "single auth method",
 			input: `{"amr":"pwd"}`,
-			want:  AuthenticationMethodsReferences{"pwd"},
+			want:  protocol.AuthenticationMethodsReferences{"pwd"},
 		},
 		{
 			name:  "multiple auth methods",
 			input: `{"amr":["pwd","mfa"]}`,
-			want:  AuthenticationMethodsReferences{"pwd", "mfa"},
+			want:  protocol.AuthenticationMethodsReferences{"pwd", "mfa"},
 		},
 		{
 			name:  "null",
@@ -104,7 +110,7 @@ func TestAuthenticationMethodsReferences_UnmarshalJSON(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got struct {
-				AMR AuthenticationMethodsReferences `json:"amr,omitempty"`
+				AMR protocol.AuthenticationMethodsReferences `json:"amr,omitempty"`
 			}
 			err := json.Unmarshal([]byte(tt.input), &got)
 			if tt.wantErr {
@@ -117,12 +123,16 @@ func TestAuthenticationMethodsReferences_UnmarshalJSON(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Display
+// ============================================================================
+
 func TestDisplay_UnmarshalText(t *testing.T) {
 	type args struct {
 		text []byte
 	}
 	type res struct {
-		display Display
+		display protocol.Display
 	}
 	tests := []struct {
 		name    string
@@ -143,13 +153,13 @@ func TestDisplay_UnmarshalText(t *testing.T) {
 			args{
 				[]byte("page"),
 			},
-			res{Display("page")},
+			res{protocol.Display("page")},
 			false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var d Display
+			var d protocol.Display
 			if err := d.UnmarshalText(tt.args.text); (err != nil) != tt.wantErr {
 				t.Errorf("UnmarshalText() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -160,10 +170,14 @@ func TestDisplay_UnmarshalText(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Locale
+// ============================================================================
+
 func TestLocale_Tag(t *testing.T) {
 	tests := []struct {
 		name string
-		l    *Locale
+		l    *protocol.Locale
 		want language.Tag
 	}{
 		{
@@ -173,12 +187,12 @@ func TestLocale_Tag(t *testing.T) {
 		},
 		{
 			name: "Und",
-			l:    NewLocale(language.Und),
+			l:    protocol.NewLocale(language.Und),
 			want: language.Und,
 		},
 		{
 			name: "language",
-			l:    NewLocale(language.Afrikaans),
+			l:    protocol.NewLocale(language.Afrikaans),
 			want: language.Afrikaans,
 		},
 	}
@@ -192,7 +206,7 @@ func TestLocale_Tag(t *testing.T) {
 func TestLocale_String(t *testing.T) {
 	tests := []struct {
 		name string
-		l    *Locale
+		l    *protocol.Locale
 		want language.Tag
 	}{
 		{
@@ -202,12 +216,12 @@ func TestLocale_String(t *testing.T) {
 		},
 		{
 			name: "Und",
-			l:    NewLocale(language.Und),
+			l:    protocol.NewLocale(language.Und),
 			want: language.Und,
 		},
 		{
 			name: "language",
-			l:    NewLocale(language.Afrikaans),
+			l:    protocol.NewLocale(language.Afrikaans),
 			want: language.Afrikaans,
 		},
 	}
@@ -221,7 +235,7 @@ func TestLocale_String(t *testing.T) {
 func TestLocale_MarshalJSON(t *testing.T) {
 	tests := []struct {
 		name    string
-		l       *Locale
+		l       *protocol.Locale
 		want    string
 		wantErr bool
 	}{
@@ -232,12 +246,12 @@ func TestLocale_MarshalJSON(t *testing.T) {
 		},
 		{
 			name: "und",
-			l:    NewLocale(language.Und),
+			l:    protocol.NewLocale(language.Und),
 			want: "null",
 		},
 		{
 			name: "language",
-			l:    NewLocale(language.Afrikaans),
+			l:    protocol.NewLocale(language.Afrikaans),
 			want: `"af"`,
 		},
 	}
@@ -256,7 +270,7 @@ func TestLocale_MarshalJSON(t *testing.T) {
 
 func TestLocale_UnmarshalJSON(t *testing.T) {
 	type dst struct {
-		Locale *Locale `json:"locale,omitempty"`
+		Locale *protocol.Locale `json:"locale,omitempty"`
 	}
 	tests := []struct {
 		name    string
@@ -285,21 +299,21 @@ func TestLocale_UnmarshalJSON(t *testing.T) {
 			input:   `{"locale": ""}`,
 			wantErr: false,
 			want: dst{
-				Locale: &Locale{},
+				Locale: &protocol.Locale{},
 			},
 		},
 		{
 			name:  "afrikaans, ok",
 			input: `{"locale": "af"}`,
 			want: dst{
-				Locale: NewLocale(language.Afrikaans),
+				Locale: protocol.NewLocale(language.Afrikaans),
 			},
 		},
 		{
 			name:  "gb, ignored",
 			input: `{"locale": "gb"}`,
 			want: dst{
-				Locale: &Locale{},
+				Locale: &protocol.Locale{},
 			},
 		},
 		{
@@ -322,10 +336,14 @@ func TestLocale_UnmarshalJSON(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Locales
+// ============================================================================
+
 func TestParseLocales(t *testing.T) {
 	in := []string{language.Afrikaans.String(), language.Danish.String(), "foobar", language.Und.String()}
-	want := Locales{language.Afrikaans, language.Danish}
-	got := ParseLocales(in)
+	want := protocol.Locales{language.Afrikaans, language.Danish}
+	got := protocol.ParseLocales(in)
 	assert.ElementsMatch(t, want, got)
 }
 
@@ -377,7 +395,7 @@ func TestLocales_UnmarshalText(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var locales Locales
+			var locales protocol.Locales
 			if err := locales.UnmarshalText(tt.args.text); (err != nil) != tt.wantErr {
 				t.Errorf("UnmarshalText() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -392,7 +410,7 @@ func TestLocales_UnmarshalJSON(t *testing.T) {
 	jsonArray, err := json.Marshal(in)
 	require.NoError(t, err)
 
-	out := Locales{language.Afrikaans, language.Danish}
+	out := protocol.Locales{language.Afrikaans, language.Danish}
 
 	type args struct {
 		data []byte
@@ -400,7 +418,7 @@ func TestLocales_UnmarshalJSON(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    Locales
+		want    protocol.Locales
 		wantErr bool
 	}{
 		{
@@ -448,7 +466,7 @@ func TestLocales_UnmarshalJSON(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var got Locales
+			var got protocol.Locales
 			err := got.UnmarshalJSON([]byte(tt.args.data))
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -459,6 +477,10 @@ func TestLocales_UnmarshalJSON(t *testing.T) {
 		})
 	}
 }
+
+// ============================================================================
+// SpaceDelimitedArray (Scopes)
+// ============================================================================
 
 func TestScopes_UnmarshalText(t *testing.T) {
 	type args struct {
@@ -516,7 +538,7 @@ func TestScopes_UnmarshalText(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var scopes SpaceDelimitedArray
+			var scopes protocol.SpaceDelimitedArray
 			if err := scopes.UnmarshalText(tt.args.text); (err != nil) != tt.wantErr {
 				t.Errorf("UnmarshalText() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -527,7 +549,7 @@ func TestScopes_UnmarshalText(t *testing.T) {
 
 func TestScopes_MarshalText(t *testing.T) {
 	type args struct {
-		scopes SpaceDelimitedArray
+		scopes protocol.SpaceDelimitedArray
 	}
 	type res struct {
 		scopes []byte
@@ -541,7 +563,7 @@ func TestScopes_MarshalText(t *testing.T) {
 		{
 			"unknown value",
 			args{
-				SpaceDelimitedArray{"unknown"},
+				protocol.SpaceDelimitedArray{"unknown"},
 			},
 			res{
 				[]byte("unknown"),
@@ -551,7 +573,7 @@ func TestScopes_MarshalText(t *testing.T) {
 		{
 			"struct",
 			args{
-				SpaceDelimitedArray{`{"unknown":"value"}`},
+				protocol.SpaceDelimitedArray{`{"unknown":"value"}`},
 			},
 			res{
 				[]byte(`{"unknown":"value"}`),
@@ -561,7 +583,7 @@ func TestScopes_MarshalText(t *testing.T) {
 		{
 			"openid",
 			args{
-				SpaceDelimitedArray{"openid"},
+				protocol.SpaceDelimitedArray{"openid"},
 			},
 			res{
 				[]byte("openid"),
@@ -571,7 +593,7 @@ func TestScopes_MarshalText(t *testing.T) {
 		{
 			"multiple scopes",
 			args{
-				SpaceDelimitedArray{"openid", "email", "custom:scope"},
+				protocol.SpaceDelimitedArray{"openid", "email", "custom:scope"},
 			},
 			res{
 				[]byte("openid email custom:scope"),
@@ -600,12 +622,12 @@ func TestSpaceDelimitatedArray_ValuerNotNil(t *testing.T) {
 	}
 	for _, input := range inputs {
 		t.Run(strconv.Itoa(len(input))+strings.Join(input, "_"), func(t *testing.T) {
-			sda := SpaceDelimitedArray(input)
+			sda := protocol.SpaceDelimitedArray(input)
 			dbValue, err := sda.Value()
 			if !assert.NoError(t, err, "Value") {
 				return
 			}
-			var reversed SpaceDelimitedArray
+			var reversed protocol.SpaceDelimitedArray
 			err = reversed.Scan(dbValue)
 			if assert.NoError(t, err, "Scan string") {
 				assert.Equal(t, sda, reversed, "scan string")
@@ -623,34 +645,21 @@ func TestSpaceDelimitatedArray_ValuerNotNil(t *testing.T) {
 }
 
 func TestSpaceDelimitatedArray_ValuerNil(t *testing.T) {
-	var reversed SpaceDelimitedArray
+	var reversed protocol.SpaceDelimitedArray
 	err := reversed.Scan(nil)
 	if assert.NoError(t, err, "Scan nil") {
-		assert.Equal(t, SpaceDelimitedArray(nil), reversed, "scan nil")
+		assert.Equal(t, protocol.SpaceDelimitedArray(nil), reversed, "scan nil")
 	}
 }
 
-func TestNewEncoder(t *testing.T) {
-	type request struct {
-		Scopes SpaceDelimitedArray `schema:"scope"`
-	}
-	a := request{
-		Scopes: SpaceDelimitedArray{"foo", "bar"},
-	}
-
-	values := make(url.Values)
-	NewEncoder().Encode(a, values)
-	assert.Equal(t, url.Values{"scope": []string{"foo bar"}}, values)
-
-	var b request
-	b.Scopes = strings.Split(values.Get("scope"), " ")
-	assert.Equal(t, a, b)
-}
+// ============================================================================
+// Time
+// ============================================================================
 
 func TestTime_AsTime(t *testing.T) {
 	tests := []struct {
 		name string
-		ts   Time
+		ts   protocol.Time
 		want time.Time
 	}{
 		{
@@ -676,7 +685,7 @@ func TestTime_FromTime(t *testing.T) {
 	tests := []struct {
 		name string
 		tt   time.Time
-		want Time
+		want protocol.Time
 	}{
 		{
 			name: "zero",
@@ -691,7 +700,7 @@ func TestTime_FromTime(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := FromTime(tt.tt)
+			got := protocol.FromTime(tt.tt)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -699,7 +708,7 @@ func TestTime_FromTime(t *testing.T) {
 
 func TestTime_UnmarshalJSON(t *testing.T) {
 	type dst struct {
-		UpdatedAt Time `json:"updated_at"`
+		UpdatedAt protocol.Time `json:"updated_at"`
 	}
 	tests := []struct {
 		name    string
@@ -745,7 +754,7 @@ func TestTime_UnmarshalJSON(t *testing.T) {
 		})
 	}
 	t.Run("syntax error", func(t *testing.T) {
-		var ts Time
+		var ts protocol.Time
 		err := ts.UnmarshalJSON([]byte{'~'})
 		assert.Error(t, err)
 	})

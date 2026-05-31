@@ -24,7 +24,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -403,7 +402,7 @@ func validateRefreshScopes(requestedScopes []string, refreshReq storm.RefreshTok
 // --- token creation ---
 
 // createTokenResponseFromTokenRequest creates a token response from any TokenRequest implementation.
-func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, request storm.TokenRequest, client storm.Client, createAccessToken bool) (*oidc.AccessTokenResponse, error) {
+func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, request storm.TokenRequest, client storm.Client, createAccessToken bool) (*protocol.AccessTokenResponse, error) {
 	var accessToken string
 	var validity time.Duration
 
@@ -423,9 +422,9 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 	}
 
 	exp := uint64(validity.Seconds())
-	resp := &oidc.AccessTokenResponse{
+	resp := &protocol.AccessTokenResponse{
 		AccessToken: accessToken,
-		TokenType:   oidc.BearerToken,
+		TokenType:   protocol.BearerToken,
 		ExpiresIn:   exp,
 		Scope:       request.GetScopes(),
 	}
@@ -526,15 +525,15 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 	return string(encrypted), validity, nil
 }
 
-func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenRequest storm.TokenRequest, client storm.Client) (*oidc.AccessTokenResponse, error) {
+func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenRequest storm.TokenRequest, client storm.Client) (*protocol.AccessTokenResponse, error) {
 	accessToken, validity, err := p.createAccessToken(ctx, tokenRequest, client)
 	if err != nil {
 		return nil, err
 	}
 
-	return &oidc.AccessTokenResponse{
+	return &protocol.AccessTokenResponse{
 		AccessToken: accessToken,
-		TokenType:   oidc.BearerToken,
+		TokenType:   protocol.BearerToken,
 		ExpiresIn:   uint64(validity.Seconds()),
 		Scope:       tokenRequest.GetScopes(),
 	}, nil

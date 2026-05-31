@@ -26,7 +26,6 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 )
 
 const (
@@ -294,7 +293,7 @@ func NewProvider(
 	o.Handler = CreateRouter(o, o.interceptors...)
 	o.decoder = schema.NewDecoder()
 	o.decoder.IgnoreUnknownKeys(true)
-	o.encoder = oidc.NewEncoder()
+	o.encoder = protocol.NewEncoder()
 	return o, nil
 }
 
@@ -520,7 +519,7 @@ type OpenIDKeySet struct {
 	Storage
 }
 
-// VerifySignature implements the oidc.KeySet interface
+// VerifySignature implements the protocol.KeySet interface
 // providing an implementation for the keys stored in the OP Storage interface
 func (o *OpenIDKeySet) VerifySignature(ctx context.Context, rawToken []byte) ([]byte, error) {
 	keySet, err := o.Storage.KeySet(ctx)

@@ -6,7 +6,6 @@ import (
 	"net/url"
 
 	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -109,7 +108,7 @@ func AuthorizeClientCredentialsClient(ctx context.Context, request *protocol.Cli
 	return client, nil
 }
 
-func CreateClientCredentialsTokenResponse(ctx context.Context, tokenRequest TokenRequest, creator TokenCreator, client Client) (*oidc.AccessTokenResponse, error) {
+func CreateClientCredentialsTokenResponse(ctx context.Context, tokenRequest TokenRequest, creator TokenCreator, client Client) (*protocol.AccessTokenResponse, error) {
 	ctx, span := Tracer.Start(ctx, "CreateClientCredentialsTokenResponse")
 	defer span.End()
 
@@ -118,9 +117,9 @@ func CreateClientCredentialsTokenResponse(ctx context.Context, tokenRequest Toke
 		return nil, err
 	}
 
-	return &oidc.AccessTokenResponse{
+	return &protocol.AccessTokenResponse{
 		AccessToken: accessToken,
-		TokenType:   oidc.BearerToken,
+		TokenType:   protocol.BearerToken,
 		ExpiresIn:   uint64(validity.Seconds()),
 		Scope:       tokenRequest.GetScopes(),
 	}, nil
