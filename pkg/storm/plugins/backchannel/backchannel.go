@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"reflect"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -19,32 +18,28 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
-	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 // Plugin implements the OIDC Back-Channel Logout endpoint.
 type Plugin struct {
-	store      storm.BackChannelStore
-	crypto     storm.Crypto
-	keyStore   storm.KeyStore
-	converters map[reflect.Type]codec.Converter
+	store    storm.BackChannelStore
+	crypto   storm.Crypto
+	keyStore storm.KeyStore
 }
 
 // Config holds the dependencies for the BackChannel plugin.
 type Config struct {
-	Store      storm.BackChannelStore
-	Crypto     storm.Crypto
-	KeyStore   storm.KeyStore
-	Converters map[reflect.Type]codec.Converter
+	Store    storm.BackChannelStore
+	Crypto   storm.Crypto
+	KeyStore storm.KeyStore
 }
 
 // New creates a new BackChannel plugin.
 func New(cfg Config) *Plugin {
 	return &Plugin{
-		store:      cfg.Store,
-		crypto:     cfg.Crypto,
-		keyStore:   cfg.KeyStore,
-		converters: cfg.Converters,
+		store:    cfg.Store,
+		crypto:   cfg.Crypto,
+		keyStore: cfg.KeyStore,
 	}
 }
 

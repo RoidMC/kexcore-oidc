@@ -7,7 +7,6 @@ package userinfo
 import (
 	"context"
 	"net/http"
-	"reflect"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -15,32 +14,28 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
-	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 // Plugin implements the OIDC UserInfo endpoint.
 type Plugin struct {
-	store      storm.UserinfoStore
-	crypto     storm.Crypto
-	keyStore   shared.KeyStore
-	converters map[reflect.Type]codec.Converter
+	store    storm.UserinfoStore
+	crypto   storm.Crypto
+	keyStore shared.KeyStore
 }
 
 // Config holds the dependencies for the UserInfo plugin.
 type Config struct {
-	Store      storm.UserinfoStore
-	Crypto     storm.Crypto
-	KeyStore   shared.KeyStore
-	Converters map[reflect.Type]codec.Converter
+	Store    storm.UserinfoStore
+	Crypto   storm.Crypto
+	KeyStore shared.KeyStore
 }
 
 // New creates a new UserInfo plugin.
 func New(cfg Config) *Plugin {
 	return &Plugin{
-		store:      cfg.Store,
-		crypto:     cfg.Crypto,
-		keyStore:   cfg.KeyStore,
-		converters: cfg.Converters,
+		store:    cfg.Store,
+		crypto:   cfg.Crypto,
+		keyStore: cfg.KeyStore,
 	}
 }
 

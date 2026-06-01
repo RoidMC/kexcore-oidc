@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"reflect"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,7 +15,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
-	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 // Plugin implements the OIDC End Session endpoint.
@@ -28,7 +26,7 @@ type Plugin struct {
 	offset           time.Duration
 	maxAgeIAT        time.Duration
 	maxAge           time.Duration
-	converters       map[reflect.Type]codec.Converter
+	decoder          *protocol.Decoder
 }
 
 // Config holds the dependencies for the EndSession plugin.
@@ -45,8 +43,8 @@ type Config struct {
 	MaxAgeIAT time.Duration
 	// MaxAge is the maximum allowed time since auth_time.
 	// Set to 0 to disable auth_time max_age checking.
-	MaxAge     time.Duration
-	Converters map[reflect.Type]codec.Converter
+	MaxAge  time.Duration
+	Decoder *protocol.Decoder
 }
 
 // New creates a new EndSession plugin.
@@ -59,7 +57,7 @@ func New(cfg Config) *Plugin {
 		offset:           cfg.Offset,
 		maxAgeIAT:        cfg.MaxAgeIAT,
 		maxAge:           cfg.MaxAge,
-		converters:       cfg.Converters,
+		decoder:          cfg.Decoder,
 	}
 }
 
@@ -87,7 +85,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, err := parseEndSessionRequest(r.Form, p.converters)
+	req, err := parseEndSessionRequest(r.Form, p.decoder)
 	if err != nil {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding form").WithParent(err), nil)
 		return
@@ -114,9 +112,9 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURI, http.StatusFound)
 }
 
-func parseEndSessionRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*protocol.EndSessionRequest, error) {
+func parseEndSessionRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.EndSessionRequest, error) {
 	req := new(protocol.EndSessionRequest)
-	if err := codec.Decode(req, form, converters); err != nil {
+	if err := decoder.Decode(req, form); err != nil {
 		return nil, err
 	}
 	return req, nil

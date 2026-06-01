@@ -8,7 +8,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -16,7 +15,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
-	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 // Plugin implements the Token Introspection endpoint.
@@ -25,7 +23,6 @@ type Plugin struct {
 	clientStore storm.ClientStore
 	crypto      storm.Crypto
 	keyStore    shared.KeyStore
-	converters  map[reflect.Type]codec.Converter
 }
 
 // Config holds the dependencies for the Introspection plugin.
@@ -34,7 +31,6 @@ type Config struct {
 	ClientStore storm.ClientStore
 	Crypto      storm.Crypto
 	KeyStore    shared.KeyStore
-	Converters  map[reflect.Type]codec.Converter
 }
 
 // New creates a new Introspection plugin.
@@ -44,7 +40,6 @@ func New(cfg Config) *Plugin {
 		clientStore: cfg.ClientStore,
 		crypto:      cfg.Crypto,
 		keyStore:    cfg.KeyStore,
-		converters:  cfg.Converters,
 	}
 }
 

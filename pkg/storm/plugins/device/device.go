@@ -9,7 +9,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
-	"reflect"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,14 +16,12 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
-	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 // Plugin implements the Device Authorization Grant.
 type Plugin struct {
 	store       storm.DeviceAuthStore
 	clientStore storm.ClientStore
-	converters  map[reflect.Type]codec.Converter
 	lifetime    time.Duration
 }
 
@@ -32,7 +29,6 @@ type Plugin struct {
 type Config struct {
 	Store       storm.DeviceAuthStore
 	ClientStore storm.ClientStore
-	Converters  map[reflect.Type]codec.Converter
 	Lifetime    time.Duration
 }
 
@@ -44,7 +40,6 @@ func New(cfg Config) *Plugin {
 	return &Plugin{
 		store:       cfg.Store,
 		clientStore: cfg.ClientStore,
-		converters:  cfg.Converters,
 		lifetime:    cfg.Lifetime,
 	}
 }

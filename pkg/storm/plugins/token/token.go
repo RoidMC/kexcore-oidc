@@ -17,7 +17,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"reflect"
 	"slices"
 	"time"
 
@@ -27,7 +26,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
-	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 const validIDTokenLifetime = 1 * time.Hour
@@ -39,7 +37,7 @@ type Plugin struct {
 	authStore   storm.AuthStore
 	crypto      storm.Crypto
 	keyStore    storm.KeyStore
-	converters  map[reflect.Type]codec.Converter
+	decoder     *protocol.Decoder
 	logger      *slog.Logger
 }
 
@@ -50,7 +48,7 @@ type Config struct {
 	AuthStore   storm.AuthStore
 	Crypto      storm.Crypto
 	KeyStore    storm.KeyStore
-	Converters  map[reflect.Type]codec.Converter
+	Decoder     *protocol.Decoder
 	Logger      *slog.Logger
 }
 
@@ -65,7 +63,7 @@ func New(cfg Config) *Plugin {
 		authStore:   cfg.AuthStore,
 		crypto:      cfg.Crypto,
 		keyStore:    cfg.KeyStore,
-		converters:  cfg.Converters,
+		decoder:     cfg.Decoder,
 		logger:      cfg.Logger,
 	}
 }
@@ -118,7 +116,7 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 // --- authorization_code grant (RFC 6749 §4.1.3, OIDC Core §3.1.3.1) ---
 
 func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request) {
-	tokenReq, err := parseAccessTokenRequest(r.Form, p.converters)
+	tokenReq, err := parseAccessTokenRequest(r.Form, p.decoder)
 	if err != nil {
 		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("cannot parse token request").WithParent(err))
 		return
@@ -179,7 +177,7 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 // --- refresh_token grant (RFC 6749 §6) ---
 
 func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
-	tokenReq, err := parseRefreshTokenRequest(r.Form, p.converters)
+	tokenReq, err := parseRefreshTokenRequest(r.Form, p.decoder)
 	if err != nil {
 		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("cannot parse refresh token request").WithParent(err))
 		return
@@ -233,7 +231,7 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 // --- client_credentials grant (RFC 6749 §4.4) ---
 
 func (p *Plugin) handleClientCredentials(w http.ResponseWriter, r *http.Request) {
-	tokenReq, err := parseClientCredentialsRequest(r.Form, p.converters)
+	tokenReq, err := parseClientCredentialsRequest(r.Form, p.decoder)
 	if err != nil {
 		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("cannot parse client credentials request").WithParent(err))
 		return
@@ -286,25 +284,25 @@ func (p *Plugin) handleJWTProfile(w http.ResponseWriter, r *http.Request) {
 
 // --- parsing ---
 
-func parseAccessTokenRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*protocol.AccessTokenRequest, error) {
+func parseAccessTokenRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.AccessTokenRequest, error) {
 	req := new(protocol.AccessTokenRequest)
-	if err := codec.Decode(req, form, converters); err != nil {
+	if err := decoder.Decode(req, form); err != nil {
 		return nil, err
 	}
 	return req, nil
 }
 
-func parseRefreshTokenRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*protocol.RefreshTokenRequest, error) {
+func parseRefreshTokenRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.RefreshTokenRequest, error) {
 	req := new(protocol.RefreshTokenRequest)
-	if err := codec.Decode(req, form, converters); err != nil {
+	if err := decoder.Decode(req, form); err != nil {
 		return nil, err
 	}
 	return req, nil
 }
 
-func parseClientCredentialsRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*protocol.ClientCredentialsRequest, error) {
+func parseClientCredentialsRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.ClientCredentialsRequest, error) {
 	req := new(protocol.ClientCredentialsRequest)
-	if err := codec.Decode(req, form, converters); err != nil {
+	if err := decoder.Decode(req, form); err != nil {
 		return nil, err
 	}
 	return req, nil

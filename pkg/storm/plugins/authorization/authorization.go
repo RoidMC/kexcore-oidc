@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"reflect"
 	"slices"
 	"time"
 
@@ -30,7 +29,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
-	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 // Plugin implements the OIDC Authorization endpoint.
@@ -39,7 +37,7 @@ type Plugin struct {
 	clientStore    storm.ClientStore
 	crypto         storm.Crypto
 	keyStore       storm.KeyStore
-	converters     map[reflect.Type]codec.Converter
+	decoder        *protocol.Decoder
 	enableImplicit bool
 	parStore       storm.PARStore
 }
@@ -50,7 +48,7 @@ type Config struct {
 	ClientStore storm.ClientStore
 	Crypto      storm.Crypto
 	KeyStore    storm.KeyStore
-	Converters  map[reflect.Type]codec.Converter
+	Decoder     *protocol.Decoder
 
 	// EnableImplicit enables the Implicit Flow (response_type=id_token,
 	// id_token token). Disabled by default per OAuth 2.1.
@@ -68,7 +66,7 @@ func New(cfg Config) *Plugin {
 		clientStore:    cfg.ClientStore,
 		crypto:         cfg.Crypto,
 		keyStore:       cfg.KeyStore,
-		converters:     cfg.Converters,
+		decoder:        cfg.Decoder,
 		enableImplicit: cfg.EnableImplicit,
 		parStore:       cfg.PARStore,
 	}
@@ -106,7 +104,7 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authReq, err := parseAuthorizeRequest(r.Form, p.converters)
+	authReq, err := parseAuthorizeRequest(r.Form, p.decoder)
 	if err != nil {
 		writeAuthError(w, r, "", "", protocol.ErrInvalidRequest().WithDescription("cannot parse auth request").WithParent(err))
 		return
@@ -264,9 +262,9 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 
 // --- parsing ---
 
-func parseAuthorizeRequest(form map[string][]string, converters map[reflect.Type]codec.Converter) (*protocol.AuthRequest, error) {
+func parseAuthorizeRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.AuthRequest, error) {
 	req := new(protocol.AuthRequest)
-	if err := codec.Decode(req, form, converters); err != nil {
+	if err := decoder.Decode(req, form); err != nil {
 		return nil, err
 	}
 	return req, nil

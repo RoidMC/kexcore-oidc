@@ -8,7 +8,6 @@ package par
 import (
 	"context"
 	"net/http"
-	"reflect"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,14 +15,13 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
-	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 // Plugin implements the Pushed Authorization Requests endpoint.
 type Plugin struct {
 	store       storm.PARStore
 	clientStore storm.ClientStore
-	converters  map[reflect.Type]codec.Converter
+	decoder     *protocol.Decoder
 	lifetime    time.Duration
 }
 
@@ -31,7 +29,7 @@ type Plugin struct {
 type Config struct {
 	Store       storm.PARStore
 	ClientStore storm.ClientStore
-	Converters  map[reflect.Type]codec.Converter
+	Decoder     *protocol.Decoder
 	Lifetime    time.Duration
 }
 
@@ -43,7 +41,7 @@ func New(cfg Config) *Plugin {
 	return &Plugin{
 		store:       cfg.Store,
 		clientStore: cfg.ClientStore,
-		converters:  cfg.Converters,
+		decoder:     cfg.Decoder,
 		lifetime:    cfg.Lifetime,
 	}
 }
@@ -90,7 +88,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 	// Parse the authorization request parameters
 	authReq := new(protocol.AuthRequest)
-	if err := codec.Decode(authReq, r.Form, p.converters); err != nil {
+	if err := p.decoder.Decode(authReq, r.Form); err != nil {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding auth request").WithParent(err), nil)
 		return
 	}

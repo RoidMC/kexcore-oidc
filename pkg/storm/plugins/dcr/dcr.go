@@ -10,33 +10,28 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"reflect"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
-	"github.com/roidmc/kexcore-oidc/pkg/util/codec"
 )
 
 // Plugin implements the Dynamic Client Registration endpoint.
 type Plugin struct {
-	store      storm.DCRStore
-	converters map[reflect.Type]codec.Converter
+	store storm.DCRStore
 }
 
 // Config holds the dependencies for the DCR plugin.
 type Config struct {
-	Store      storm.DCRStore
-	Converters map[reflect.Type]codec.Converter
+	Store storm.DCRStore
 }
 
 // New creates a new DCR plugin.
 func New(cfg Config) *Plugin {
 	return &Plugin{
-		store:      cfg.Store,
-		converters: cfg.Converters,
+		store: cfg.Store,
 	}
 }
 

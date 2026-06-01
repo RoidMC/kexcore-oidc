@@ -30,6 +30,7 @@ standards as Zitadel but with original code, original API design, and its own te
 
 `github.com/zitadel/schema` has been fully replaced by `protocol.Encoder` and `protocol.Decoder`
 (self-developed, RoidMC copyright). The dependency is removed from `go.mod`.
+`pkg/util/codec` has been removed — all StormEngine plugins now use `protocol.Decoder` directly.
 
 `protocol/` defines:
 - `AuthMethod` constants (`AuthMethodBasic`, `AuthMethodPost`, `AuthMethodNone`, `AuthMethodPrivateKeyJWT`)
@@ -284,5 +285,27 @@ curl http://localhost:9998/.well-known/jwks.json
 - `protocol/` is the single source of truth for all OAuth/OIDC type definitions
 - `protocol/authorization.go` defines `AuthRequest`, `PushedAuthRequest/Response`, `RequestObject`, and all OIDC constants
 - `protocol/token.go` defines all token types including `Tokens[C]` (generic OAuth2+OIDC token wrapper)
-- `protocol/util.go` defines `Encoder` (struct → url.Values) and `Decoder` (url.Values → struct) via `schema` tags; replaces `zitadel/schema`
+- `protocol/util.go` defines `Encoder` (struct → url.Values) and `Decoder` (url.Values → struct) via `schema` tags; replaces `zitadel/schema` and `pkg/util/codec`
+- `Decoder.RegisterParser` allows StormEngine plugins to register custom type parsers at runtime
 - `protocol/session.go` defines `EndSessionRequest` for RP-Initiated Logout
+
+### protocol.Encoder / protocol.Decoder vs zitadel/schema
+
+| Feature | `zitadel/schema` (original) | `protocol.Decoder/Encoder` (replacement) |
+|---|---|---|
+| Struct tag | `schema` | `schema` (unified) |
+| Custom type parsing | Global `Converter` registry | Instance-level `RegisterParser` |
+| Ignore unknown keys | `IgnoreUnknownKeys(bool)` | `IgnoreUnknownKeys(bool)` |
+| `omitempty` support | Native | Supported |
+| `encoding.TextMarshaler` / `TextUnmarshaler` | Native | Supported |
+| Pointer auto-init | Native | Supported |
+| Slice decoding | Full `[]T` support | `[]string` via `strings.Fields` |
+| Error aggregation | `schema.MultiError` (collects all field errors) | `fmt.Errorf` (returns first error only) |
+| Nested struct | Supported | **Not supported** (flat structs only) |
+| `[]string` encoding | Per-element encoding | `fmt.Sprintf("%v", v)` |
+
+**Limitations** (acceptable for OIDC/OAuth form parsing):
+1. **No nested struct support** — All `protocol/` request types are flat; no nesting needed.
+2. **No `MultiError`** — HTTP form parsing reports the first error; sufficient for OAuth error responses.
+3. **Slice encoding simplified** — `Encoder` uses `fmt.Sprintf("%v", v)` for non-custom types; `protocol/` types use `SpaceDelimitedArray` which has a custom encoder.
+4. **Error type simplified** — Returns `fmt.Errorf` instead of `schema.MultiError`; call sites use `errors.Is` where needed.
