@@ -522,6 +522,32 @@ func TestDefaultToServerError_AllVerifierErrors(t *testing.T) {
 	}
 }
 
+func TestDefaultToServerError_DefaultSentinelErrors(t *testing.T) {
+	serverErrors := []struct {
+		name string
+		err  error
+	}{
+		{"ErrDiscoveryFailed", protocol.ErrDiscoveryFailed},
+		{"ErrSubjectInvalid", protocol.ErrSubjectInvalid},
+		{"ErrKeyMultiple", protocol.ErrKeyMultiple},
+		{"ErrKeyNone", protocol.ErrKeyNone},
+	}
+
+	for _, tt := range serverErrors {
+		t.Run(tt.name, func(t *testing.T) {
+			got := protocol.DefaultToServerError(tt.err, "test desc")
+			b, jsonErr := json.Marshal(got)
+			require.NoError(t, jsonErr)
+
+			var m map[string]string
+			require.NoError(t, json.Unmarshal(b, &m))
+			assert.Equal(t, "server_error", m["error"],
+				"expected server_error for %v (not in switch)", tt.err)
+			assert.Equal(t, "test desc", m["error_description"])
+		})
+	}
+}
+
 func TestError_Is_CrossType(t *testing.T) {
 	a := protocol.ErrInvalidRequest()
 	b := protocol.ErrInvalidClient()
