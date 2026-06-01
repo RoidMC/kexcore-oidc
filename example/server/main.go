@@ -18,8 +18,8 @@ import (
 	"github.com/roidmc/kexcore-oidc/example/server/exampleop"
 	"github.com/roidmc/kexcore-oidc/example/server/storage"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 func getUserStore(cfg *config.Config) (storage.UserStore, error) {
@@ -189,12 +189,10 @@ func (m *myCrypto) SM2TokenEncryptionPublicKey() *ecdsa.PublicKey {
 	return m.sm2PubKey
 }
 
-// SM9TokenEncryptionMasterPublicKey returns the SM9 master public key for SGD_SM9_3 JWE key wrapping.
-func (m *myCrypto) SM9TokenEncryptionMasterPublicKey() *sm9.EncryptMasterPublicKey {
-	return m.sm9MasterPub
-}
-
-// SM9TokenEncryptionUID returns the user identifier for SM9 encryption.
-func (m *myCrypto) SM9TokenEncryptionUID() []byte {
-	return m.sm9EncUID
+// SM9TokenEncryptionKey returns the SM9 master public key for SGD_SM9_3 JWE key wrapping.
+func (m *myCrypto) SM9TokenEncryptionKey() *crypto.SM9MasterPublicKey {
+	return &crypto.SM9MasterPublicKey{
+		PublicKey: m.sm9MasterPub,
+		UID:       m.sm9EncUID,
+	}
 }

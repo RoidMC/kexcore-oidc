@@ -44,7 +44,8 @@ standards as Zitadel but with original code, original API design, and its own te
 - Wire format types (`ResponseType`, `ResponseMode`, `Display`, `SpaceDelimitedArray`, `Locales`)
 - OIDC constants (scopes, response types, response modes, prompts)
 - Token verification (verifier interfaces, JWT parsing, signature checking, expiry, audience, etc.)
-- Encryption (JWE encrypt/decrypt with AES-GCM, SM4-GCM, SM2, SM9)
+- Encryption (JWE encrypt/decrypt via `protocol.EncryptTokenJWE` / `DecryptTokenJWE`,
+  dispatches to `crypto.DefaultRegistry` for GM/T algorithms; supports AES-GCM, SM4-GCM, SM2, SM9)
 - Encoder (struct → url.Values using `schema` struct tags)
 - Decoder (url.Values → struct using `schema` struct tags; replaces `zitadel/schema`)
 - Introspection types (`IntrospectionResponse`, `IntrospectionRequest`)
@@ -63,9 +64,11 @@ types, errors, and shared utilities. It is used by both StormEngine (OP) and the
     device.go       — DeviceAuthorizationRequest/Response, DeviceAccessTokenRequest (RFC 8628)
     discovery.go    — DiscoveryConfiguration (OIDC Discovery 1.0 + OAuth 2.1 metadata)
     error.go        — Error types (RFC 6749 §5.2, OIDC Core §3.1.2.6, RFC 8628)
+    jwe.go          — JWE interfaces (JWEService, SM9EncryptKey), EncryptTokenJWE/DecryptTokenJWE dispatch
+    jws.go          — JWS interfaces (JWSSigner, JWSVerifier, JWSService), VerifySignatureWithRegistry dispatch
     keyset.go       — JWK KeySet abstraction
     pkce.go         — CodeChallengeMethod
-    registry.go     — Algorithm registry (JWS/JWE signing/encryption algorithms)
+    registry.go     — SignatureRegistry (user extension point, delegates to crypto.DefaultRegistry)
     session.go      — EndSessionRequest (OIDC RP-Initiated Logout 1.0)
     token.go        — TokenClaims, AccessTokenClaims, IDTokenClaims, Tokens[C], ActorClaims,
                       LogoutTokenClaims, JWTProfileAssertionClaims, AccessTokenResponse,
@@ -78,7 +81,8 @@ types, errors, and shared utilities. It is used by both StormEngine (OP) and the
     util.go         — Internal utilities (mergeAndMarshalClaims, unmarshalJSONMulti, Encoder)
     verifier.go     — Token verification (Verifier interface, ACR/AZP verifiers, JWT parsing,
                       signature checking, expiry/issuer/audience/nonce/auth_time checks,
-                      Encrypt/DecryptToken, VerifyAccessToken, VerifyIDTokenHint, VerifyJWTAssertion)
+                      JWE constants (JWEAlg*, JWEEnc*), Encrypt/DecryptToken convenience funcs,
+                      VerifyAccessToken, VerifyIDTokenHint, VerifyJWTAssertion)
 ```
 
 ### Key Design Decisions
@@ -100,6 +104,13 @@ types, errors, and shared utilities. It is used by both StormEngine (OP) and the
 
 5. **Zero dependency on legacy `oidc/`**: All types, functions, errors, verifiers, and tests
    are self-contained in `protocol/`. No sentinel error mapping needed.
+
+6. **Zero dependency on `gmsm` in `protocol/`**: The `protocol/` package has no import of
+   `github.com/emmansun/gmsm`. All GM/T cryptographic operations (SM2/SM9 JWS verification,
+   SM2/SM9 JWE encryption/decryption) are dispatched to `crypto.DefaultRegistry` via
+   `VerifySignatureWithRegistry` (jws.go) and `EncryptTokenJWE` / `DecryptTokenJWE` (jwe.go).
+   SM9 keys are abstracted behind `protocol.SM9EncryptKey` interface. This enables HSM/KMS
+   vendors to provide custom implementations without touching the protocol layer.
 
 ### Test Coverage
 
@@ -206,7 +217,7 @@ func (p *Plugin) Contribute(engine *Engine) error {
 | `amr` claim | token.go `createIDToken` | Authentication Methods References |
 | `azp` claim | token.go `createIDToken` | Authorized Party |
 | UserInfo scope filtering | userinfo.go | Return claims based on requested scopes |
-| JWE ID Token encryption | (missing) | Encrypt ID token for confidential clients |
+| JWE ID Token encryption | `protocol.EncryptTokenJWE` | Implemented for dir/SM2/SM9 modes via crypto ProviderRegistry |
 | CORS middleware | engine.go | Cross-Origin Resource Sharing headers |
 | Tests | (all plugins) | Zero test files in storm package |
 
@@ -216,7 +227,8 @@ func (p *Plugin) Contribute(engine *Engine) error {
 - `TokenRequest` interface missing `GetAuthTime()`, `GetNonce()`, `GetACR()`, `GetAMR()`
 - `Storage` interface defined but not enforced by `WithStorage(storage any)`
 - `Client` interface too small, plugins define ad-hoc `xxxProvider` interfaces via type assertion
-- `SigningService` not yet extracted — GM/T signing logic duplicated in 3 plugins
+- `SigningService` partially extracted — JWS verification and JWE encrypt/decrypt now dispatch
+  through `crypto.DefaultRegistry`; signing still done directly in plugins via `crypto.NewSigner`
 
 ## Package: crypto/ — Encryption Utilities
 
@@ -224,6 +236,10 @@ func (p *Plugin) Contribute(engine *Engine) error {
 
 `pkg/crypto/` provides symmetric encryption (AES-GCM, SM4-GCM/CCM/CBC/ECB), asymmetric
 encryption (SM2), signing (SM2, SM9), hashing (SM3), and key exchange (SM2/SM9).
+
+It also contains `registry.go` — the **ProviderRegistry** that serves as the algorithm
+implementation layer in the JCA-like architecture. HSM/KMS vendors register custom
+providers here; the protocol layer dispatches through `DefaultRegistry`.
 
 All encryption modes use **authenticated encryption** (GCM or CCM). The former AES-CTR
 implementation (from Zitadel, no authentication tag) was replaced with AES-GCM to unify
@@ -247,6 +263,118 @@ with SM4-GCM and improve security. Copyright: RoidMC Studios.
 ```
 
 Base64url encoded for string API. `ErrCipherTextTooShort` if input < 12 bytes.
+
+## Crypto Architecture: JCA-like Provider Pattern
+
+The project uses a **Java JCA-inspired** layered architecture for cryptographic operations.
+`protocol/` acts as the unified interface layer (like `javax.crypto`), while `crypto/` provides
+pluggable algorithm implementations (like JCA Providers).
+
+### Layer Diagram
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Upper layers (op/, storm/, client/)                          │
+│  Call protocol.EncryptTokenJWE / protocol.VerifySignature    │
+└────────────────────────┬─────────────────────────────────────┘
+                         │
+┌────────────────────────▼─────────────────────────────────────┐
+│  protocol/ — JCA Interface Layer                              │
+│                                                              │
+│  jws.go: JWSSigner / JWSVerifier / JWSService interfaces     │
+│  jwe.go: JWEService / SM9EncryptKey interfaces               │
+│  registry.go: SignatureRegistry (user extension point)       │
+│  verifier.go: EncryptToken/DecryptToken convenience funcs    │
+│                                                              │
+│  Dispatches to crypto.DefaultRegistry for GM/T algorithms    │
+│  Falls back to jwx for standard algorithms (RSA, EC, EdDSA) │
+│  **Zero dependency on gmsm**                                 │
+└────────────────────────┬─────────────────────────────────────┘
+                         │
+┌────────────────────────▼─────────────────────────────────────┐
+│  crypto/ — Provider Implementation Layer                      │
+│                                                              │
+│  registry.go: ProviderRegistry + DefaultRegistry             │
+│  Provider interfaces: SignProvider / VerifyProvider           │
+│    JWEEncryptProvider / JWEDecryptProvider                    │
+│                                                              │
+│  Default: gmsm implementations (SM2/SM9/SM4)                 │
+│  Extensible: HSM / KMS / any external crypto service         │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Key Files
+
+| File | Role |
+|---|---|
+| `protocol/jws.go` | JWS interfaces + `VerifySignatureWithRegistry` (central JWS dispatch) |
+| `protocol/jwe.go` | JWE interfaces + `EncryptTokenJWE` / `DecryptTokenJWE` (central JWE dispatch) |
+| `protocol/registry.go` | `SignatureRegistry` — user extension point for custom JWS verifiers |
+| `protocol/verifier.go` | JWE constants, `EncryptToken*` / `DecryptToken*` convenience functions |
+| `crypto/registry.go` | `ProviderRegistry` — algorithm provider registration + gmsm defaults |
+| `crypto/sign.go` | SM2/SM9 signing implementations |
+| `crypto/jwe.go` | SM2/SM9 JWE encrypt/decrypt implementations |
+
+### Provider Interfaces (crypto/registry.go)
+
+| Interface | Method | Purpose |
+|---|---|---|
+| `SignProvider` | `Sign(ctx, keyID, payload) → JWS` | External JWS signing (HSM, KMS) |
+| `VerifyProvider` | `Verify(ctx, signingInput, signature, key) → error` | External JWS verification |
+| `JWEEncryptProvider` | `Encrypt(ctx, plaintext, key) → JWE` | External JWE encryption |
+| `JWEDecryptProvider` | `Decrypt(ctx, compact, key) → plaintext` | External JWE decryption |
+
+### SM9 Key Abstraction
+
+`protocol.SM9EncryptKey` (protocol layer) and `crypto.SM9EncryptKey` (crypto layer) hide
+`*sm9.EncryptMasterPublicKey` from upper layers. The canonical implementation is
+`crypto.SM9MasterPublicKey`, which implements both interfaces. HSM/KMS vendors implement
+`protocol.SM9EncryptKey` to provide their own SM9 key material without importing gmsm.
+
+| Interface | Layer | Methods | Purpose |
+|---|---|---|---|
+| `protocol.SM9EncryptKey` | protocol | `MarshalBinary()`, `GetUID()` | gmsm-free abstraction for OP/RP |
+| `crypto.SM9EncryptKey` | crypto | `Resolve() → (*sm9.EncryptMasterPublicKey, []byte, error)` | gmsm-aware for Provider dispatch |
+| `crypto.SM9MasterPublicKey` | crypto | implements both | Concrete wrapper |
+
+### Registered Providers (init())
+
+| Algorithm | Sign | Verify | JWE Encrypt | JWE Decrypt |
+|---|---|---|---|---|
+| `SGD_SM3_SM2` | `sm2SignProvider` (stub) | `sm2VerifyProvider` ✅ | — | — |
+| `SGD_SM3_SM9` | `sm9SignProvider` (stub) | `sm9VerifyProvider` (stub) | — | — |
+| `SGD_SM2_3` | — | — | `sm2JWEProvider` ✅ | `sm2JWEProvider` ✅ |
+| `SGD_SM9_3` | — | — | `sm9JWEProvider` ✅ | `sm9JWEProvider` ✅ |
+
+Standard algorithms (RSA, ECDSA, EdDSA, AES-GCM, A256GCMKW) are handled by jwx directly,
+not through the Provider registry.
+
+### JWE Algorithm Constants (protocol/verifier.go)
+
+| Constant | Value | Key Wrapping | Content Encryption | Status |
+|---|---|---|---|---|
+| `JWEAlgDir` | `"dir"` | Direct symmetric | SM4-GCM / AES-GCM | ✅ |
+| `JWEAlgA256GCMKW` | `"A256GCMKW"` | AES-256-GCM | AES-256-GCM | ✅ |
+| `JWEAlgSM23` | `"SGD_SM2_3"` | SM2 | SM4-GCM | ✅ |
+| `JWEAlgSM93` | `"SGD_SM9_3"` | SM9 | SM4-GCM | ✅ |
+| `JWEEncSM4GCM` | `"SGD_SM4_GCM"` | — | SM4-GCM | ✅ |
+| `JWEEncA256GCM` | `"A256GCM"` | — | AES-256-GCM | ✅ |
+| `JWEEncA128GCM` | `"A128GCM"` | — | AES-128-GCM | ✅ |
+
+### How to Register a Custom Provider
+
+```go
+// Example: Register an HSM-based SM2 signer
+hsmProvider := myHSMProvider{client: hsmClient}
+crypto.DefaultRegistry.RegisterSigner("SGD_SM3_SM2", hsmProvider)
+
+// Example: Register a KMS-based JWE encryptor
+kmsProvider := myKMSProvider{client: kmsClient}
+crypto.DefaultRegistry.RegisterJWEEncryptor("SGD_SM2_3", kmsProvider)
+```
+
+Once registered, all `protocol.EncryptTokenJWE` / `VerifySignatureWithRegistry` calls
+for that algorithm will automatically dispatch to the custom provider.
 
 ## Key Dependencies
 

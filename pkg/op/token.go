@@ -342,10 +342,10 @@ func encryptIDToken(signedToken string, c Crypto, alg, enc string) (string, erro
 		return protocol.EncryptTokenSM2(signedToken, pkProvider.SM2TokenEncryptionPublicKey())
 	case protocol.JWEAlgSM93:
 		pkProvider, ok := c.(SM9TokenEncryptionPublicKeyProvider)
-		if !ok || pkProvider.SM9TokenEncryptionMasterPublicKey() == nil {
+		if !ok || pkProvider.SM9TokenEncryptionKey() == nil {
 			return "", fmt.Errorf("SM9 encryption requested but Crypto does not implement SM9TokenEncryptionPublicKeyProvider")
 		}
-		return protocol.EncryptTokenSM9(signedToken, pkProvider.SM9TokenEncryptionMasterPublicKey(), pkProvider.SM9TokenEncryptionUID())
+		return protocol.EncryptTokenSM9(signedToken, pkProvider.SM9TokenEncryptionKey())
 	default:
 		return "", fmt.Errorf("unsupported JWE key management algorithm: %s", alg)
 	}

@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/emmansun/gmsm/sm9"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwe"
 	"github.com/lestrrat-go/jwx/v4/jwk"
@@ -50,8 +49,7 @@ type SM2TokenEncryptionPublicKeyProvider interface {
 // implementations that provide an SM9 master public key and UID for encrypting
 // ID tokens using SGD_SM9_3 key wrapping per GM/T 0125.3.
 type SM9TokenEncryptionPublicKeyProvider interface {
-	SM9TokenEncryptionMasterPublicKey() *sm9.EncryptMasterPublicKey
-	SM9TokenEncryptionUID() []byte
+	SM9TokenEncryptionKey() *crypto.SM9MasterPublicKey
 }
 
 type aesCrypto struct {
