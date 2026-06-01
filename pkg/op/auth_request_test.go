@@ -26,7 +26,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/schema"
 )
 
 func TestAuthorize(t *testing.T) {
@@ -46,7 +45,7 @@ func TestAuthorize(t *testing.T) {
 			authorizer := mock.NewMockAuthorizer(gomock.NewController(t))
 
 			expect := authorizer.EXPECT()
-			expect.Decoder().Return(schema.NewDecoder())
+			expect.Decoder().Return(protocol.NewDecoder())
 			expect.Logger().Return(slog.Default())
 
 			if tt.expect != nil {
@@ -76,7 +75,7 @@ func TestParseAuthorizeRequest(t *testing.T) {
 			"parsing form error",
 			args{
 				&http.Request{URL: &url.URL{RawQuery: "invalid=%%param"}},
-				schema.NewDecoder(),
+				protocol.NewDecoder(),
 			},
 			res{
 				nil,
@@ -88,7 +87,7 @@ func TestParseAuthorizeRequest(t *testing.T) {
 			args{
 				&http.Request{URL: &url.URL{RawQuery: "unknown=value"}},
 				func() httphelper.Decoder {
-					decoder := schema.NewDecoder()
+					decoder := protocol.NewDecoder()
 					decoder.IgnoreUnknownKeys(false)
 					return decoder
 				}(),
@@ -103,7 +102,7 @@ func TestParseAuthorizeRequest(t *testing.T) {
 			args{
 				&http.Request{URL: &url.URL{RawQuery: "scope=openid"}},
 				func() httphelper.Decoder {
-					decoder := schema.NewDecoder()
+					decoder := protocol.NewDecoder()
 					decoder.IgnoreUnknownKeys(false)
 					return decoder
 				}(),
@@ -1095,7 +1094,7 @@ func TestAuthResponseCode(t *testing.T) {
 					authorizer := mock.NewMockAuthorizer(ctrl)
 					authorizer.EXPECT().Storage().Return(storage)
 					authorizer.EXPECT().Crypto().Return(&mockCrypto{})
-					authorizer.EXPECT().Encoder().Return(schema.NewEncoder())
+					authorizer.EXPECT().Encoder().Return(protocol.NewEncoder())
 					return authorizer
 				},
 			},
@@ -1123,7 +1122,7 @@ func TestAuthResponseCode(t *testing.T) {
 					authorizer := mock.NewMockAuthorizer(ctrl)
 					authorizer.EXPECT().Storage().Return(storage)
 					authorizer.EXPECT().Crypto().Return(&mockCrypto{})
-					authorizer.EXPECT().Encoder().Return(schema.NewEncoder())
+					authorizer.EXPECT().Encoder().Return(protocol.NewEncoder())
 					return authorizer
 				},
 			},
@@ -1148,7 +1147,7 @@ func TestAuthResponseCode(t *testing.T) {
 					authorizer := mock.NewMockAuthorizer(ctrl)
 					authorizer.EXPECT().Storage().Return(storage)
 					authorizer.EXPECT().Crypto().Return(&mockCrypto{})
-					authorizer.EXPECT().Encoder().Return(schema.NewEncoder())
+					authorizer.EXPECT().Encoder().Return(protocol.NewEncoder())
 					return authorizer
 				},
 			},
@@ -1175,7 +1174,7 @@ func TestAuthResponseCode(t *testing.T) {
 					authorizer := mock.NewMockAuthorizer(ctrl)
 					authorizer.EXPECT().Storage().Return(storage)
 					authorizer.EXPECT().Crypto().Return(&mockCrypto{})
-					authorizer.EXPECT().Encoder().Return(schema.NewEncoder())
+					authorizer.EXPECT().Encoder().Return(protocol.NewEncoder())
 					return authorizer
 				},
 			},
@@ -1449,7 +1448,7 @@ func TestBuildAuthResponseCallbackURL(t *testing.T) {
 					authorizer := mock.NewMockAuthorizer(ctrl)
 					authorizer.EXPECT().Storage().Return(storage)
 					authorizer.EXPECT().Crypto().Return(&mockCrypto{})
-					authorizer.EXPECT().Encoder().Return(schema.NewEncoder())
+					authorizer.EXPECT().Encoder().Return(protocol.NewEncoder())
 					return authorizer
 				},
 			},
@@ -1473,7 +1472,7 @@ func TestBuildAuthResponseCallbackURL(t *testing.T) {
 					authorizer := mock.NewMockAuthorizer(ctrl)
 					authorizer.EXPECT().Storage().Return(storage)
 					authorizer.EXPECT().Crypto().Return(&mockCrypto{})
-					authorizer.EXPECT().Encoder().Return(schema.NewEncoder())
+					authorizer.EXPECT().Encoder().Return(protocol.NewEncoder())
 					return authorizer
 				},
 			},
@@ -1497,7 +1496,7 @@ func TestBuildAuthResponseCallbackURL(t *testing.T) {
 					authorizer := mock.NewMockAuthorizer(ctrl)
 					authorizer.EXPECT().Storage().Return(storage)
 					authorizer.EXPECT().Crypto().Return(&mockCrypto{})
-					authorizer.EXPECT().Encoder().Return(schema.NewEncoder())
+					authorizer.EXPECT().Encoder().Return(protocol.NewEncoder())
 					return authorizer
 				},
 			},
@@ -1525,7 +1524,7 @@ func TestBuildAuthResponseCallbackURL(t *testing.T) {
 					authorizer := mock.NewMockAuthorizer(ctrl)
 					authorizer.EXPECT().Storage().Return(storage)
 					authorizer.EXPECT().Crypto().Return(&mockCrypto{})
-					authorizer.EXPECT().Encoder().Return(schema.NewEncoder())
+					authorizer.EXPECT().Encoder().Return(protocol.NewEncoder())
 					return authorizer
 				},
 			},
@@ -1550,7 +1549,7 @@ func TestBuildAuthResponseCallbackURL(t *testing.T) {
 					authorizer := mock.NewMockAuthorizer(ctrl)
 					authorizer.EXPECT().Storage().Return(storage)
 					authorizer.EXPECT().Crypto().Return(&mockCrypto{})
-					authorizer.EXPECT().Encoder().Return(schema.NewEncoder())
+					authorizer.EXPECT().Encoder().Return(protocol.NewEncoder())
 					return authorizer
 				},
 			},
@@ -1576,7 +1575,7 @@ func TestBuildAuthResponseCallbackURL(t *testing.T) {
 					authorizer := mock.NewMockAuthorizer(ctrl)
 					authorizer.EXPECT().Storage().Return(storage)
 					authorizer.EXPECT().Crypto().Return(&mockCrypto{})
-					authorizer.EXPECT().Encoder().Return(schema.NewEncoder())
+					authorizer.EXPECT().Encoder().Return(protocol.NewEncoder())
 					return authorizer
 				},
 			},

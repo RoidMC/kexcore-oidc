@@ -19,7 +19,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/schema"
 )
 
 func TestRegisterServer(t *testing.T) {
@@ -29,7 +28,7 @@ func TestRegisterServer(t *testing.T) {
 			path: "/auth",
 		},
 	}
-	decoder := schema.NewDecoder()
+	decoder := protocol.NewDecoder()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	h := RegisterServer(server, endpoints,
@@ -191,8 +190,8 @@ func (s *requestVerifier) VerifyClient(ctx context.Context, r *Request[ClientCre
 	return s.client, nil
 }
 
-var testDecoder = func() *schema.Decoder {
-	decoder := schema.NewDecoder()
+var testDecoder = func() *protocol.Decoder {
+	decoder := protocol.NewDecoder()
 	decoder.IgnoreUnknownKeys(true)
 	return decoder
 }()
@@ -280,7 +279,7 @@ func Test_webServer_verifyRequestClient(t *testing.T) {
 		},
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			wantErr: protocol.ErrInvalidRequest().WithDescription("error decoding form"),
 		},
@@ -356,7 +355,7 @@ func Test_webServer_authorizeHandler(t *testing.T) {
 			name: "decoder error",
 			fields: fields{
 				server:  &requestVerifier{},
-				decoder: schema.NewDecoder(),
+				decoder: protocol.NewDecoder(),
 			},
 			r: httptest.NewRequest(http.MethodPost, "/authorize", strings.NewReader("foo=bar")),
 			want: webServerResult{
@@ -576,7 +575,7 @@ func Test_webServer_deviceAuthorizationHandler(t *testing.T) {
 			name: "decoder error",
 			fields: fields{
 				server:  &requestVerifier{},
-				decoder: schema.NewDecoder(),
+				decoder: protocol.NewDecoder(),
 			},
 			r: httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
@@ -662,7 +661,7 @@ func Test_webServer_jwtProfileHandler(t *testing.T) {
 	}{
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
 				wantStatus: http.StatusBadRequest,
@@ -718,7 +717,7 @@ func Test_webServer_codeExchangeHandler(t *testing.T) {
 	}{
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
 				wantStatus: http.StatusBadRequest,
@@ -775,7 +774,7 @@ func Test_webServer_refreshTokenHandler(t *testing.T) {
 	}{
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
 				wantStatus: http.StatusBadRequest,
@@ -823,7 +822,7 @@ func Test_webServer_tokenExchangeHandler(t *testing.T) {
 	}{
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
 				wantStatus: http.StatusBadRequest,
@@ -908,7 +907,7 @@ func Test_webServer_clientCredentialsHandler(t *testing.T) {
 	}{
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			client:  newClient(clientTypeUserAgent),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
@@ -958,7 +957,7 @@ func Test_webServer_deviceTokenHandler(t *testing.T) {
 	}{
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
 				wantStatus: http.StatusBadRequest,
@@ -1006,7 +1005,7 @@ func Test_webServer_introspectionHandler(t *testing.T) {
 	}{
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
 				wantStatus: http.StatusBadRequest,
@@ -1062,7 +1061,7 @@ func Test_webServer_userInfoHandler(t *testing.T) {
 	}{
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
 				wantStatus: http.StatusBadRequest,
@@ -1123,7 +1122,7 @@ func Test_webServer_revocationHandler(t *testing.T) {
 	}{
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			client:  newClient(clientTypeWeb),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
@@ -1183,7 +1182,7 @@ func Test_webServer_endSessionHandler(t *testing.T) {
 	}{
 		{
 			name:    "decoder error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", strings.NewReader("foo=bar")),
 			want: webServerResult{
 				wantStatus: http.StatusBadRequest,
@@ -1222,7 +1221,7 @@ func Test_webServer_simpleHandler(t *testing.T) {
 	}{
 		{
 			name:    "parse error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			r:       httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(make([]byte, 11<<20))),
 			want: webServerResult{
 				wantStatus: http.StatusBadRequest,
@@ -1231,7 +1230,7 @@ func Test_webServer_simpleHandler(t *testing.T) {
 		},
 		{
 			name:    "method error",
-			decoder: schema.NewDecoder(),
+			decoder: protocol.NewDecoder(),
 			method: func(ctx context.Context, r *Request[struct{}]) (*Response, error) {
 				return nil, io.ErrClosedPipe
 			},
@@ -1320,7 +1319,7 @@ func Test_decodeRequest(t *testing.T) {
 			if tt.args.r.Method == http.MethodPost {
 				tt.args.r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			}
-			got, err := decodeRequest[dst](schema.NewDecoder(), tt.args.r, tt.args.postOnly)
+			got, err := decodeRequest[dst](protocol.NewDecoder(), tt.args.r, tt.args.postOnly)
 			require.ErrorIs(t, err, tt.wantErr)
 			assert.Equal(t, tt.want, got)
 		})

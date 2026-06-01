@@ -14,7 +14,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/schema"
 )
 
 func TestAuthRequestError(t *testing.T) {
@@ -182,7 +181,7 @@ func TestAuthRequestError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			logOut := new(strings.Builder)
 			authorizer := &Provider{
-				encoder: schema.NewEncoder(),
+				encoder: protocol.NewEncoder(),
 				logger: slog.New(
 					slog.NewJSONHandler(logOut, &slog.HandlerOptions{
 						Level: slog.LevelInfo,
@@ -471,7 +470,7 @@ func TestTryErrorRedirect(t *testing.T) {
 					Level: slog.LevelInfo,
 				}).WithAttrs([]slog.Attr{slog.String("time", "not")}),
 			)
-			encoder := schema.NewEncoder()
+			encoder := protocol.NewEncoder()
 
 			got, err := TryErrorRedirect(tt.args.ctx, tt.args.authReq, tt.args.parent, encoder, logger)
 			require.ErrorIs(t, err, tt.wantErr)

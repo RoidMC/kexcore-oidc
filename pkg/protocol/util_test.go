@@ -43,7 +43,7 @@ func Test_mergeAndMarshalClaims(t *testing.T) {
 					Foo: "bar",
 				},
 			},
-			want: "{\"foo\":\"bar\"}\n",
+			want: "{\"foo\":\"bar\"}",
 		},
 		{
 			name: "with claims",
@@ -57,7 +57,7 @@ func Test_mergeAndMarshalClaims(t *testing.T) {
 					"bar": "foo",
 				},
 			},
-			want: "{\"bar\":\"foo\",\"foo\":\"bar\"}\n",
+			want: "{\"bar\":\"foo\",\"foo\":\"bar\"}",
 		},
 		{
 			name: "registered overwrites custom",
@@ -71,7 +71,7 @@ func Test_mergeAndMarshalClaims(t *testing.T) {
 					"foo": "Hello, World!",
 				},
 			},
-			want: "{\"foo\":\"bar\"}\n",
+			want: "{\"foo\":\"bar\"}",
 		},
 	}
 	for _, tt := range tests {

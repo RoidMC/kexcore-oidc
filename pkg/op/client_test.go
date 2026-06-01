@@ -18,7 +18,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zitadel/schema"
 )
 
 type testClientJWTProfile struct{}
@@ -153,7 +152,7 @@ type testClientProvider struct {
 }
 
 func (testClientProvider) Decoder() httphelper.Decoder {
-	return schema.NewDecoder()
+	return protocol.NewDecoder()
 }
 
 func (p testClientProvider) Storage() op.Storage {

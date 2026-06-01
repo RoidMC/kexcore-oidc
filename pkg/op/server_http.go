@@ -17,7 +17,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
 	"github.com/rs/cors"
-	"github.com/zitadel/schema"
 )
 
 // RegisterServer registers an implementation of Server.
@@ -27,7 +26,7 @@ import (
 //
 // EXPERIMENTAL: may change until v4
 func RegisterServer(server Server, endpoints Endpoints, options ...ServerOption) http.Handler {
-	decoder := schema.NewDecoder()
+	decoder := protocol.NewDecoder()
 	decoder.IgnoreUnknownKeys(true)
 
 	ws := &webServer{
@@ -69,7 +68,7 @@ func WithSetRouter(set func(chi.Router)) ServerOption {
 }
 
 // WithDecoder overrides the default decoder,
-// which is a [schema.Decoder] with IgnoreUnknownKeys set to true.
+// which is a [protocol.Decoder] with IgnoreUnknownKeys set to true.
 func WithDecoder(decoder httphelper.Decoder) ServerOption {
 	return func(s *webServer) {
 		s.decoder = decoder

@@ -21,7 +21,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/internal/otel"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/rs/cors"
-	"github.com/zitadel/schema"
 	"golang.org/x/text/language"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
@@ -291,7 +290,7 @@ func NewProvider(
 		return nil, err
 	}
 	o.Handler = CreateRouter(o, o.interceptors...)
-	o.decoder = schema.NewDecoder()
+	o.decoder = protocol.NewDecoder()
 	o.decoder.IgnoreUnknownKeys(true)
 	o.encoder = protocol.NewEncoder()
 	return o, nil
@@ -307,7 +306,7 @@ type Provider struct {
 	accessTokenKeySet       protocol.KeySet
 	idTokenHinKeySet        protocol.KeySet
 	crypto                  Crypto
-	decoder                 *schema.Decoder
+	decoder                 *protocol.Decoder
 	encoder                 httphelper.Encoder
 	interceptors            []HttpInterceptor
 	timer                   <-chan time.Time

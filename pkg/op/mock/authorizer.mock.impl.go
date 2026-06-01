@@ -5,10 +5,9 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
-	"github.com/zitadel/schema"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 func NewAuthorizer(t *testing.T) op.Authorizer {
@@ -28,12 +27,12 @@ func NewAuthorizerExpectValid(t *testing.T, wantErr bool) op.Authorizer {
 
 func ExpectDecoder(a op.Authorizer) {
 	mockA := a.(*MockAuthorizer)
-	mockA.EXPECT().Decoder().AnyTimes().Return(schema.NewDecoder())
+	mockA.EXPECT().Decoder().AnyTimes().Return(protocol.NewDecoder())
 }
 
 func ExpectEncoder(a op.Authorizer) {
 	mockA := a.(*MockAuthorizer)
-	mockA.EXPECT().Encoder().AnyTimes().Return(schema.NewEncoder())
+	mockA.EXPECT().Encoder().AnyTimes().Return(protocol.NewEncoder())
 }
 
 //

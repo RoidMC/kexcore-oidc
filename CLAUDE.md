@@ -28,10 +28,8 @@ The `protocol/` package has **zero dependency on Zitadel** — no imports, no ty
 from `zitadel/oidc`, independent copyright (RoidMC Studios). It implements the same RFC
 standards as Zitadel but with original code, original API design, and its own test suite.
 
-The only remaining Zitadel dependency in `go.mod` is `github.com/zitadel/schema` (a generic
-HTTP form decoder, not OIDC-specific), used by `storm/codec/decode.go` and `pkg/op`'s
-request parsing. This can be replaced with `gorilla/schema` or a custom implementation
-when needed.
+`github.com/zitadel/schema` has been fully replaced by `protocol.Encoder` and `protocol.Decoder`
+(self-developed, RoidMC copyright). The dependency is removed from `go.mod`.
 
 `protocol/` defines:
 - `AuthMethod` constants (`AuthMethodBasic`, `AuthMethodPost`, `AuthMethodNone`, `AuthMethodPrivateKeyJWT`)
@@ -47,6 +45,7 @@ when needed.
 - Token verification (verifier interfaces, JWT parsing, signature checking, expiry, audience, etc.)
 - Encryption (JWE encrypt/decrypt with AES-GCM, SM4-GCM, SM2, SM9)
 - Encoder (struct → url.Values using `schema` struct tags)
+- Decoder (url.Values → struct using `schema` struct tags; replaces `zitadel/schema`)
 - Introspection types (`IntrospectionResponse`, `IntrospectionRequest`)
 
 ## Package: protocol/ — OAuth 2.1 / OIDC Protocol Primitives
@@ -255,7 +254,6 @@ Base64url encoded for string API. `ErrCipherTextTooShort` if input < 12 bytes.
 | github.com/lestrrat-go/jwx/v4 | v4 | JWK, JWS, JWA, JWT |
 | github.com/go-chi/chi/v5 | v5 | HTTP routing |
 | github.com/emmansun/gmsm | latest | SM2/SM3/SM4/SM9 |
-| github.com/zitadel/schema | latest | Form decoding (generic, not OIDC-specific — may be replaced by gorilla/schema) |
 | github.com/rs/cors | latest | CORS (used in legacy only) |
 
 ## Building and Running
@@ -286,5 +284,5 @@ curl http://localhost:9998/.well-known/jwks.json
 - `protocol/` is the single source of truth for all OAuth/OIDC type definitions
 - `protocol/authorization.go` defines `AuthRequest`, `PushedAuthRequest/Response`, `RequestObject`, and all OIDC constants
 - `protocol/token.go` defines all token types including `Tokens[C]` (generic OAuth2+OIDC token wrapper)
-- `protocol/util.go` defines `Encoder` (struct → url.Values via `schema` tags)
+- `protocol/util.go` defines `Encoder` (struct → url.Values) and `Decoder` (url.Values → struct) via `schema` tags; replaces `zitadel/schema`
 - `protocol/session.go` defines `EndSessionRequest` for RP-Initiated Logout

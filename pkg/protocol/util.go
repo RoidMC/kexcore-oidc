@@ -1,10 +1,10 @@
 package protocol
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -12,28 +12,29 @@ import (
 // claims map into a single JSON object.
 // Registered fields overwrite custom claims.
 func mergeAndMarshalClaims(registered any, extraClaims map[string]any) ([]byte, error) {
-	buf := new(bytes.Buffer)
-
-	if err := json.NewEncoder(buf).Encode(registered); err != nil {
+	registeredJSON, err := json.Marshal(registered)
+	if err != nil {
 		return nil, fmt.Errorf("protocol registered claims: %w", err)
 	}
 
-	if len(extraClaims) > 0 {
-		merged := make(map[string]any)
-		for k, v := range extraClaims {
-			merged[k] = v
-		}
-
-		if err := json.NewDecoder(buf).Decode(&merged); err != nil {
-			return nil, fmt.Errorf("protocol registered claims: %w", err)
-		}
-
-		if err := json.NewEncoder(buf).Encode(merged); err != nil {
-			return nil, fmt.Errorf("protocol custom claims: %w", err)
-		}
+	if len(extraClaims) == 0 {
+		return registeredJSON, nil
 	}
 
-	return buf.Bytes(), nil
+	merged := make(map[string]any)
+	for k, v := range extraClaims {
+		merged[k] = v
+	}
+
+	if err := json.Unmarshal(registeredJSON, &merged); err != nil {
+		return nil, fmt.Errorf("protocol registered claims: %w", err)
+	}
+
+	out, err := json.Marshal(merged)
+	if err != nil {
+		return nil, fmt.Errorf("protocol custom claims: %w", err)
+	}
+	return out, nil
 }
 
 // unmarshalJSONMulti unmarshals the same JSON data into multiple destinations.
@@ -126,4 +127,137 @@ func (e *Encoder) fieldToString(fv reflect.Value) string {
 	default:
 		return fmt.Sprintf("%v", fv.Interface())
 	}
+}
+
+// NewDecoder returns a Decoder that knows how to decode
+// SpaceDelimitedArray and Locales values from url.Values.
+// It replaces the former schema.Decoder dependency.
+func NewDecoder() *Decoder {
+	return &Decoder{
+		customParsers: map[reflect.Type]func(string) (reflect.Value, error){
+			reflect.TypeOf(SpaceDelimitedArray{}): func(s string) (reflect.Value, error) {
+				return reflect.ValueOf(SpaceDelimitedArray(strings.Fields(s))), nil
+			},
+			reflect.TypeOf(Locales{}): func(s string) (reflect.Value, error) {
+				return reflect.ValueOf(ParseLocales(strings.Fields(s))), nil
+			},
+		},
+	}
+}
+
+// Decoder decodes url.Values into structs using "schema" struct tags.
+// It is a lightweight replacement for github.com/zitadel/schema.Decoder.
+type Decoder struct {
+	ignoreUnknownKeys bool
+	customParsers     map[reflect.Type]func(string) (reflect.Value, error)
+}
+
+// IgnoreUnknownKeys configures the decoder to skip keys that do not
+// match any exported field with a "schema" tag.
+func (d *Decoder) IgnoreUnknownKeys(ignore bool) {
+	d.ignoreUnknownKeys = ignore
+}
+
+// Decode decodes src (map[string][]string) into dst (struct pointer).
+// It reads "schema" struct tags for field names.
+func (d *Decoder) Decode(dst any, src map[string][]string) error {
+	v := reflect.ValueOf(dst)
+	if v.Kind() != reflect.Ptr || v.IsNil() {
+		return fmt.Errorf("protocol: Decode expects non-nil pointer, got %T", dst)
+	}
+	v = v.Elem()
+	if v.Kind() != reflect.Struct {
+		return fmt.Errorf("protocol: Decode expects pointer to struct, got %T", dst)
+	}
+	t := v.Type()
+
+	// Build schema tag → field index map
+	fieldMap := make(map[string]int)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		tag, ok := field.Tag.Lookup("schema")
+		if !ok || tag == "" || tag == "-" {
+			continue
+		}
+		name := tag
+		if idx := strings.Index(name, ","); idx >= 0 {
+			name = name[:idx]
+		}
+		fieldMap[name] = i
+	}
+
+	for key, values := range src {
+		idx, ok := fieldMap[key]
+		if !ok {
+			if d.ignoreUnknownKeys {
+				continue
+			}
+			return fmt.Errorf("protocol: unknown key %q", key)
+		}
+		if len(values) == 0 {
+			continue
+		}
+		fv := v.Field(idx)
+		if err := d.setField(fv, values[0]); err != nil {
+			return fmt.Errorf("protocol: decode %q: %w", key, err)
+		}
+	}
+	return nil
+}
+
+func (d *Decoder) setField(fv reflect.Value, s string) error {
+	if parser, ok := d.customParsers[fv.Type()]; ok {
+		parsed, err := parser(s)
+		if err != nil {
+			return err
+		}
+		fv.Set(parsed)
+		return nil
+	}
+	if fv.Kind() == reflect.Ptr {
+		if fv.IsNil() {
+			fv.Set(reflect.New(fv.Type().Elem()))
+		}
+		fv = fv.Elem()
+	}
+	switch fv.Kind() {
+	case reflect.String:
+		fv.SetString(s)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		i, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return err
+		}
+		fv.SetInt(i)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		i, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			return err
+		}
+		fv.SetUint(i)
+	case reflect.Bool:
+		b, err := strconv.ParseBool(s)
+		if err != nil {
+			return err
+		}
+		fv.SetBool(b)
+	case reflect.Float32, reflect.Float64:
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return err
+		}
+		fv.SetFloat(f)
+	case reflect.Slice:
+		if fv.Type().Elem().Kind() == reflect.String {
+			fv.Set(reflect.ValueOf(strings.Fields(s)))
+			return nil
+		}
+		return fmt.Errorf("protocol: unsupported slice type %s", fv.Type())
+	default:
+		return fmt.Errorf("protocol: unsupported field type %s", fv.Type())
+	}
+	return nil
 }
