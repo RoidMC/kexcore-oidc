@@ -61,7 +61,7 @@ type Authorizer interface {
 	Storage() Storage
 	Decoder() httphelper.Decoder
 	Encoder() httphelper.Encoder
-	IDTokenHintVerifier(context.Context) *IDTokenHintVerifier
+	IDTokenHintVerifier(context.Context) *protocol.IDTokenHintVerifier
 	Crypto() Crypto
 	RequestObjectSupported() bool
 	Logger() *slog.Logger
@@ -71,7 +71,7 @@ type Authorizer interface {
 // implementing its own validation mechanism for the auth request
 type AuthorizeValidator interface {
 	Authorizer
-	ValidateAuthRequest(context.Context, *protocol.AuthRequest, Storage, *IDTokenHintVerifier) (string, error)
+	ValidateAuthRequest(context.Context, *protocol.AuthRequest, Storage, *protocol.IDTokenHintVerifier) (string, error)
 }
 
 type CodeResponseType struct {
@@ -135,7 +135,7 @@ func Authorize(w http.ResponseWriter, r *http.Request, authorizer Authorizer) {
 	}
 
 	var client Client
-	validation := func(ctx context.Context, authReq *protocol.AuthRequest, storage Storage, verifier *IDTokenHintVerifier) (sub string, err error) {
+	validation := func(ctx context.Context, authReq *protocol.AuthRequest, storage Storage, verifier *protocol.IDTokenHintVerifier) (sub string, err error) {
 		client, err = authorizer.Storage().GetClientByClientID(ctx, authReq.ClientID)
 		if err != nil {
 			return "", protocol.ErrInvalidRequestRedirectURI().WithDescription("unable to retrieve client by id").WithParent(err)
@@ -277,7 +277,7 @@ func ValidateAuthRequestParams(client Client, authReq *protocol.AuthRequest) err
 
 // ValidateAuthRequestClient validates the Auth request against the passed client.
 // If id_token_hint is part of the request, the subject of the token is returned.
-func ValidateAuthRequestClient(ctx context.Context, authReq *protocol.AuthRequest, client Client, verifier *IDTokenHintVerifier) (sub string, err error) {
+func ValidateAuthRequestClient(ctx context.Context, authReq *protocol.AuthRequest, client Client, verifier *protocol.IDTokenHintVerifier) (sub string, err error) {
 	ctx, span := Tracer.Start(ctx, "ValidateAuthRequestClient")
 	defer span.End()
 
@@ -435,12 +435,12 @@ func ValidateAuthReqResponseType(client Client, responseType protocol.ResponseTy
 
 // ValidateAuthReqIDTokenHint validates the id_token_hint (if passed as parameter in the request)
 // and returns the `sub` claim
-func ValidateAuthReqIDTokenHint(ctx context.Context, idTokenHint string, verifier *IDTokenHintVerifier) (string, error) {
+func ValidateAuthReqIDTokenHint(ctx context.Context, idTokenHint string, verifier *protocol.IDTokenHintVerifier) (string, error) {
 	if idTokenHint == "" {
 		return "", nil
 	}
-	claims, err := VerifyIDTokenHint[*protocol.TokenClaims](ctx, idTokenHint, verifier)
-	if err != nil && !errors.As(err, &IDTokenHintExpiredError{}) {
+	claims, err := protocol.VerifyIDTokenHintGeneric[*protocol.TokenClaims](ctx, idTokenHint, verifier)
+	if err != nil && !errors.As(err, &protocol.IDTokenHintExpiredError{}) {
 		return "", protocol.ErrLoginRequired().WithDescription("The id_token_hint is invalid. " +
 			"If you have any questions, you may contact the administrator of the application.").WithParent(err)
 	}

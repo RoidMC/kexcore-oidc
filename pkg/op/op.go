@@ -118,8 +118,8 @@ type OpenIDProvider interface {
 	Storage() Storage
 	Decoder() httphelper.Decoder
 	Encoder() httphelper.Encoder
-	IDTokenHintVerifier(context.Context) *IDTokenHintVerifier
-	AccessTokenVerifier(context.Context) *AccessTokenVerifier
+	IDTokenHintVerifier(context.Context) *protocol.IDTokenHintVerifier
+	AccessTokenVerifier(context.Context) *protocol.AccessTokenVerifier
 	Crypto() Crypto
 	DefaultLogoutRedirectURI() string
 	Probes() []ProbesFn
@@ -310,8 +310,8 @@ type Provider struct {
 	encoder                 httphelper.Encoder
 	interceptors            []HttpInterceptor
 	timer                   <-chan time.Time
-	accessTokenVerifierOpts []AccessTokenVerifierOpt
-	idTokenHintVerifierOpts []IDTokenHintVerifierOpt
+	accessTokenVerifierOpts []protocol.AccessTokenVerifierOpt
+	idTokenHintVerifierOpts []protocol.IDTokenHintVerifierOpt
 	corsOpts                *cors.Options
 	logger                  *slog.Logger
 }
@@ -480,16 +480,16 @@ func (o *Provider) Encoder() httphelper.Encoder {
 	return o.encoder
 }
 
-func (o *Provider) IDTokenHintVerifier(ctx context.Context) *IDTokenHintVerifier {
-	return NewIDTokenHintVerifier(IssuerFromContext(ctx), o.idTokenHinKeySet, o.idTokenHintVerifierOpts...)
+func (o *Provider) IDTokenHintVerifier(ctx context.Context) *protocol.IDTokenHintVerifier {
+	return protocol.NewIDTokenHintVerifier(IssuerFromContext(ctx), o.idTokenHinKeySet, o.idTokenHintVerifierOpts...)
 }
 
 func (o *Provider) JWTProfileVerifier(ctx context.Context) *JWTProfileVerifier {
 	return NewJWTProfileVerifier(o.Storage(), IssuerFromContext(ctx), 1*time.Hour, time.Second)
 }
 
-func (o *Provider) AccessTokenVerifier(ctx context.Context) *AccessTokenVerifier {
-	return NewAccessTokenVerifier(IssuerFromContext(ctx), o.accessTokenKeySet, o.accessTokenVerifierOpts...)
+func (o *Provider) AccessTokenVerifier(ctx context.Context) *protocol.AccessTokenVerifier {
+	return protocol.NewAccessTokenVerifier(IssuerFromContext(ctx), o.accessTokenKeySet, o.accessTokenVerifierOpts...)
 }
 
 func (o *Provider) Crypto() Crypto {
@@ -796,7 +796,7 @@ func WithAccessTokenKeySet(keySet protocol.KeySet) Option {
 	}
 }
 
-func WithAccessTokenVerifierOpts(opts ...AccessTokenVerifierOpt) Option {
+func WithAccessTokenVerifierOpts(opts ...protocol.AccessTokenVerifierOpt) Option {
 	return func(o *Provider) error {
 		o.accessTokenVerifierOpts = opts
 		return nil
@@ -812,7 +812,7 @@ func WithIDTokenHintKeySet(keySet protocol.KeySet) Option {
 	}
 }
 
-func WithIDTokenHintVerifierOpts(opts ...IDTokenHintVerifierOpt) Option {
+func WithIDTokenHintVerifierOpts(opts ...protocol.IDTokenHintVerifierOpt) Option {
 	return func(o *Provider) error {
 		o.idTokenHintVerifierOpts = opts
 		return nil

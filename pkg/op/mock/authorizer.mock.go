@@ -12,6 +12,7 @@ import (
 	gomock "github.com/golang/mock/gomock"
 	http "github.com/roidmc/kexcore-oidc/pkg/http"
 	op "github.com/roidmc/kexcore-oidc/pkg/op"
+	protocol "github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 // MockAuthorizer is a mock of Authorizer interface.
@@ -80,10 +81,10 @@ func (mr *MockAuthorizerMockRecorder) Encoder() *gomock.Call {
 }
 
 // IDTokenHintVerifier mocks base method.
-func (m *MockAuthorizer) IDTokenHintVerifier(arg0 context.Context) *op.IDTokenHintVerifier {
+func (m *MockAuthorizer) IDTokenHintVerifier(arg0 context.Context) *protocol.IDTokenHintVerifier {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "IDTokenHintVerifier", arg0)
-	ret0, _ := ret[0].(*op.IDTokenHintVerifier)
+	ret0, _ := ret[0].(*protocol.IDTokenHintVerifier)
 	return ret0
 }
 

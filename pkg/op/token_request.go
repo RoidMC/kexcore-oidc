@@ -21,8 +21,8 @@ type Exchanger interface {
 	GrantTypeJWTAuthorizationSupported() bool
 	GrantTypeClientCredentialsSupported() bool
 	GrantTypeDeviceCodeSupported() bool
-	AccessTokenVerifier(context.Context) *AccessTokenVerifier
-	IDTokenHintVerifier(context.Context) *IDTokenHintVerifier
+	AccessTokenVerifier(context.Context) *protocol.AccessTokenVerifier
+	IDTokenHintVerifier(context.Context) *protocol.IDTokenHintVerifier
 	Logger() *slog.Logger
 }
 

@@ -13,7 +13,10 @@ package token
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -21,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -93,6 +97,20 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RFC 7523 §2.2 / OIDC Core §9: client_assertion takes precedence
+	if assertionType := r.Form.Get("client_assertion_type"); assertionType == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
+		assertion := r.Form.Get("client_assertion")
+		if assertion == "" {
+			tokenError(w, r, protocol.ErrInvalidClient().WithDescription("client_assertion is missing"))
+			return
+		}
+		_, err := p.authenticatePrivateKeyJWT(r, assertion)
+		if err != nil {
+			tokenError(w, r, err)
+			return
+		}
+	}
+
 	grantType := r.Form.Get("grant_type")
 	if grantType == "" {
 		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("grant_type is missing"))
@@ -159,7 +177,11 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO: PKCE code_verifier validation
+	// PKCE verification (RFC 7636 §4.6)
+	if err := verifyPKCE(authReq, tokenReq.CodeVerifier); err != nil {
+		tokenError(w, r, err)
+		return
+	}
 
 	// Create token response using authReq as TokenRequest
 	resp, err := p.createTokenResponseFromTokenRequest(r.Context(), authReq, client, true)
@@ -384,6 +406,33 @@ func validateGrantType(client storm.Client, grantType protocol.GrantType) bool {
 	return grantType == protocol.GrantTypeCode || grantType == protocol.GrantTypeRefreshToken
 }
 
+// verifyPKCE validates the PKCE code_verifier against the stored code_challenge
+// per RFC 7636 §4.6. If the auth request has no code_challenge, PKCE is not required.
+func verifyPKCE(authReq storm.AuthRequest, codeVerifier string) error {
+	cc := authReq.GetCodeChallenge()
+	if cc == nil || cc.Challenge == "" {
+		return nil
+	}
+	if codeVerifier == "" {
+		return protocol.ErrInvalidGrant().WithDescription("code_verifier required (PKCE)")
+	}
+	switch cc.Method {
+	case protocol.CodeChallengeMethodS256:
+		h := sha256.Sum256([]byte(codeVerifier))
+		computed := base64.RawURLEncoding.EncodeToString(h[:])
+		if computed != cc.Challenge {
+			return protocol.ErrInvalidGrant().WithDescription("PKCE verification failed")
+		}
+	case protocol.CodeChallengeMethodPlain:
+		if codeVerifier != cc.Challenge {
+			return protocol.ErrInvalidGrant().WithDescription("PKCE verification failed")
+		}
+	default:
+		return protocol.ErrInvalidGrant().WithDescription("unsupported code_challenge_method: %s", cc.Method)
+	}
+	return nil
+}
+
 func validateRefreshScopes(requestedScopes []string, refreshReq storm.RefreshTokenRequest) error {
 	if len(requestedScopes) == 0 {
 		return nil
@@ -412,11 +461,9 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 		}
 	}
 
-	// Create ID token for OIDC flows if the client supports it.
-	// When the KeyStore provides a GMSigningKey, use GM/T signing (SGD_SM3_SM2/SGD_SM3_SM9).
 	var idToken string
 	if p.keyStore != nil {
-		idToken, _ = p.createIDToken(ctx, request, client, accessToken)
+		idToken, _ = p.createIDToken(ctx, request, client, accessToken, "")
 	}
 
 	exp := uint64(validity.Seconds())
@@ -434,13 +481,13 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 
 // createIDToken creates a signed ID token for the given request.
 // Supports both standard JWS signing and GM/T signing (SM2/SM9).
-func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, client storm.Client, accessToken string) (string, error) {
+// After signing, encrypts the ID token if the client requests it.
+func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, client storm.Client, accessToken, code string) (string, error) {
 	signingKey, err := p.keyStore.SigningKey(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	// Build ID token claims
 	now := time.Now().UTC()
 	claims := map[string]any{
 		"iss": shared.IssuerFromContext(ctx),
@@ -455,26 +502,113 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 	if accessToken != "" {
 		claims["at_hash"] = p.hashToken(accessToken, signingKey.Algorithm())
 	}
+	if code != "" {
+		claims["c_hash"] = p.hashToken(code, signingKey.Algorithm())
+	}
+	if authReq, ok := request.(storm.AuthRequest); ok {
+		if t := authReq.GetAuthTime(); !t.IsZero() {
+			claims["auth_time"] = t.Unix()
+		}
+		if acr := authReq.GetACR(); acr != "" {
+			claims["acr"] = acr
+		}
+		if amr := authReq.GetAMR(); len(amr) > 0 {
+			claims["amr"] = amr
+		}
+	}
+	if len(request.GetAudience()) > 1 {
+		claims["azp"] = request.GetClientID()
+	}
 
 	payload, err := json.Marshal(claims)
 	if err != nil {
 		return "", err
 	}
 
+	var signed string
+
 	// Try GM/T signing first (SM2/SM9)
 	if gmKey, ok := signingKey.(storm.GMSigningKey); ok {
-		signer := gmKey.GMSigner()
-		return signer.Sign(payload)
+		signed, err = gmKey.GMSigner().Sign(payload)
+		if err != nil {
+			return "", err
+		}
+	} else if gm, ok := p.crypto.(storm.GMCrypto); ok {
+		// Try GMCrypto signing
+		signed, err = gm.Sign(ctx, signingKey.ID(), payload)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		// Standard JWS signing (RSA/EC/EdDSA) via crypto.NewSigner
+		rawKey, err := jwk.Export[any](signingKey.Key())
+		if err != nil {
+			return "", fmt.Errorf("failed to export signing key: %w", err)
+		}
+		signer, err := crypto.NewSigner(signingKey.Algorithm(), rawKey, signingKey.ID())
+		if err != nil {
+			return "", fmt.Errorf("failed to create signer: %w", err)
+		}
+		signed, err = signer.Sign(payload)
+		if err != nil {
+			return "", fmt.Errorf("failed to sign ID token: %w", err)
+		}
 	}
 
-	// Try GMCrypto signing
-	if gm, ok := p.crypto.(storm.GMCrypto); ok {
-		return gm.Sign(ctx, signingKey.ID(), payload)
+	if encClient, ok := client.(idTokenEncryptionClient); ok {
+		alg, enc := encClient.IDTokenEncryptionAlg(), encClient.IDTokenEncryptionEnc()
+		if alg != "" && enc != "" {
+			encrypted, err := encryptIDToken(signed, p.crypto, alg, enc)
+			if err != nil {
+				return "", fmt.Errorf("failed to encrypt ID token: %w", err)
+			}
+			return encrypted, nil
+		}
 	}
 
-	// Standard signing via jwx (not yet migrated - placeholder)
-	// TODO: Implement standard JWS signing using jwx when Signer is migrated
-	return "", nil
+	return signed, nil
+}
+
+type idTokenEncryptionClient interface {
+	IDTokenEncryptionAlg() string
+	IDTokenEncryptionEnc() string
+}
+
+type tokenEncryptionKeyProvider interface {
+	TokenEncryptionKey() []byte
+}
+
+type sm2EncryptionKeyProvider interface {
+	SM2TokenEncryptionPublicKey() interface{}
+}
+
+type sm9EncryptionKeyProvider interface {
+	SM9TokenEncryptionKey() *crypto.SM9MasterPublicKey
+}
+
+func encryptIDToken(signedToken string, cr storm.Crypto, alg, enc string) (string, error) {
+	switch alg {
+	case protocol.JWEAlgDir:
+		kp, ok := cr.(tokenEncryptionKeyProvider)
+		if !ok || kp.TokenEncryptionKey() == nil {
+			return "", fmt.Errorf("dir encryption requested but Crypto does not implement TokenEncryptionKeyProvider")
+		}
+		return protocol.EncryptTokenJWE(signedToken, kp.TokenEncryptionKey(), alg, enc)
+	case protocol.JWEAlgSM23:
+		pk, ok := cr.(sm2EncryptionKeyProvider)
+		if !ok || pk.SM2TokenEncryptionPublicKey() == nil {
+			return "", fmt.Errorf("SM2 encryption requested but Crypto does not implement SM2TokenEncryptionPublicKeyProvider")
+		}
+		return protocol.EncryptTokenJWE(signedToken, pk.SM2TokenEncryptionPublicKey(), alg, enc)
+	case protocol.JWEAlgSM93:
+		pk, ok := cr.(sm9EncryptionKeyProvider)
+		if !ok || pk.SM9TokenEncryptionKey() == nil {
+			return "", fmt.Errorf("SM9 encryption requested but Crypto does not implement SM9TokenEncryptionKeyProvider")
+		}
+		return protocol.EncryptTokenSM9(signedToken, pk.SM9TokenEncryptionKey())
+	default:
+		return "", fmt.Errorf("unsupported JWE key management algorithm: %s", alg)
+	}
 }
 
 func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenRequest, client storm.Client) (string, time.Duration, error) {

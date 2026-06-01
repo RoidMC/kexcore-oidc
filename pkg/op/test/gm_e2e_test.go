@@ -19,7 +19,6 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/pkg/op"
 )
 
 // --- Helpers for building GM/T JWS tokens ---
@@ -111,13 +110,13 @@ func TestGM_E2E_SM2_SignAndVerify(t *testing.T) {
 
 	token := sm2SignToken(claims, privKey)
 
-	verifier := op.NewAccessTokenVerifier(
+	verifier := protocol.NewAccessTokenVerifier(
 		"https://gm.example.com",
 		sm2KeySet{pubKey: pubKey},
-		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
+		protocol.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
 	)
 
-	verified, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
+	verified, err := protocol.VerifyAccessTokenGeneric[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	requireNoErr(t, err)
 	assertEqual(t, claims.GetSubject(), verified.GetSubject())
 }
@@ -134,13 +133,13 @@ func TestGM_E2E_SM2_WrongKey(t *testing.T) {
 
 	token := sm2SignToken(claims, privKey)
 
-	verifier := op.NewAccessTokenVerifier(
+	verifier := protocol.NewAccessTokenVerifier(
 		"https://gm.example.com",
 		sm2KeySet{pubKey: &otherKey.PublicKey},
-		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
+		protocol.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
 	)
 
-	_, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
+	_, err := protocol.VerifyAccessTokenGeneric[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	assertErr(t, err)
 }
 
@@ -155,13 +154,13 @@ func TestGM_E2E_SM2_WrongIssuer(t *testing.T) {
 
 	token := sm2SignToken(claims, privKey)
 
-	verifier := op.NewAccessTokenVerifier(
+	verifier := protocol.NewAccessTokenVerifier(
 		"https://gm.example.com",
 		sm2KeySet{pubKey: &privKey.PublicKey},
-		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
+		protocol.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
 	)
 
-	_, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
+	_, err := protocol.VerifyAccessTokenGeneric[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	assertErr(t, err)
 }
 
@@ -176,13 +175,13 @@ func TestGM_E2E_SM2_ExpiredToken(t *testing.T) {
 
 	token := sm2SignToken(claims, privKey)
 
-	verifier := op.NewAccessTokenVerifier(
+	verifier := protocol.NewAccessTokenVerifier(
 		"https://gm.example.com",
 		sm2KeySet{pubKey: &privKey.PublicKey},
-		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
+		protocol.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM2),
 	)
 
-	_, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
+	_, err := protocol.VerifyAccessTokenGeneric[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	assertErr(t, err)
 }
 
@@ -243,13 +242,13 @@ func TestGM_E2E_SM9_SignAndVerify(t *testing.T) {
 
 	token := sm9SignToken(claims, userPrivKey, uid)
 
-	verifier := op.NewAccessTokenVerifier(
+	verifier := protocol.NewAccessTokenVerifier(
 		"https://gm.example.com",
 		sm9KeySet{masterPubKey: masterPubKey},
-		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM9),
+		protocol.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM9),
 	)
 
-	verified, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
+	verified, err := protocol.VerifyAccessTokenGeneric[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	requireNoErr(t, err)
 	assertEqual(t, claims.GetSubject(), verified.GetSubject())
 }
@@ -269,13 +268,13 @@ func TestGM_E2E_SM9_WrongUID(t *testing.T) {
 	// Signed as "bob" but verified as "alice" (uid in header != uid used for verification)
 	token := sm9SignToken(claims, aliceKey, []byte("bob"))
 
-	verifier := op.NewAccessTokenVerifier(
+	verifier := protocol.NewAccessTokenVerifier(
 		"https://gm.example.com",
 		sm9KeySet{masterPubKey: masterPubKey},
-		op.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM9),
+		protocol.WithSupportedAccessTokenSigningAlgorithms(crypto.SGD_SM3_SM9),
 	)
 
-	_, err := op.VerifyAccessToken[*protocol.AccessTokenClaims](context.Background(), token, verifier)
+	_, err := protocol.VerifyAccessTokenGeneric[*protocol.AccessTokenClaims](context.Background(), token, verifier)
 	assertErr(t, err)
 }
 

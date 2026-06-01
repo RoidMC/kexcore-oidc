@@ -320,7 +320,7 @@ func GetTokenIDAndSubjectFromToken(
 
 		tokenIDOrToken, subject, ok = token, refreshTokenRequest.GetSubject(), true
 	case protocol.IDTokenType:
-		idTokenClaims, err := VerifyIDTokenHint[*protocol.IDTokenClaims](ctx, token, exchanger.IDTokenHintVerifier(ctx))
+		idTokenClaims, err := protocol.VerifyIDTokenHintGeneric[*protocol.IDTokenClaims](ctx, token, exchanger.IDTokenHintVerifier(ctx))
 		if err != nil {
 			break
 		}
@@ -424,7 +424,7 @@ func getTokenIDAndClaims(ctx context.Context, userinfoProvider UserinfoProvider,
 
 		return splitToken[0], splitToken[1], nil, true
 	}
-	accessTokenClaims, err := VerifyAccessToken[*protocol.AccessTokenClaims](ctx, accessToken, userinfoProvider.AccessTokenVerifier(ctx))
+	accessTokenClaims, err := protocol.VerifyAccessTokenGeneric[*protocol.AccessTokenClaims](ctx, accessToken, userinfoProvider.AccessTokenVerifier(ctx))
 	if err != nil {
 		return "", "", nil, false
 	}

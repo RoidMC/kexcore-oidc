@@ -130,7 +130,7 @@ func TestValidateAuthRequest(t *testing.T) {
 	type args struct {
 		authRequest *protocol.AuthRequest
 		client      op.Client
-		verifier    *op.IDTokenHintVerifier
+		verifier    *protocol.IDTokenHintVerifier
 	}
 	tests := []struct {
 		name    string
@@ -1390,7 +1390,7 @@ func TestValidateAuthReqIDTokenHint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := op.ValidateAuthReqIDTokenHint(context.Background(), tt.idTokenHint, op.NewIDTokenHintVerifier(tu.ValidIssuer, tu.KeySet{}))
+			got, err := op.ValidateAuthReqIDTokenHint(context.Background(), tt.idTokenHint, protocol.NewIDTokenHintVerifier(tu.ValidIssuer, tu.KeySet{}))
 			require.ErrorIs(t, err, tt.wantErr)
 			assert.Equal(t, tt.want, got)
 		})

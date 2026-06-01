@@ -553,6 +553,29 @@ func (s *Storage) TerminateSession(_ context.Context, userID, clientID string) e
 }
 
 // =================================================================
+// Login support
+// =================================================================
+
+func (s *Storage) CheckUsernamePassword(username, password, id string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	request, ok := s.authRequests[id]
+	if !ok {
+		return fmt.Errorf("request not found")
+	}
+
+	user := s.userStore.GetUserByUsername(username)
+	if user != nil && user.Password == password {
+		request.UserID = user.ID
+		request.done = true
+		request.authTime = time.Now()
+		return nil
+	}
+	return fmt.Errorf("invalid username or password")
+}
+
+// =================================================================
 // DeviceAuthStore (optional)
 // =================================================================
 

@@ -20,7 +20,7 @@ import (
 type SessionEnder interface {
 	Decoder() httphelper.Decoder
 	Storage() Storage
-	IDTokenHintVerifier(context.Context) *IDTokenHintVerifier
+	IDTokenHintVerifier(context.Context) *protocol.IDTokenHintVerifier
 	DefaultLogoutRedirectURI() string
 	Logger() *slog.Logger
 }
@@ -93,8 +93,8 @@ func ValidateEndSessionRequest(ctx context.Context, req *protocol.EndSessionRequ
 		UILocales:   req.UILocales,
 	}
 	if req.IdTokenHint != "" {
-		claims, err := VerifyIDTokenHint[*protocol.IDTokenClaims](ctx, req.IdTokenHint, ender.IDTokenHintVerifier(ctx))
-		if err != nil && !errors.As(err, &IDTokenHintExpiredError{}) {
+		claims, err := protocol.VerifyIDTokenHintGeneric[*protocol.IDTokenClaims](ctx, req.IdTokenHint, ender.IDTokenHintVerifier(ctx))
+		if err != nil && !errors.As(err, &protocol.IDTokenHintExpiredError{}) {
 			return nil, protocol.ErrInvalidRequest().WithDescription("id_token_hint invalid").WithParent(err)
 		}
 		session.UserID = claims.GetSubject()

@@ -15,7 +15,7 @@ type Revoker interface {
 	Decoder() httphelper.Decoder
 	Crypto() Crypto
 	Storage() Storage
-	AccessTokenVerifier(context.Context) *AccessTokenVerifier
+	AccessTokenVerifier(context.Context) *protocol.AccessTokenVerifier
 	AuthMethodPrivateKeyJWTSupported() bool
 	AuthMethodPostSupported() bool
 }
@@ -83,8 +83,8 @@ func ParseTokenRevocationRequest(r *http.Request, revoker Revoker) (token, token
 	req := new(struct {
 		protocol.RevocationRequest
 		protocol.ClientAssertionParams        // for auth_method private_key_jwt
-		ClientID                   string `schema:"client_id"`     // for auth_method none and post
-		ClientSecret               string `schema:"client_secret"` // for auth_method post
+		ClientID                       string `schema:"client_id"`     // for auth_method none and post
+		ClientSecret                   string `schema:"client_secret"` // for auth_method post
 	})
 	err = revoker.Decoder().Decode(req, r.Form)
 	if err != nil {
@@ -167,7 +167,7 @@ func getTokenIDAndSubjectForRevocation(ctx context.Context, userinfoProvider Use
 		}
 		return splitToken[0], splitToken[1], true
 	}
-	accessTokenClaims, err := VerifyAccessToken[*protocol.AccessTokenClaims](ctx, accessToken, userinfoProvider.AccessTokenVerifier(ctx))
+	accessTokenClaims, err := protocol.VerifyAccessTokenGeneric[*protocol.AccessTokenClaims](ctx, accessToken, userinfoProvider.AccessTokenVerifier(ctx))
 	if err != nil {
 		return "", "", false
 	}

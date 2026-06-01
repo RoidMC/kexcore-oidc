@@ -15,6 +15,10 @@ const (
 	DefaultSigningAlgorithms = "RS256,RS384,RS512,EdDSA,SGD_SM3_SM2,SGD_SM3_SM9"
 )
 
+func DefaultSigningAlgorithmsSlice() []string {
+	return strings.Split(DefaultSigningAlgorithms, ",")
+}
+
 type Config struct {
 	Port              string
 	RedirectURI       []string

@@ -6,7 +6,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,38 +14,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/example/storm-server/config"
 	"github.com/roidmc/kexcore-oidc/example/storm-server/storage"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/authorization"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/endsession"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/introspection"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/keys"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/revocation"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/token"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/userinfo"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
-
-// OAuth 2.1 + OIDC Core compliant discovery configuration.
-var oauth21Discovery = storm.DiscoveryConfig{
-	ExtraFields: map[string]any{
-		"grant_types_supported": []string{
-			"authorization_code",
-			"client_credentials",
-			"refresh_token",
-			"urn:ietf:params:oauth:grant-type:jwt-bearer",
-			"urn:ietf:params:oauth:grant-type:token-exchange",
-			"urn:ietf:params:oauth:grant-type:device_code",
-		},
-		"response_types_supported": []string{
-			"code",
-			"id_token",
-			"id_token token",
-			"code id_token",
-			"code token",
-			"code id_token token",
-		},
-		"code_challenge_methods_supported": []string{"S256"},
-	},
-}
 
 func main() {
 	cfg := config.FromEnvVars(&config.Config{Port: "9998"})
@@ -88,77 +56,46 @@ func main() {
 		),
 	)
 
-	store, err := getUserStore(cfg, issuer)
-	if err != nil {
-		logger.Error("cannot create UserStore", "error", err)
-		os.Exit(1)
+	var userStore storage.UserStore
+	if cfg.UsersFile != "" {
+		us, err := storage.StoreFromFile(cfg.UsersFile)
+		if err != nil {
+			logger.Error("cannot load users file", "error", err)
+			os.Exit(1)
+		}
+		userStore = us
+	} else {
+		userStore = storage.NewUserStore(issuer)
 	}
 
-	stor := storage.NewStorage(store, cfg.SigningAlgorithms)
-	tokenCrypto := storage.NewTokenCrypto(sha256.Sum256([]byte("test")), cfg.CryptoMethod)
-	sharedKeyStore := storm.AdaptKeyStore(stor)
-
-	// Create StormEngine
-	engine := storm.New(stor, shared.StaticIssuer(issuer),
-		storm.WithLogger(logger),
-		storm.WithMiddleware(shared.IssuerMiddleware(shared.StaticIssuer(issuer))),
-		storm.WithDiscoveryConfig(oauth21Discovery),
-	)
-
-	// Register Authorization plugin
-	engine.Register(authorization.New(authorization.Config{
-		AuthStore:   stor,
-		ClientStore: stor,
-		Crypto:      tokenCrypto,
-		KeyStore:    stor,
-	}))
-
-	// Register Token plugin
-	engine.Register(token.New(token.Config{
-		TokenStore:  stor,
-		ClientStore: stor,
-		AuthStore:   stor,
-		Crypto:      tokenCrypto,
-		KeyStore:    stor,
-		Logger:      logger,
-	}))
-
-	// Register Introspection plugin
-	engine.Register(introspection.New(introspection.Config{
-		Store:       stor,
-		ClientStore: stor,
-		Crypto:      tokenCrypto,
-		KeyStore:    sharedKeyStore,
-	}))
-
-	// Register UserInfo plugin
-	engine.Register(userinfo.New(userinfo.Config{
-		Store:    stor,
-		Crypto:   tokenCrypto,
-		KeyStore: sharedKeyStore,
-	}))
-
-	// Register Revocation plugin
-	engine.Register(revocation.New(revocation.Config{
-		Store:       stor,
-		ClientStore: stor,
-		Crypto:      tokenCrypto,
-		KeyStore:    sharedKeyStore,
-	}))
-
-	// Register EndSession plugin
-	engine.Register(endsession.New(endsession.Config{
-		Store:            stor,
-		ClientStore:      stor,
-		KeyStore:         sharedKeyStore,
-		DefaultLogoutURI: "/",
-	}))
-
-	// Register Keys (JWKS) plugin
-	engine.Register(keys.New(stor))
-
-	// Build and serve
-	handler := engine.Build()
+	handler := SetupTenant(TenantConfig{
+		Issuer:            issuer,
+		SigningAlgorithms: cfg.SigningAlgorithms,
+		CryptoMethod:      cfg.CryptoMethod,
+		Logger:            logger,
+		Discovery: storm.DiscoveryConfig{
+			ExtraFields: map[string]any{
+				"grant_types_supported": []string{
+					"authorization_code",
+					"client_credentials",
+					"refresh_token",
+					"urn:ietf:params:oauth:grant-type:jwt-bearer",
+					"urn:ietf:params:oauth:grant-type:token-exchange",
+					"urn:ietf:params:oauth:grant-type:device_code",
+				},
+				"response_types_supported": []string{
+					"code",
+					"id_token",
+					"id_token token",
+					"code id_token",
+					"code token",
+					"code id_token token",
+				},
+				"code_challenge_methods_supported": []string{"S256"},
+			},
+		},
+		UserStore: userStore,
+	})
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -170,11 +107,4 @@ func main() {
 		logger.Error("server terminated", "error", err)
 		os.Exit(1)
 	}
-}
-
-func getUserStore(cfg *config.Config, issuer string) (storage.UserStore, error) {
-	if cfg.UsersFile == "" {
-		return storage.NewUserStore(issuer), nil
-	}
-	return storage.StoreFromFile(cfg.UsersFile)
 }

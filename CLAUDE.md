@@ -82,7 +82,9 @@ types, errors, and shared utilities. It is used by both StormEngine (OP) and the
     verifier.go     — Token verification (Verifier interface, ACR/AZP verifiers, JWT parsing,
                       signature checking, expiry/issuer/audience/nonce/auth_time checks,
                       JWE constants (JWEAlg*, JWEEnc*), Encrypt/DecryptToken convenience funcs,
-                      VerifyAccessToken, VerifyIDTokenHint, VerifyJWTAssertion)
+                      VerifyAccessToken, VerifyIDTokenHint, VerifyJWTAssertion,
+                      VerifyAccessTokenGeneric[C], VerifyIDTokenHintGeneric[C],
+                      AccessTokenVerifier, IDTokenHintVerifier, IDTokenHintExpiredError)
 ```
 
 ### Key Design Decisions
@@ -122,7 +124,7 @@ types, errors, and shared utilities. It is used by both StormEngine (OP) and the
 - `protocol/test/token_test.go` — TokenClaims, AccessTokenClaims, IDTokenClaims, LogoutTokenClaims, Tokens[C]
 - `protocol/test/types_test.go` — Audience, AMR, Display, Locale, Locales, Scopes, Time
 - `protocol/test/introspection_test.go` — SetUserInfo, GetAddress, MarshalJSON/UnmarshalJSON
-- `protocol/test/verifier_test.go` — DecryptToken, ParseToken, CheckSubject/Issuer/Audience/AZP/Signature/Expiration/IssuedAt/Nonce/ACR/AuthTime
+- `protocol/test/verifier_test.go` — DecryptToken, ParseToken, CheckSubject/Issuer/Audience/AZP/Signature/Expiration/IssuedAt/Nonce/ACR/AuthTime, NewAccessTokenVerifier, VerifyAccessTokenGeneric, NewIDTokenHintVerifier, VerifyIDTokenHintGeneric, IDTokenHintExpiredError, ExampleVerifyAccessTokenGeneric_customClaims
 - `protocol/test/discovery_test.go` — DiscoveryConfiguration round-trip
 - `protocol/test/regression/` — Regression tests
 
@@ -310,7 +312,7 @@ pluggable algorithm implementations (like JCA Providers).
 | `protocol/jws.go` | JWS interfaces + `VerifySignatureWithRegistry` (central JWS dispatch) |
 | `protocol/jwe.go` | JWE interfaces + `EncryptTokenJWE` / `DecryptTokenJWE` (central JWE dispatch) |
 | `protocol/registry.go` | `SignatureRegistry` — user extension point for custom JWS verifiers |
-| `protocol/verifier.go` | JWE constants, `EncryptToken*` / `DecryptToken*` convenience functions |
+| `protocol/verifier.go` | All verifier implementations: `AccessTokenVerifier`, `IDTokenHintVerifier`, `VerifyAccessTokenGeneric[C]`, `VerifyIDTokenHintGeneric[C]`, `VerifyJWTAssertion`, `IDTokenHintExpiredError` (soft error); JWE constants + `EncryptToken*`/`DecryptToken*` |
 | `crypto/registry.go` | `ProviderRegistry` — algorithm provider registration + gmsm defaults |
 | `crypto/sign.go` | SM2/SM9 signing implementations |
 | `crypto/jwe.go` | SM2/SM9 JWE encrypt/decrypt implementations |
@@ -411,6 +413,11 @@ curl http://localhost:9998/.well-known/jwks.json
 - All OAuth errors use `protocol.ErrXxx().WithDescription("...").WithParent(err)` pattern
 - Plugin structure: `Plugin` struct + `Config` struct + `New(Config)` + `Name()` + `Contribute()`
 - `protocol/` is the single source of truth for all OAuth/OIDC type definitions
+- `protocol/verifier.go` is the single source of truth for **all verifier implementations** (AccessTokenVerifier, IDTokenHintVerifier, generic + non-generic verify functions)
+- `op/` uses `protocol.AccessTokenVerifier` / `protocol.IDTokenHintVerifier` directly (no wrapper); only `op.JWTProfileVerifier` is OP-specific (has SM9 support)
+- `op/WithAccessTokenVerifierOpts` / `op/WithIDTokenHintVerifierOpts` accept `protocol.AccessTokenVerifierOpt` / `protocol.IDTokenHintVerifierOpt`
+- `storm/shared/verifier.go` re-exports `protocol.VerifyAccessToken` / `protocol.VerifyIDTokenHint` (non-generic) for storm plugins
+- Generic functions (`VerifyAccessTokenGeneric[C]`, `VerifyIDTokenHintGeneric[C]`) cannot be assigned to variables in Go — use them directly: `protocol.VerifyAccessTokenGeneric[*MyClaims](ctx, token, v)`
 - `protocol/authorization.go` defines `AuthRequest`, `PushedAuthRequest/Response`, `RequestObject`, and all OIDC constants
 - `protocol/token.go` defines all token types including `Tokens[C]` (generic OAuth2+OIDC token wrapper)
 - `protocol/util.go` defines `Encoder` (struct → url.Values) and `Decoder` (url.Values → struct) via `schema` tags; replaces `zitadel/schema` and `pkg/util/codec`

@@ -76,25 +76,99 @@ func DefaultAZPVerifier(clientID string) AZPVerifier {
 }
 
 type AccessTokenVerifier struct {
-	Issuer   string
-	KeyStore KeyStore
-	Offset   time.Duration
+	Issuer            string
+	KeySet            KeySet
+	KeyStore          KeyStore // optional, used for JWKS-based verification
+	Offset            time.Duration
+	SupportedSignAlgs []string
+	MaxAgeIAT         time.Duration
+}
+
+type AccessTokenVerifierOpt func(*AccessTokenVerifier)
+
+func WithSupportedAccessTokenSigningAlgorithms(algs ...string) AccessTokenVerifierOpt {
+	return func(v *AccessTokenVerifier) {
+		v.SupportedSignAlgs = algs
+	}
+}
+
+func NewAccessTokenVerifier(issuer string, keySet KeySet, opts ...AccessTokenVerifierOpt) *AccessTokenVerifier {
+	v := &AccessTokenVerifier{
+		Issuer: issuer,
+		KeySet: keySet,
+	}
+	for _, opt := range opts {
+		opt(v)
+	}
+	return v
+}
+
+// resolveKeySet returns the effective KeySet for signature verification.
+// If KeySet is set directly, use it. Otherwise wrap KeyStore in an adapter.
+func (v *AccessTokenVerifier) resolveKeySet() KeySet {
+	if v.KeySet != nil {
+		return v.KeySet
+	}
+	if v.KeyStore != nil {
+		return &keyStoreAdapter{store: v.KeyStore}
+	}
+	return nil
 }
 
 type IDTokenHintVerifier struct {
-	Issuer    string
-	KeyStore  KeyStore
-	Offset    time.Duration
-	MaxAgeIAT time.Duration
-	MaxAge    time.Duration
+	Issuer            string
+	KeySet            KeySet
+	KeyStore          KeyStore // optional, used for JWKS-based verification
+	Offset            time.Duration
+	MaxAgeIAT         time.Duration
+	MaxAge            time.Duration
+	SupportedSignAlgs []string
+	ACR               ACRVerifier
+}
+
+type IDTokenHintVerifierOpt func(*IDTokenHintVerifier)
+
+func WithSupportedIDTokenHintSigningAlgorithms(algs ...string) IDTokenHintVerifierOpt {
+	return func(v *IDTokenHintVerifier) {
+		v.SupportedSignAlgs = algs
+	}
+}
+
+func NewIDTokenHintVerifier(issuer string, keySet KeySet, opts ...IDTokenHintVerifierOpt) *IDTokenHintVerifier {
+	v := &IDTokenHintVerifier{
+		Issuer: issuer,
+		KeySet: keySet,
+	}
+	for _, opt := range opts {
+		opt(v)
+	}
+	return v
+}
+
+// resolveKeySet returns the effective KeySet for signature verification.
+func (v *IDTokenHintVerifier) resolveKeySet() KeySet {
+	if v.KeySet != nil {
+		return v.KeySet
+	}
+	if v.KeyStore != nil {
+		return &keyStoreAdapter{store: v.KeyStore}
+	}
+	return nil
 }
 
 type IDTokenHintExpiredError struct {
 	Err error
 }
 
-func (e *IDTokenHintExpiredError) Error() string { return e.Err.Error() }
-func (e *IDTokenHintExpiredError) Unwrap() error { return e.Err }
+func (e IDTokenHintExpiredError) Error() string { return e.Err.Error() }
+func (e IDTokenHintExpiredError) Unwrap() error { return e.Err }
+func (e IDTokenHintExpiredError) Is(err error) bool {
+	t, ok := err.(IDTokenHintExpiredError)
+	if !ok {
+		return false
+	}
+	return errors.Is(e.Err, t.Err)
+}
 
 var ErrInvalidRefreshToken = errors.New("invalid refresh token")
 
@@ -407,14 +481,43 @@ func VerifyAccessToken(ctx context.Context, token string, v *AccessTokenVerifier
 	if err := CheckIssuer(claims, v.Issuer); err != nil {
 		return "", "", false
 	}
-	keySet := &keyStoreAdapter{store: v.KeyStore}
-	if err := CheckSignature(ctx, decrypted, payload, claims, nil, keySet); err != nil {
+	keySet := v.resolveKeySet()
+	if err := CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, keySet); err != nil {
 		return "", "", false
 	}
 	if err := CheckExpiration(claims, v.Offset); err != nil {
 		return "", "", false
 	}
 	return claims.JWTID, claims.GetSubject(), true
+}
+
+// VerifyAccessTokenGeneric validates the access token and returns typed claims.
+func VerifyAccessTokenGeneric[C Claims](ctx context.Context, token string, v *AccessTokenVerifier) (claims C, err error) {
+	var nilClaims C
+
+	decrypted, err := DecryptToken(token)
+	if err != nil {
+		return nilClaims, err
+	}
+	payload, err := ParseToken(decrypted, &claims)
+	if err != nil {
+		return nilClaims, err
+	}
+
+	if err := CheckIssuer(claims, v.Issuer); err != nil {
+		return nilClaims, err
+	}
+
+	keySet := v.resolveKeySet()
+	if err = CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, keySet); err != nil {
+		return nilClaims, err
+	}
+
+	if err = CheckExpiration(claims, v.Offset); err != nil {
+		return nilClaims, err
+	}
+
+	return claims, nil
 }
 
 func VerifyIDTokenHint(ctx context.Context, token string, v *IDTokenHintVerifier) (*IDTokenClaims, error) {
@@ -430,8 +533,11 @@ func VerifyIDTokenHint(ctx context.Context, token string, v *IDTokenHintVerifier
 	if err := CheckIssuer(claims, v.Issuer); err != nil {
 		return nil, err
 	}
-	keySet := &keyStoreAdapter{store: v.KeyStore}
-	if err := CheckSignature(ctx, decrypted, payload, claims, nil, keySet); err != nil {
+	keySet := v.resolveKeySet()
+	if err := CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, keySet); err != nil {
+		return nil, err
+	}
+	if err := CheckAuthorizationContextClassReference(claims, v.ACR); err != nil {
 		return nil, err
 	}
 	if err := CheckExpiration(claims, v.Offset); err != nil {
@@ -441,6 +547,46 @@ func VerifyIDTokenHint(ctx context.Context, token string, v *IDTokenHintVerifier
 		return claims, &IDTokenHintExpiredError{Err: err}
 	}
 	if err := CheckAuthTime(claims, v.MaxAge); err != nil {
+		return claims, &IDTokenHintExpiredError{Err: err}
+	}
+	return claims, nil
+}
+
+// VerifyIDTokenHintGeneric validates the ID token hint and returns typed claims.
+func VerifyIDTokenHintGeneric[C Claims](ctx context.Context, token string, v *IDTokenHintVerifier) (claims C, err error) {
+	var nilClaims C
+
+	decrypted, err := DecryptToken(token)
+	if err != nil {
+		return nilClaims, err
+	}
+	payload, err := ParseToken(decrypted, &claims)
+	if err != nil {
+		return nilClaims, err
+	}
+
+	if err := CheckIssuer(claims, v.Issuer); err != nil {
+		return nilClaims, err
+	}
+
+	keySet := v.resolveKeySet()
+	if err = CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, keySet); err != nil {
+		return nilClaims, err
+	}
+
+	if err = CheckAuthorizationContextClassReference(claims, v.ACR); err != nil {
+		return nilClaims, err
+	}
+
+	if err = CheckExpiration(claims, v.Offset); err != nil {
+		return claims, &IDTokenHintExpiredError{Err: err}
+	}
+
+	if err = CheckIssuedAt(claims, v.MaxAgeIAT, v.Offset); err != nil {
+		return claims, &IDTokenHintExpiredError{Err: err}
+	}
+
+	if err = CheckAuthTime(claims, v.MaxAge); err != nil {
 		return claims, &IDTokenHintExpiredError{Err: err}
 	}
 	return claims, nil
