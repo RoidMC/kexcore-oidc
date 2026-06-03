@@ -56,8 +56,22 @@ type Config struct {
 	Logger      *slog.Logger
 }
 
-// New creates a new Token plugin.
-func New(cfg Config) *Plugin {
+// New creates a new Token plugin from a PluginContext.
+// Storage must implement TokenStore, AuthStore, ClientStore, and KeyStore.
+func New(ctx *storm.PluginContext) *Plugin {
+	return &Plugin{
+		tokenStore:  ctx.Storage.(storm.TokenStore),
+		clientStore: ctx.Storage.(storm.ClientStore),
+		authStore:   ctx.Storage.(storm.AuthStore),
+		crypto:      ctx.Crypto,
+		keyStore:    ctx.Storage.(storm.KeyStore),
+		decoder:     ctx.Decoder,
+		logger:      slog.Default(),
+	}
+}
+
+// NewWithConfig creates a new Token plugin with explicit config.
+func NewWithConfig(cfg Config) *Plugin {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -70,6 +84,21 @@ func New(cfg Config) *Plugin {
 		decoder:     cfg.Decoder,
 		logger:      cfg.Logger,
 	}
+}
+
+// init self-registers the token plugin in the global registry.
+func init() {
+	storm.RegisterPlugin("token", storm.PriorityToken, func(ctx *storm.PluginContext) storm.Plugin {
+		return New(ctx)
+	})
+}
+
+// Category returns CategoryCore — token is a required OAuth 2.0 endpoint.
+func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryCore }
+
+// Requires returns the storage dependencies.
+func (p *Plugin) Requires() []string {
+	return []string{"TokenStore", "AuthStore", "ClientStore", "KeyStore"}
 }
 
 // Name returns the plugin name.
@@ -371,7 +400,7 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 // signed with the client's private key (RFC 7523 §2.2, OIDC Core §9).
 func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (storm.Client, error) {
 	issuer := shared.IssuerFromContext(r.Context())
-	request, err := shared.VerifyJWTAssertion(r.Context(), assertion, issuer, storm.AdaptKeyStore(p.keyStore), 0)
+	request, err := protocol.VerifyJWTAssertion(r.Context(), assertion, issuer, p.keyStore, 0)
 	if err != nil {
 		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
 	}

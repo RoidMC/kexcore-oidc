@@ -11,6 +11,23 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// PluginCategory defines the lifecycle and registration behavior of a plugin.
+type PluginCategory int
+
+const (
+	// CategoryCore plugins are always registered and cannot be disabled.
+	// They form the minimum viable OIDC server (authorization, token, keys, discovery).
+	CategoryCore PluginCategory = iota
+
+	// CategoryStandard plugins are registered by default when their Storage
+	// dependencies are satisfied. Users can disable them via Disable().
+	CategoryStandard
+
+	// CategoryOptional plugins are only registered when explicitly enabled
+	// by the user via WithPlugin() or specific option functions.
+	CategoryOptional
+)
+
 // Plugin is the fundamental unit of a StormEngine server.
 // Each plugin owns its routes, request parsing, business logic,
 // and error handling. The Engine does not interpret OIDC semantics.
@@ -24,6 +41,22 @@ type Plugin interface {
 	// Register installs the plugin's HTTP handlers on the given router.
 	// The plugin has full control over routing and handler behavior.
 	Register(r chi.Router)
+}
+
+// CategorizablePlugin is optionally implemented by plugins to declare
+// their category and storage dependency requirements.
+// The Engine uses this for automatic registration and ordering.
+type CategorizablePlugin interface {
+	Plugin
+
+	// Category returns the plugin's registration category.
+	Category() PluginCategory
+
+	// Requires returns the set of storage interface names this plugin needs.
+	// The Engine checks whether the Storage implementation satisfies these
+	// before registering the plugin. Return nil if no storage dependencies.
+	// Example: []string{"UserinfoStore", "IntrospectStore"}
+	Requires() []string
 }
 
 // DiscoveryContributor is an optional interface that plugins may implement

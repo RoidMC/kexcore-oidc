@@ -168,12 +168,12 @@ func (rp *relyingParty) GetEndSessionEndpoint() string {
 }
 
 func (rp *relyingParty) GetRevokeEndpoint() string {
-	return rp.endpoints.RevokeURL
+	return rp.endpoints.RevocationURL
 }
 
 func (rp *relyingParty) IDTokenVerifier() *IDTokenVerifier {
 	if rp.idTokenVerifier == nil {
-		rp.idTokenVerifier = NewIDTokenVerifier(rp.issuer, rp.oauthConfig.ClientID, NewRemoteKeySet(rp.httpClient, rp.endpoints.JKWsURL), rp.verifierOpts...)
+		rp.idTokenVerifier = NewIDTokenVerifier(rp.issuer, rp.oauthConfig.ClientID, NewRemoteKeySet(rp.httpClient, rp.endpoints.JWKSURL), rp.verifierOpts...)
 	}
 	return rp.idTokenVerifier
 }
@@ -268,11 +268,12 @@ func NewRelyingPartyOIDC(ctx context.Context, issuer, clientID, clientSecret, re
 		rp.verifierOpts = append(rp.verifierOpts, WithSupportedSigningAlgorithms(discoveryConfiguration.IDTokenSigningAlgValuesSupported...))
 	}
 	endpoints := GetEndpoints(discoveryConfiguration)
-	rp.oauthConfig.Endpoint = endpoints.Endpoint
+	rp.oauthConfig.Endpoint.AuthURL = endpoints.AuthURL
+	rp.oauthConfig.Endpoint.TokenURL = endpoints.TokenURL
 	rp.endpoints = endpoints
 
 	rp.oauthConfig.Endpoint.AuthStyle = rp.oauthAuthStyle
-	rp.endpoints.Endpoint.AuthStyle = rp.oauthAuthStyle
+	rp.endpoints.AuthStyle = rp.oauthAuthStyle
 
 	if rp.pkce == pkceFromDiscovery {
 		if slices.ContainsFunc(
@@ -677,29 +678,14 @@ func tryReadStateCookie(w http.ResponseWriter, r *http.Request, rp RelyingParty)
 
 type OptionFunc func(RelyingParty)
 
-type Endpoints struct {
-	oauth2.Endpoint
-	IntrospectURL          string
-	UserinfoURL            string
-	JKWsURL                string
-	EndSessionURL          string
-	RevokeURL              string
-	DeviceAuthorizationURL string
-}
+// Endpoints aliases client.Endpoints for backward compatibility.
+// Deprecated: Use client.Endpoints instead.
+type Endpoints = client.Endpoints
 
+// GetEndpoints is a compatibility alias for client.GetEndpoints.
+// Deprecated: Use client.GetEndpoints instead.
 func GetEndpoints(discoveryConfig *protocol.DiscoveryConfiguration) Endpoints {
-	return Endpoints{
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  discoveryConfig.AuthorizationEndpoint,
-			TokenURL: discoveryConfig.TokenEndpoint,
-		},
-		IntrospectURL:          discoveryConfig.IntrospectionEndpoint,
-		UserinfoURL:            discoveryConfig.UserinfoEndpoint,
-		JKWsURL:                discoveryConfig.JWKSURI,
-		EndSessionURL:          discoveryConfig.EndSessionEndpoint,
-		RevokeURL:              discoveryConfig.RevocationEndpoint,
-		DeviceAuthorizationURL: discoveryConfig.DeviceAuthorizationEndpoint,
-	}
+	return client.GetEndpoints(discoveryConfig)
 }
 
 // withURLParam sets custom url parameters.

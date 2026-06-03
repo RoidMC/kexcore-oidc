@@ -23,7 +23,7 @@ type Plugin struct {
 	store       storm.RevocationStore
 	clientStore storm.ClientStore
 	crypto      storm.Crypto
-	keyStore    shared.KeyStore
+	keyStore    protocol.KeyStore
 }
 
 // Config holds the dependencies for the Revocation plugin.
@@ -31,17 +31,42 @@ type Config struct {
 	Store       storm.RevocationStore
 	ClientStore storm.ClientStore
 	Crypto      storm.Crypto
-	KeyStore    shared.KeyStore
+	KeyStore    protocol.KeyStore
 }
 
-// New creates a new Revocation plugin.
-func New(cfg Config) *Plugin {
+// New creates a new Revocation plugin from a PluginContext.
+func New(ctx *storm.PluginContext) *Plugin {
+	return &Plugin{
+		store:       ctx.Storage.(storm.RevocationStore),
+		clientStore: ctx.Storage.(storm.ClientStore),
+		crypto:      ctx.Crypto,
+		keyStore:    ctx.Storage.(storm.KeyStore),
+	}
+}
+
+// NewWithConfig creates a new Revocation plugin with explicit config.
+func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
 		store:       cfg.Store,
 		clientStore: cfg.ClientStore,
 		crypto:      cfg.Crypto,
 		keyStore:    cfg.KeyStore,
 	}
+}
+
+// init self-registers the revocation plugin in the global registry.
+func init() {
+	storm.RegisterPlugin("revocation", storm.PriorityRevocation, func(ctx *storm.PluginContext) storm.Plugin {
+		return New(ctx)
+	})
+}
+
+// Category returns CategoryStandard — revocation is optional but enabled by default.
+func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
+
+// Requires returns the storage dependencies.
+func (p *Plugin) Requires() []string {
+	return []string{"RevocationStore", "ClientStore", "KeyStore"}
 }
 
 // Name returns the plugin name.
@@ -149,7 +174,7 @@ func (p *Plugin) authenticateClient(r *http.Request) (string, error) {
 
 // resolveTokenForRevocation resolves an access token to its tokenID and subject.
 // Supports standard decrypted tokens, GM/T JWE tokens, and JWT access tokens.
-func resolveTokenForRevocation(ctx context.Context, crypto storm.Crypto, keyStore shared.KeyStore, issuer, accessToken string) (tokenID, subject string, ok bool) {
+func resolveTokenForRevocation(ctx context.Context, crypto storm.Crypto, keyStore protocol.KeyStore, issuer, accessToken string) (tokenID, subject string, ok bool) {
 	var plaintext []byte
 	var err error
 
@@ -169,11 +194,11 @@ func resolveTokenForRevocation(ctx context.Context, crypto storm.Crypto, keyStor
 
 	// Opaque decryption failed - try JWT access token verification (RFC 6750 §2.1)
 	if keyStore != nil {
-		v := &shared.AccessTokenVerifier{
+		v := &protocol.AccessTokenVerifier{
 			Issuer:   issuer,
 			KeyStore: keyStore,
 		}
-		return shared.VerifyAccessToken(ctx, accessToken, v)
+		return protocol.VerifyAccessToken(ctx, accessToken, v)
 	}
 
 	return "", "", false

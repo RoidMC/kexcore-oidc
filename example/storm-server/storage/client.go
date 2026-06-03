@@ -88,7 +88,7 @@ func WebClient(id, secret string, redirectURIs ...string) *Client {
 		authMethod:    protocol.AuthMethodBasic,
 		loginURLFn:    defaultLoginURL,
 		responseTypes: []protocol.ResponseType{protocol.ResponseTypeCode, protocol.ResponseTypeIDTokenOnly, protocol.ResponseTypeIDToken},
-		grantTypes:    []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken, protocol.GrantTypeTokenExchange},
+		grantTypes:    []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken, protocol.GrantTypeClientCredentials, protocol.GrantTypeTokenExchange},
 		devMode:       true,
 	}
 }

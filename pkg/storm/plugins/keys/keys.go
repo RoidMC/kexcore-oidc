@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
@@ -17,10 +18,28 @@ type Plugin struct {
 	store storm.KeyStore
 }
 
-// New creates a new Keys plugin backed by the given KeyStore.
-func New(store storm.KeyStore) *Plugin {
+// New creates a new Keys plugin from a PluginContext.
+func New(ctx *storm.PluginContext) *Plugin {
+	return &Plugin{store: ctx.Storage.(storm.KeyStore)}
+}
+
+// NewWithStore creates a new Keys plugin with an explicit KeyStore.
+func NewWithStore(store storm.KeyStore) *Plugin {
 	return &Plugin{store: store}
 }
+
+// init self-registers the keys plugin in the global registry.
+func init() {
+	storm.RegisterPlugin("keys", storm.PriorityKeys, func(ctx *storm.PluginContext) storm.Plugin {
+		return New(ctx)
+	})
+}
+
+// Category returns CategoryCore — JWKS is a required OIDC endpoint.
+func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryCore }
+
+// Requires returns the storage dependencies.
+func (p *Plugin) Requires() []string { return []string{"KeyStore"} }
 
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "keys" }
@@ -53,9 +72,10 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	resp := jwksResponse{Keys: make([]json.RawMessage, 0, len(keys))}
 
 	for _, k := range keys {
-		// Prefer GM/T JWK representation for national cryptography keys
-		if gmJWK := k.GMJWK(); gmJWK != nil {
-			raw, err := gmJWK.MarshalJSON()
+		// Prefer GM/T JWK representation for national cryptography keys.
+		// GM/T keys satisfy protocol.GMJWKProvider optionally.
+		if gm, ok := k.(protocol.GMJWKProvider); ok && gm.GMJWK() != nil {
+			raw, err := gm.GMJWK().MarshalJSON()
 			if err != nil {
 				shared.WriteError(w, r, err, nil)
 				return

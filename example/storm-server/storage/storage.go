@@ -78,8 +78,6 @@ func (k *signingKey) Key() jwk.Key {
 	return nil
 }
 
-func (k *signingKey) GMJWK() storm.GMJWK { return nil }
-
 var (
 	_ storm.Key        = (*signingKey)(nil)
 	_ storm.SigningKey = (*signingKey)(nil)

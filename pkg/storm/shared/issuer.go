@@ -8,29 +8,18 @@ import (
 	"context"
 	"net/http"
 	"strings"
+
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
-// IssuerFromRequest extracts the issuer string from an HTTP request.
-
-// IssuerFromRequest extracts the issuer string from an HTTP request.
-// Implementations may use the request host, a forwarded header, or a static value.
 type IssuerFromRequest func(*http.Request) string
 
-// IssuerContextKey is the key used to store the issuer in a context.Context.
-type issuerContextKey struct{}
-
-// ContextWithIssuer stores the issuer in the context.
 func ContextWithIssuer(ctx context.Context, issuer string) context.Context {
-	return context.WithValue(ctx, issuerContextKey{}, issuer)
+	return protocol.ContextWithIssuer(ctx, issuer)
 }
 
-// IssuerFromContext retrieves the issuer from the context.
-// Returns empty string if not found.
 func IssuerFromContext(ctx context.Context) string {
-	if s, ok := ctx.Value(issuerContextKey{}).(string); ok {
-		return s
-	}
-	return ""
+	return protocol.IssuerFromContext(ctx)
 }
 
 // IssuerMiddleware injects the issuer into the request context.

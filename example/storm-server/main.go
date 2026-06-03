@@ -13,7 +13,6 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/example/storm-server/config"
 	"github.com/roidmc/kexcore-oidc/example/storm-server/storage"
-	"github.com/roidmc/kexcore-oidc/pkg/storm"
 )
 
 func main() {
@@ -73,28 +72,7 @@ func main() {
 		SigningAlgorithms: cfg.SigningAlgorithms,
 		CryptoMethod:      cfg.CryptoMethod,
 		Logger:            logger,
-		Discovery: storm.DiscoveryConfig{
-			ExtraFields: map[string]any{
-				"grant_types_supported": []string{
-					"authorization_code",
-					"client_credentials",
-					"refresh_token",
-					"urn:ietf:params:oauth:grant-type:jwt-bearer",
-					"urn:ietf:params:oauth:grant-type:token-exchange",
-					"urn:ietf:params:oauth:grant-type:device_code",
-				},
-				"response_types_supported": []string{
-					"code",
-					"id_token",
-					"id_token token",
-					"code id_token",
-					"code token",
-					"code id_token token",
-				},
-				"code_challenge_methods_supported": []string{"S256"},
-			},
-		},
-		UserStore: userStore,
+		UserStore:         userStore,
 	})
 
 	server := &http.Server{

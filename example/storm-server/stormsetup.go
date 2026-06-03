@@ -19,25 +19,76 @@ import (
 	"github.com/roidmc/kexcore-oidc/example/storm-server/storage"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/authorization"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/endsession"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/introspection"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/keys"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/revocation"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/token"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/userinfo"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+
+	// Import plugins to trigger init() self-registration.
+	// Each plugin registers itself in the global registry.
+
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/authorization"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/endsession"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/introspection"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/keys"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/revocation"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/token"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/userinfo"
 )
 
-var defaultDiscovery = storm.DiscoveryConfig{
-	ExtraFields: map[string]any{
-		"grant_types_supported": []string{
-			"authorization_code",
-			"client_credentials",
-			"refresh_token",
+// defaultGrantTypes returns the grant types supported by the default plugin set.
+// Mirrors the old OP's GrantTypes() logic.
+func defaultGrantTypes() []string {
+	return []string{
+		"authorization_code",
+		"client_credentials",
+		"refresh_token",
+		"urn:ietf:params:oauth:grant-type:jwt-bearer",
+		"urn:ietf:params:oauth:grant-type:token-exchange",
+		"urn:ietf:params:oauth:grant-type:device_code",
+	}
+}
+
+// defaultResponseTypes returns the response types supported by the default plugin set.
+// Mirrors the old OP's ResponseTypes() logic.
+func defaultResponseTypes() []string {
+	return []string{
+		"code",
+		"id_token",
+		"id_token token",
+		"code id_token",
+		"code token",
+		"code id_token token",
+	}
+}
+
+// defaultAuthMethodsTokenEndpoint returns the token endpoint auth methods.
+// Mirrors the old OP's AuthMethodsTokenEndpoint() logic.
+func defaultAuthMethodsTokenEndpoint() []string {
+	return []string{
+		"none",
+		"client_secret_basic",
+		"client_secret_post",
+		"private_key_jwt",
+	}
+}
+
+// defaultDiscoveryConfig builds the discovery configuration dynamically
+// based on the signing algorithms and plugin capabilities.
+// This mirrors the old OP's CreateDiscoveryConfig approach.
+func defaultDiscoveryConfig(signingAlgorithms []string) storm.DiscoveryConfig {
+	return storm.DiscoveryConfig{
+		ExtraFields: map[string]any{
+			"grant_types_supported":                            defaultGrantTypes(),
+			"response_types_supported":                         defaultResponseTypes(),
+			"token_endpoint_auth_methods_supported":            defaultAuthMethodsTokenEndpoint(),
+			"code_challenge_methods_supported":                 []string{"S256"},
+			"scopes_supported":                                 []string{"openid", "profile", "email", "phone", "address", "offline_access"},
+			"claims_supported":                                 []string{"sub", "aud", "exp", "iat", "iss", "auth_time", "nonce", "acr", "amr", "c_hash", "at_hash", "name", "given_name", "family_name", "preferred_username", "email", "email_verified", "phone_number", "phone_number_verified", "locale"},
+			"subject_types_supported":                          []string{"public"},
+			"id_token_signing_alg_values_supported":            signingAlgorithms,
+			"token_endpoint_auth_signing_alg_values_supported": signingAlgorithms,
+			"introspection_endpoint_auth_methods_supported":    []string{"client_secret_basic", "client_secret_post", "private_key_jwt"},
+			"revocation_endpoint_auth_methods_supported":       []string{"client_secret_basic", "client_secret_post", "private_key_jwt"},
 		},
-		"code_challenge_methods_supported": []string{"S256"},
-	},
+	}
 }
 
 // TenantConfig configures a single OIDC tenant.
@@ -73,7 +124,7 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 	}
 	discovery := cfg.Discovery
 	if discovery.ExtraFields == nil {
-		discovery = defaultDiscovery
+		discovery = defaultDiscoveryConfig(cfg.SigningAlgorithms)
 	}
 
 	userStore := cfg.UserStore
@@ -82,57 +133,20 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 	}
 	stor := storage.NewStorage(userStore, cfg.SigningAlgorithms)
 	tokenCrypto := storage.NewTokenCrypto(sha256.Sum256([]byte("test")), cfg.CryptoMethod)
-	sharedKeyStore := storm.AdaptKeyStore(stor)
 
 	decoder := protocol.NewDecoder()
 	decoder.IgnoreUnknownKeys(true)
 
+	// Plugins auto-register via init() — just create the engine.
+	// The engine discovers all registered plugins, checks storage dependencies,
+	// and registers them in priority order.
 	engine := storm.New(stor, shared.StaticIssuer(cfg.Issuer),
 		storm.WithLogger(cfg.Logger),
 		storm.WithMiddleware(shared.IssuerMiddleware(shared.StaticIssuer(cfg.Issuer))),
 		storm.WithDiscoveryConfig(discovery),
+		storm.WithCrypto(tokenCrypto),
+		storm.WithDecoder(decoder),
 	)
-
-	engine.Register(authorization.New(authorization.Config{
-		AuthStore:   stor,
-		ClientStore: stor,
-		Crypto:      tokenCrypto,
-		KeyStore:    stor,
-		Decoder:     decoder,
-	}))
-	engine.Register(token.New(token.Config{
-		TokenStore:  stor,
-		ClientStore: stor,
-		AuthStore:   stor,
-		Crypto:      tokenCrypto,
-		KeyStore:    stor,
-		Decoder:     decoder,
-		Logger:      cfg.Logger,
-	}))
-	engine.Register(introspection.New(introspection.Config{
-		Store:       stor,
-		ClientStore: stor,
-		Crypto:      tokenCrypto,
-		KeyStore:    sharedKeyStore,
-	}))
-	engine.Register(userinfo.New(userinfo.Config{
-		Store:    stor,
-		Crypto:   tokenCrypto,
-		KeyStore: sharedKeyStore,
-	}))
-	engine.Register(revocation.New(revocation.Config{
-		Store:       stor,
-		ClientStore: stor,
-		Crypto:      tokenCrypto,
-		KeyStore:    sharedKeyStore,
-	}))
-	engine.Register(endsession.New(endsession.Config{
-		Store:            stor,
-		ClientStore:      stor,
-		KeyStore:         sharedKeyStore,
-		DefaultLogoutURI: "/",
-	}))
-	engine.Register(keys.New(stor))
 
 	engineHandler := engine.Build()
 

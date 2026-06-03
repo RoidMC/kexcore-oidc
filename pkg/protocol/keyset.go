@@ -23,6 +23,29 @@ type Key interface {
 	Key() jwk.Key
 }
 
+// GMJWKProvider is an optional extension of Key for GM/T (国密) keys.
+// OP implementations can satisfy this interface to provide custom JWKS
+// serialization for SM2/SM9 keys that jwx cannot represent as jwk.Key.
+// RP/RS clients never need this — they consume standard JWKS JSON.
+//
+// JWKS endpoints discover GM/T capability via type assertion:
+//
+//	if gm, ok := key.(protocol.GMJWKProvider); ok && gm.GMJWK() != nil {
+//	    // use GMJWK for serialization
+//	}
+type GMJWKProvider interface {
+	GMJWK() GMJWK
+}
+
+// GMJWK represents a GM/T (国密) JSON Web Key for JWKS publication.
+// This is needed because the jwx library does not recognize SM2/SM9 curves,
+// so standard jwk.Key cannot represent these keys.
+type GMJWK interface {
+	// MarshalJSON serializes the GM/T JWK to JSON.
+	// The output must be a valid JSON object per GM/T 0125.4-2022.
+	MarshalJSON() ([]byte, error)
+}
+
 // SigningKey represents a key used for signing operations.
 type SigningKey interface {
 	ID() string

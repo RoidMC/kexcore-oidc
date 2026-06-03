@@ -21,7 +21,7 @@ import (
 type Plugin struct {
 	store            storm.SessionStore
 	clientStore      storm.ClientStore
-	keyStore         shared.KeyStore
+	keyStore         protocol.KeyStore
 	defaultLogoutURI string
 	offset           time.Duration
 	maxAgeIAT        time.Duration
@@ -33,7 +33,7 @@ type Plugin struct {
 type Config struct {
 	Store            storm.SessionStore
 	ClientStore      storm.ClientStore
-	KeyStore         shared.KeyStore
+	KeyStore         protocol.KeyStore
 	DefaultLogoutURI string
 	// Offset is the clock skew tolerance for token validation (default: 0).
 	Offset time.Duration
@@ -47,8 +47,19 @@ type Config struct {
 	Decoder *protocol.Decoder
 }
 
-// New creates a new EndSession plugin.
-func New(cfg Config) *Plugin {
+// New creates a new EndSession plugin from a PluginContext.
+func New(ctx *storm.PluginContext) *Plugin {
+	return &Plugin{
+		store:            ctx.Storage.(storm.SessionStore),
+		clientStore:      ctx.Storage.(storm.ClientStore),
+		keyStore:         ctx.Storage.(storm.KeyStore),
+		defaultLogoutURI: "/",
+		decoder:          ctx.Decoder,
+	}
+}
+
+// NewWithConfig creates a new EndSession plugin with explicit config.
+func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
 		store:            cfg.Store,
 		clientStore:      cfg.ClientStore,
@@ -59,6 +70,21 @@ func New(cfg Config) *Plugin {
 		maxAge:           cfg.MaxAge,
 		decoder:          cfg.Decoder,
 	}
+}
+
+// init self-registers the endsession plugin in the global registry.
+func init() {
+	storm.RegisterPlugin("endsession", storm.PriorityEndSession, func(ctx *storm.PluginContext) storm.Plugin {
+		return New(ctx)
+	})
+}
+
+// Category returns CategoryStandard — endsession is optional but enabled by default.
+func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
+
+// Requires returns the storage dependencies.
+func (p *Plugin) Requires() []string {
+	return []string{"SessionStore", "ClientStore", "KeyStore"}
 }
 
 // Name returns the plugin name.
@@ -132,16 +158,16 @@ func validateEndSessionRequest(ctx context.Context, req *protocol.EndSessionRequ
 			return nil, protocol.ErrInvalidRequest().WithDescription("id_token_hint provided but IdTokenHintVerifier not configured")
 		}
 
-		v := &shared.IDTokenHintVerifier{
+		v := &protocol.IDTokenHintVerifier{
 			Issuer:    shared.IssuerFromContext(ctx),
 			KeyStore:  p.keyStore,
 			Offset:    p.offset,
 			MaxAgeIAT: p.maxAgeIAT,
 			MaxAge:    p.maxAge,
 		}
-		claims, err := shared.VerifyIDTokenHint(ctx, req.IdTokenHint, v)
+		claims, err := protocol.VerifyIDTokenHint(ctx, req.IdTokenHint, v)
 		if err != nil {
-			var expired *shared.IDTokenHintExpiredError
+			var expired *protocol.IDTokenHintExpiredError
 			if !errors.As(err, &expired) {
 				return nil, protocol.ErrInvalidRequest().WithDescription("invalid id_token_hint").WithParent(err)
 			}

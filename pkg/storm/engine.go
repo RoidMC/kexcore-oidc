@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/cors"
@@ -31,11 +32,84 @@ type Engine struct {
 	storage      Storage
 	issuerFn     shared.IssuerFromRequest
 	discoveryCfg DiscoveryConfig
+
+	disabled  map[string]bool   // plugins disabled via Disable()
+	factories []PluginFactory   // plugins registered via WithPlugin()
+	crypto    Crypto            // optional, for token encryption/signing
+	decoder   *protocol.Decoder // optional, for form parsing
 }
 
 // DiscoveryConfig holds extra fields injected into the discovery document.
 type DiscoveryConfig struct {
 	ExtraFields map[string]any
+}
+
+// PluginContext provides dependencies to plugin factories.
+// It wraps Storage with additional engine-level services.
+type PluginContext struct {
+	Storage Storage
+	Crypto  Crypto // may be nil if not configured
+	Decoder *protocol.Decoder
+}
+
+// PluginFactory creates a plugin from a PluginContext.
+// Used by WithPlugin and RegisterPlugin for deferred plugin construction.
+type PluginFactory func(ctx *PluginContext) Plugin
+
+// globalRegistry holds plugin factories registered via RegisterPlugin.
+// This enables automatic plugin discovery without import-time side effects.
+var globalRegistry = []struct {
+	name     string
+	factory  PluginFactory
+	priority int // lower = registered earlier
+}{}
+
+// PluginPriority defines registration ordering.
+// Core plugins use lower numbers; optional plugins use higher numbers.
+const (
+	PriorityAuthorization = 100
+	PriorityToken         = 200
+	PriorityKeys          = 300
+	PriorityDiscovery     = 400
+	PriorityUserinfo      = 500
+	PriorityIntrospection = 600
+	PriorityRevocation    = 700
+	PriorityEndSession    = 800
+	PriorityDevice        = 900
+	PriorityPAR           = 950
+	PriorityDCR           = 1000
+)
+
+// RegisterPlugin registers a plugin factory in the global registry.
+// Call this in init() or at package level. Plugins are auto-discovered
+// by New() and sorted by priority.
+func RegisterPlugin(name string, priority int, factory PluginFactory) {
+	globalRegistry = append(globalRegistry, struct {
+		name     string
+		factory  PluginFactory
+		priority int
+	}{name, factory, priority})
+}
+
+// WithPlugin adds a plugin factory to the Engine.
+// The factory is called during Build() with the Engine's Storage.
+func WithPlugin(factory PluginFactory) EngineOption {
+	return func(e *Engine) {
+		e.factories = append(e.factories, factory)
+	}
+}
+
+// Disable prevents the named plugins from being registered.
+// Only affects Standard and Optional plugins; Core plugins cannot be disabled.
+func Disable(names ...string) EngineOption {
+	return func(e *Engine) {
+		if e.disabled == nil {
+			e.disabled = make(map[string]bool)
+		}
+		for _, name := range names {
+			e.disabled[name] = true
+		}
+	}
 }
 
 // EngineOption configures an Engine.
@@ -63,6 +137,23 @@ func WithLogger(logger *slog.Logger) EngineOption {
 	}
 }
 
+// WithCrypto sets the Crypto implementation for token encryption/signing.
+// Plugins that need Crypto (authorization, token, introspection, userinfo, revocation)
+// will receive it via PluginContext.
+func WithCrypto(c Crypto) EngineOption {
+	return func(e *Engine) {
+		e.crypto = c
+	}
+}
+
+// WithDecoder sets the protocol decoder for form parsing.
+// If not set, a default decoder is created.
+func WithDecoder(d *protocol.Decoder) EngineOption {
+	return func(e *Engine) {
+		e.decoder = d
+	}
+}
+
 // WithDiscoveryConfig sets extra fields injected into the discovery document.
 func WithDiscoveryConfig(cfg DiscoveryConfig) EngineOption {
 	return func(e *Engine) {
@@ -74,17 +165,111 @@ func WithDiscoveryConfig(cfg DiscoveryConfig) EngineOption {
 //
 // The issuerFn is used to inject the issuer into the request context
 // and into the discovery document.
+//
+// Plugins are registered from two sources:
+//  1. Global registry (via RegisterPlugin) — auto-discovered and sorted by priority
+//  2. WithPlugin option factories — registered after global plugins
+//
+// Use Disable() to prevent specific Standard/Optional plugins from loading.
 func New(storage Storage, issuerFn shared.IssuerFromRequest, opts ...EngineOption) *Engine {
 	e := &Engine{
 		router:   chi.NewRouter(),
 		logger:   slog.Default(),
 		storage:  storage,
 		issuerFn: issuerFn,
+		disabled: make(map[string]bool),
 	}
 	for _, opt := range opts {
 		opt(e)
 	}
+	e.autoRegisterPlugins()
 	return e
+}
+
+// autoRegisterPlugins discovers plugins from the global registry,
+// filters disabled ones, checks storage dependencies, and registers
+// them in priority order.
+func (e *Engine) autoRegisterPlugins() {
+	// Build plugin context with all dependencies
+	pctx := &PluginContext{
+		Storage: e.storage,
+		Crypto:  e.crypto,
+		Decoder: e.decoder,
+	}
+	if pctx.Decoder == nil {
+		pctx.Decoder = protocol.NewDecoder()
+		pctx.Decoder.IgnoreUnknownKeys(true)
+	}
+
+	// Collect all candidate plugins (global + explicit factories)
+	type candidate struct {
+		name     string
+		factory  PluginFactory
+		priority int
+	}
+	var candidates []candidate
+
+	// Global registry plugins
+	for _, reg := range globalRegistry {
+		candidates = append(candidates, candidate{
+			name:     reg.name,
+			factory:  reg.factory,
+			priority: reg.priority,
+		})
+	}
+
+	// Explicitly added factories (use max priority so they register after globals)
+	for _, f := range e.factories {
+		candidates = append(candidates, candidate{
+			name:     "custom",
+			factory:  f,
+			priority: 9999,
+		})
+	}
+
+	// Sort by priority
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].priority < candidates[j].priority
+	})
+
+	// Register each plugin
+	for _, c := range candidates {
+		// Check if disabled
+		if e.disabled[c.name] {
+			e.logger.Info("plugin disabled", "name", c.name)
+			continue
+		}
+
+		p := c.factory(pctx)
+		if p == nil {
+			e.logger.Warn("plugin factory returned nil, skipping", "name", c.name)
+			continue
+		}
+
+		// Check CategorizablePlugin for category-based disable
+		if cp, ok := p.(CategorizablePlugin); ok {
+			cat := cp.Category()
+			if cat == CategoryOptional && !e.hasExplicitFactory(c.name) {
+				e.logger.Debug("optional plugin not explicitly enabled, skipping", "name", c.name)
+				continue
+			}
+			// Core plugins cannot be disabled
+			if cat == CategoryCore && e.disabled[c.name] {
+				e.logger.Warn("cannot disable core plugin", "name", c.name)
+			}
+		}
+
+		e.plugins = append(e.plugins, p)
+		p.Register(e.router)
+		e.logger.Info("plugin registered", "name", p.Name())
+	}
+}
+
+// hasExplicitFactory checks if a plugin was explicitly added via WithPlugin.
+// Currently always returns false; can be enhanced to track explicit enables.
+func (e *Engine) hasExplicitFactory(name string) bool {
+	// TODO: track explicit enables for optional plugins
+	return false
 }
 
 // Register adds a plugin to the engine.

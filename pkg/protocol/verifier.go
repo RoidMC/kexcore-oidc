@@ -614,6 +614,12 @@ func VerifyJWTAssertion(ctx context.Context, assertion string, issuer string, ks
 	return request, nil
 }
 
+// CheckSignatureWithKeyStore verifies a JWT signature using a KeyStore.
+// It adapts the KeyStore to a KeySet internally and delegates to CheckSignature.
+func CheckSignatureWithKeyStore(ctx context.Context, token string, payload []byte, claims ClaimsSignature, supportedSigAlgs []string, store KeyStore) error {
+	return CheckSignature(ctx, token, payload, claims, supportedSigAlgs, &keyStoreAdapter{store: store})
+}
+
 // --- keyStoreAdapter ---
 
 type keyStoreAdapter struct {

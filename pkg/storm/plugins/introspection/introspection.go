@@ -22,7 +22,7 @@ type Plugin struct {
 	store       storm.IntrospectStore
 	clientStore storm.ClientStore
 	crypto      storm.Crypto
-	keyStore    shared.KeyStore
+	keyStore    protocol.KeyStore
 }
 
 // Config holds the dependencies for the Introspection plugin.
@@ -30,17 +30,42 @@ type Config struct {
 	Store       storm.IntrospectStore
 	ClientStore storm.ClientStore
 	Crypto      storm.Crypto
-	KeyStore    shared.KeyStore
+	KeyStore    protocol.KeyStore
 }
 
-// New creates a new Introspection plugin.
-func New(cfg Config) *Plugin {
+// New creates a new Introspection plugin from a PluginContext.
+func New(ctx *storm.PluginContext) *Plugin {
+	return &Plugin{
+		store:       ctx.Storage.(storm.IntrospectStore),
+		clientStore: ctx.Storage.(storm.ClientStore),
+		crypto:      ctx.Crypto,
+		keyStore:    ctx.Storage.(storm.KeyStore),
+	}
+}
+
+// NewWithConfig creates a new Introspection plugin with explicit config.
+func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
 		store:       cfg.Store,
 		clientStore: cfg.ClientStore,
 		crypto:      cfg.Crypto,
 		keyStore:    cfg.KeyStore,
 	}
+}
+
+// init self-registers the introspection plugin in the global registry.
+func init() {
+	storm.RegisterPlugin("introspection", storm.PriorityIntrospection, func(ctx *storm.PluginContext) storm.Plugin {
+		return New(ctx)
+	})
+}
+
+// Category returns CategoryStandard — introspection is optional but enabled by default.
+func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
+
+// Requires returns the storage dependencies.
+func (p *Plugin) Requires() []string {
+	return []string{"IntrospectStore", "ClientStore", "KeyStore"}
 }
 
 // Name returns the plugin name.
@@ -118,7 +143,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 // resolveToken resolves an opaque token to its tokenID and subject.
 // Supports standard decrypted tokens, GM/T JWE tokens, and JWT access tokens.
-func resolveToken(ctx context.Context, crypto storm.Crypto, keyStore shared.KeyStore, issuer, token string) (tokenID, subject string, ok bool) {
+func resolveToken(ctx context.Context, crypto storm.Crypto, keyStore protocol.KeyStore, issuer, token string) (tokenID, subject string, ok bool) {
 	var plaintext []byte
 	var err error
 
@@ -138,11 +163,11 @@ func resolveToken(ctx context.Context, crypto storm.Crypto, keyStore shared.KeyS
 
 	// Opaque decryption failed - try JWT access token verification (RFC 6750 §2.1)
 	if keyStore != nil {
-		v := &shared.AccessTokenVerifier{
+		v := &protocol.AccessTokenVerifier{
 			Issuer:   issuer,
 			KeyStore: keyStore,
 		}
-		return shared.VerifyAccessToken(ctx, token, v)
+		return protocol.VerifyAccessToken(ctx, token, v)
 	}
 
 	return "", "", false

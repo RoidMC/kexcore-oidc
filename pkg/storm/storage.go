@@ -8,7 +8,6 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
 // Storage is the minimal storage contract required by StormEngine.
@@ -41,37 +40,30 @@ type Client interface {
 	LoginURL(id string) string
 }
 
+// ScopeValidationClient is an optional interface that clients may implement
+// to control whether scope validation is strict (error on unsupported scopes)
+// or lenient (silently strip unsupported scopes).
+//
+// When not implemented, the default behavior is lenient (strip).
+type ScopeValidationClient interface {
+	Client
+	// StrictScopeValidation returns true to reject unsupported scopes with
+	// an error, or false (or not implemented) to silently strip them.
+	StrictScopeValidation() bool
+}
+
 // KeyStore provides cryptographic key access.
+// It extends protocol.KeyStore with SigningKey for OP-side token signing.
 type KeyStore interface {
-	KeySet(ctx context.Context) ([]Key, error)
+	KeySet(ctx context.Context) ([]protocol.Key, error)
 	SignatureAlgorithms(ctx context.Context) ([]string, error)
 	SigningKey(ctx context.Context) (SigningKey, error)
 }
 
-// Key represents a JWK for JWKS publication.
-// Standard keys (RSA, ECDSA, EdDSA) return a non-nil JWK().
-// GM/T keys (SM2, SM9) return a non-nil GMJWK().
-// At least one of JWK() or GMJWK() must return a non-nil value.
-type Key interface {
-	ID() string
-	Algorithm() string
-	Use() string
-	Key() jwk.Key
-
-	// GMJWK returns the GM/T JWK representation for national cryptography keys.
-	// Returns nil for standard (non-GM/T) keys.
-	// When non-nil, the JWKS endpoint uses this instead of Key().
-	GMJWK() GMJWK
-}
-
-// GMJWK represents a GM/T (国密) JSON Web Key for JWKS publication.
-// This is needed because the jwx library does not recognize SM2/SM9 curves,
-// so standard jwk.Key cannot represent these keys.
-type GMJWK interface {
-	// MarshalJSON serializes the GM/T JWK to JSON.
-	// The output must be a valid JSON object per GM/T 0125.4-2022.
-	MarshalJSON() ([]byte, error)
-}
+// Key is an alias for protocol.Key.
+// GM/T keys should additionally satisfy protocol.GMJWKProvider
+// for JWKS publication of SM2/SM9 keys that jwx cannot represent.
+type Key = protocol.Key
 
 // SigningKey represents a key used for token signing.
 type SigningKey interface {
@@ -346,42 +338,3 @@ type EndSessionRequest struct {
 	LogoutHint        string
 	UILocales         []language.Tag
 }
-
-// AdaptKeyStore converts a storm.KeyStore to a shared.KeyStore
-// for use in shared verifier functions. Both return slices of
-// different Key types, so each element must be adapted individually.
-func AdaptKeyStore(ks KeyStore) shared.KeyStore {
-	if ks == nil {
-		return nil
-	}
-	return &keyStoreBridge{inner: ks}
-}
-
-type keyStoreBridge struct {
-	inner KeyStore
-}
-
-func (b *keyStoreBridge) KeySet(ctx context.Context) ([]shared.Key, error) {
-	keys, err := b.inner.KeySet(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]shared.Key, len(keys))
-	for i, k := range keys {
-		out[i] = &keyBridge{inner: k}
-	}
-	return out, nil
-}
-
-func (b *keyStoreBridge) SignatureAlgorithms(ctx context.Context) ([]string, error) {
-	return b.inner.SignatureAlgorithms(ctx)
-}
-
-type keyBridge struct {
-	inner Key
-}
-
-func (b *keyBridge) ID() string        { return b.inner.ID() }
-func (b *keyBridge) Algorithm() string { return b.inner.Algorithm() }
-func (b *keyBridge) Use() string       { return b.inner.Use() }
-func (b *keyBridge) Key() jwk.Key      { return b.inner.Key() }

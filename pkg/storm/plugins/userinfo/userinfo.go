@@ -20,23 +20,47 @@ import (
 type Plugin struct {
 	store    storm.UserinfoStore
 	crypto   storm.Crypto
-	keyStore shared.KeyStore
+	keyStore protocol.KeyStore
 }
 
 // Config holds the dependencies for the UserInfo plugin.
 type Config struct {
 	Store    storm.UserinfoStore
 	Crypto   storm.Crypto
-	KeyStore shared.KeyStore
+	KeyStore protocol.KeyStore
 }
 
-// New creates a new UserInfo plugin.
-func New(cfg Config) *Plugin {
+// New creates a new UserInfo plugin from a PluginContext.
+func New(ctx *storm.PluginContext) *Plugin {
+	return &Plugin{
+		store:    ctx.Storage.(storm.UserinfoStore),
+		crypto:   ctx.Crypto,
+		keyStore: ctx.Storage.(storm.KeyStore),
+	}
+}
+
+// NewWithConfig creates a new UserInfo plugin with explicit config.
+func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
 		store:    cfg.Store,
 		crypto:   cfg.Crypto,
 		keyStore: cfg.KeyStore,
 	}
+}
+
+// init self-registers the userinfo plugin in the global registry.
+func init() {
+	storm.RegisterPlugin("userinfo", storm.PriorityUserinfo, func(ctx *storm.PluginContext) storm.Plugin {
+		return New(ctx)
+	})
+}
+
+// Category returns CategoryStandard — userinfo is optional but enabled by default.
+func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
+
+// Requires returns the storage dependencies.
+func (p *Plugin) Requires() []string {
+	return []string{"UserinfoStore", "KeyStore"}
 }
 
 // Name returns the plugin name.
@@ -105,7 +129,7 @@ func extractAccessToken(r *http.Request) string {
 
 // resolveAccessToken resolves an opaque access token to its tokenID and subject.
 // Supports standard decrypted tokens, GM/T JWE tokens, and JWT access tokens.
-func resolveAccessToken(ctx context.Context, crypto storm.Crypto, keyStore shared.KeyStore, issuer, accessToken string) (tokenID, subject string, ok bool) {
+func resolveAccessToken(ctx context.Context, crypto storm.Crypto, keyStore protocol.KeyStore, issuer, accessToken string) (tokenID, subject string, ok bool) {
 	var plaintext []byte
 	var err error
 
@@ -125,11 +149,11 @@ func resolveAccessToken(ctx context.Context, crypto storm.Crypto, keyStore share
 
 	// Opaque decryption failed - try JWT access token verification (RFC 6750 §2.1)
 	if keyStore != nil {
-		v := &shared.AccessTokenVerifier{
+		v := &protocol.AccessTokenVerifier{
 			Issuer:   issuer,
 			KeyStore: keyStore,
 		}
-		return shared.VerifyAccessToken(ctx, accessToken, v)
+		return protocol.VerifyAccessToken(ctx, accessToken, v)
 	}
 
 	return "", "", false
