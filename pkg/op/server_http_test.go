@@ -24,9 +24,7 @@ import (
 func TestRegisterServer(t *testing.T) {
 	server := UnimplementedServer{}
 	endpoints := Endpoints{
-		Authorization: &Endpoint{
-			path: "/auth",
-		},
+		Authorization: NewEndpoint("/auth"),
 	}
 	decoder := protocol.NewDecoder()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))

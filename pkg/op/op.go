@@ -669,7 +669,7 @@ func WithCustomAuthEndpoint(endpoint *Endpoint) Option {
 	}
 }
 
-func WithCustomTokenEndpoint(endpoint *Endpoint) Option {
+func WithCustomTokenEndpoint(endpoint *protocol.Endpoint) Option {
 	return func(o *Provider) error {
 		if err := endpoint.Validate(); err != nil {
 			return err
@@ -679,7 +679,7 @@ func WithCustomTokenEndpoint(endpoint *Endpoint) Option {
 	}
 }
 
-func WithCustomIntrospectionEndpoint(endpoint *Endpoint) Option {
+func WithCustomIntrospectionEndpoint(endpoint *protocol.Endpoint) Option {
 	return func(o *Provider) error {
 		if err := endpoint.Validate(); err != nil {
 			return err

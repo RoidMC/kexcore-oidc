@@ -10,6 +10,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	op "github.com/roidmc/kexcore-oidc/pkg/op"
+	protocol "github.com/roidmc/kexcore-oidc/pkg/protocol"
 	language "golang.org/x/text/language"
 )
 
@@ -65,10 +66,10 @@ func (mr *MockConfigurationMockRecorder) AuthMethodPrivateKeyJWTSupported() *gom
 }
 
 // AuthorizationEndpoint mocks base method.
-func (m *MockConfiguration) AuthorizationEndpoint() *op.Endpoint {
+func (m *MockConfiguration) AuthorizationEndpoint() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AuthorizationEndpoint")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 
@@ -107,10 +108,10 @@ func (mr *MockConfigurationMockRecorder) BackChannelLogoutSupported() *gomock.Ca
 }
 
 // CheckSessionIframe mocks base method.
-func (m *MockConfiguration) CheckSessionIframe() *op.Endpoint {
+func (m *MockConfiguration) CheckSessionIframe() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CheckSessionIframe")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 
@@ -149,10 +150,10 @@ func (mr *MockConfigurationMockRecorder) DeviceAuthorization() *gomock.Call {
 }
 
 // DeviceAuthorizationEndpoint mocks base method.
-func (m *MockConfiguration) DeviceAuthorizationEndpoint() *op.Endpoint {
+func (m *MockConfiguration) DeviceAuthorizationEndpoint() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DeviceAuthorizationEndpoint")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 
@@ -163,10 +164,10 @@ func (mr *MockConfigurationMockRecorder) DeviceAuthorizationEndpoint() *gomock.C
 }
 
 // EndSessionEndpoint mocks base method.
-func (m *MockConfiguration) EndSessionEndpoint() *op.Endpoint {
+func (m *MockConfiguration) EndSessionEndpoint() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "EndSessionEndpoint")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 
@@ -275,10 +276,10 @@ func (mr *MockConfigurationMockRecorder) IntrospectionAuthMethodPrivateKeyJWTSup
 }
 
 // IntrospectionEndpoint mocks base method.
-func (m *MockConfiguration) IntrospectionEndpoint() *op.Endpoint {
+func (m *MockConfiguration) IntrospectionEndpoint() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "IntrospectionEndpoint")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 
@@ -317,10 +318,10 @@ func (mr *MockConfigurationMockRecorder) IssuerFromRequest(arg0 interface{}) *go
 }
 
 // KeysEndpoint mocks base method.
-func (m *MockConfiguration) KeysEndpoint() *op.Endpoint {
+func (m *MockConfiguration) KeysEndpoint() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "KeysEndpoint")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 
@@ -331,10 +332,10 @@ func (mr *MockConfigurationMockRecorder) KeysEndpoint() *gomock.Call {
 }
 
 // PushedAuthRequestEndpoint mocks base method.
-func (m *MockConfiguration) PushedAuthRequestEndpoint() *op.Endpoint {
+func (m *MockConfiguration) PushedAuthRequestEndpoint() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PushedAuthRequestEndpoint")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 
@@ -345,10 +346,10 @@ func (mr *MockConfigurationMockRecorder) PushedAuthRequestEndpoint() *gomock.Cal
 }
 
 // RegistrationEndpoint mocks base method.
-func (m *MockConfiguration) RegistrationEndpoint() *op.Endpoint {
+func (m *MockConfiguration) RegistrationEndpoint() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RegistrationEndpoint")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 
@@ -443,10 +444,10 @@ func (mr *MockConfigurationMockRecorder) RevocationAuthMethodPrivateKeyJWTSuppor
 }
 
 // RevocationEndpoint mocks base method.
-func (m *MockConfiguration) RevocationEndpoint() *op.Endpoint {
+func (m *MockConfiguration) RevocationEndpoint() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RevocationEndpoint")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 
@@ -485,10 +486,10 @@ func (mr *MockConfigurationMockRecorder) SupportedUILocales() *gomock.Call {
 }
 
 // TokenEndpoint mocks base method.
-func (m *MockConfiguration) TokenEndpoint() *op.Endpoint {
+func (m *MockConfiguration) TokenEndpoint() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "TokenEndpoint")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 
@@ -513,10 +514,10 @@ func (mr *MockConfigurationMockRecorder) TokenEndpointSigningAlgorithmsSupported
 }
 
 // UserinfoEndpoint mocks base method.
-func (m *MockConfiguration) UserinfoEndpoint() *op.Endpoint {
+func (m *MockConfiguration) UserinfoEndpoint() *protocol.Endpoint {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UserinfoEndpoint")
-	ret0, _ := ret[0].(*op.Endpoint)
+	ret0, _ := ret[0].(*protocol.Endpoint)
 	return ret0
 }
 

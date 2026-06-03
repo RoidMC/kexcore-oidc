@@ -440,12 +440,12 @@ func TestRoutes(t *testing.T) {
 
 func TestWithCustomEndpoints(t *testing.T) {
 	type args struct {
-		auth       *op.Endpoint
-		token      *op.Endpoint
-		userInfo   *op.Endpoint
-		revocation *op.Endpoint
-		endSession *op.Endpoint
-		keys       *op.Endpoint
+		auth       *protocol.Endpoint
+		token      *protocol.Endpoint
+		userInfo   *protocol.Endpoint
+		revocation *protocol.Endpoint
+		endSession *protocol.Endpoint
+		keys       *protocol.Endpoint
 	}
 	tests := []struct {
 		name    string
@@ -460,12 +460,12 @@ func TestWithCustomEndpoints(t *testing.T) {
 		{
 			name: "all set",
 			args: args{
-				auth:       op.NewEndpoint("/authorize"),
-				token:      op.NewEndpoint("/oauth/token"),
-				userInfo:   op.NewEndpoint("/userinfo"),
-				revocation: op.NewEndpoint("/revoke"),
-				endSession: op.NewEndpoint("/end_session"),
-				keys:       op.NewEndpoint("/keys"),
+				auth:       protocol.NewEndpoint("/authorize"),
+				token:      protocol.NewEndpoint("/oauth/token"),
+				userInfo:   protocol.NewEndpoint("/userinfo"),
+				revocation: protocol.NewEndpoint("/revoke"),
+				endSession: protocol.NewEndpoint("/end_session"),
+				keys:       protocol.NewEndpoint("/keys"),
 			},
 		},
 	}

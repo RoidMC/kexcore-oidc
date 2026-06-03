@@ -17,6 +17,7 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
 )
 
@@ -156,7 +157,7 @@ func newOP(
 			//we must explicitly allow the use of the http issuer
 			op.WithAllowInsecure(),
 			// as an example on how to customize an endpoint this will change the authorization_endpoint from /authorize to /auth
-			op.WithCustomAuthEndpoint(op.NewEndpoint("auth")),
+			op.WithCustomAuthEndpoint(protocol.NewEndpoint("auth")),
 			// Pass our logger to the OP
 			op.WithLogger(logger.WithGroup("op")),
 			// Enable Dynamic Client Registration (RFC 7591)

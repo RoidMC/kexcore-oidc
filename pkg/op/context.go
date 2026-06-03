@@ -3,6 +3,8 @@ package op
 import (
 	"context"
 	"net/http"
+
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type key int
@@ -15,8 +17,6 @@ type IssuerInterceptor struct {
 	issuerFromRequest IssuerFromRequest
 }
 
-// NewIssuerInterceptor will set the issuer into the context
-// by the provided IssuerFromRequest (e.g. returned from StaticIssuer or IssuerFromHost)
 func NewIssuerInterceptor(issuerFromRequest IssuerFromRequest) *IssuerInterceptor {
 	return &IssuerInterceptor{
 		issuerFromRequest: issuerFromRequest,
@@ -35,16 +35,12 @@ func (i *IssuerInterceptor) HandlerFunc(next http.HandlerFunc) http.HandlerFunc 
 	}
 }
 
-// IssuerFromContext reads the issuer from the context (set by an IssuerInterceptor)
-// it will return an empty string if not found
 func IssuerFromContext(ctx context.Context) string {
-	ctxIssuer, _ := ctx.Value(issuerKey).(string)
-	return ctxIssuer
+	return protocol.IssuerFromContext(ctx)
 }
 
-// ContextWithIssuer returns a new context with issuer set to it.
 func ContextWithIssuer(ctx context.Context, issuer string) context.Context {
-	return context.WithValue(ctx, issuerKey, issuer)
+	return protocol.ContextWithIssuer(ctx, issuer)
 }
 
 func (i *IssuerInterceptor) setIssuerCtx(w http.ResponseWriter, r *http.Request, next http.Handler) {

@@ -731,7 +731,7 @@ func Test_PushedAuthRequestEndpoint(t *testing.T) {
 	t.Run("supported with endpoint", func(t *testing.T) {
 		m := mock.NewMockConfiguration(gomock.NewController(t))
 		m.EXPECT().PushedAuthRequestSupported().Return(true)
-		m.EXPECT().PushedAuthRequestEndpoint().Return(op.NewEndpoint("pushed_authorization_request"))
+		m.EXPECT().PushedAuthRequestEndpoint().Return(protocol.NewEndpoint("pushed_authorization_request"))
 		got := op.PushedAuthRequestEndpoint(m, testIssuer)
 		assert.Equal(t, testIssuer+"pushed_authorization_request", got)
 	})

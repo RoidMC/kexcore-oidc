@@ -17,6 +17,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/example/server/storage"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
@@ -144,7 +145,7 @@ func newDynamicOP(ctx context.Context, storage op.Storage, key [32]byte, keyId s
 		//we must explicitly allow the use of the http issuer
 		op.WithAllowInsecure(),
 		//as an example on how to customize an endpoint this will change the authorization_endpoint from /authorize to /auth
-		op.WithCustomAuthEndpoint(op.NewEndpoint("auth")),
+		op.WithCustomAuthEndpoint(protocol.NewEndpoint("auth")),
 	)
 	if err != nil {
 		return nil, err

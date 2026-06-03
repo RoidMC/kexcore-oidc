@@ -317,12 +317,12 @@ func ValidateAuthReqScopes(client Client, scopes []string) ([]string, error) {
 	// Some merges: I think we should check every scopes is allowed or not, there's no stuff?
     /*
 	scopes = slices.DeleteFunc(scopes, func(scope string) bool {
-		return !(scope == oidc.ScopeOpenID ||
-			scope == oidc.ScopeProfile ||
-			scope == oidc.ScopeEmail ||
-			scope == oidc.ScopePhone ||
-			scope == oidc.ScopeAddress ||
-			scope == oidc.ScopeOfflineAccess) &&
+		return !(scope == protocol.ScopeOpenID ||
+			scope == protocol.ScopeProfile ||
+			scope == protocol.ScopeEmail ||
+			scope == protocol.ScopePhone ||
+			scope == protocol.ScopeAddress ||
+			scope == protocol.ScopeOfflineAccess) &&
 			!client.IsScopeAllowed(scope)
 	})
 	*/

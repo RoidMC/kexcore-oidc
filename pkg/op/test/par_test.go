@@ -175,14 +175,14 @@ func newPARTestSetup(t *testing.T) *parTestSetup {
 
 	server := &parTestServer{storage: parStore}
 	handler := op.RegisterServer(server, op.Endpoints{
-		Authorization:              op.NewEndpoint("authorize"),
-		Token:                      op.NewEndpoint("token"),
-		Introspection:              op.NewEndpoint("introspect"),
-		Userinfo:                   op.NewEndpoint("userinfo"),
-		Revocation:                 op.NewEndpoint("revoke"),
-		EndSession:                 op.NewEndpoint("end-session"),
-		JwksURI:                    op.NewEndpoint("keys"),
-		PushedAuthorizationRequest: op.NewEndpoint("pushed_authorization_request"),
+		Authorization:              protocol.NewEndpoint("authorize"),
+		Token:                      protocol.NewEndpoint("token"),
+		Introspection:              protocol.NewEndpoint("introspect"),
+		Userinfo:                   protocol.NewEndpoint("userinfo"),
+		Revocation:                 protocol.NewEndpoint("revoke"),
+		EndSession:                 protocol.NewEndpoint("end-session"),
+		JwksURI:                    protocol.NewEndpoint("keys"),
+		PushedAuthorizationRequest: protocol.NewEndpoint("pushed_authorization_request"),
 	})
 
 	return &parTestSetup{t: t, handler: handler, storage: parStore}

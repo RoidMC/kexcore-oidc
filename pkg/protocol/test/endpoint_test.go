@@ -1,31 +1,31 @@
-package op_test
+package protocol_test
 
 import (
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/op"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/stretchr/testify/require"
 )
 
 func TestEndpoint_Path(t *testing.T) {
 	tests := []struct {
 		name string
-		e    *op.Endpoint
+		e    *protocol.Endpoint
 		want string
 	}{
 		{
 			"without starting /",
-			op.NewEndpoint("test"),
+			protocol.NewEndpoint("test"),
 			"/test",
 		},
 		{
 			"with starting /",
-			op.NewEndpoint("/test"),
+			protocol.NewEndpoint("/test"),
 			"/test",
 		},
 		{
 			"with url",
-			op.NewEndpointWithURL("/test", "http://test.com/test"),
+			protocol.NewEndpointWithURL("/test", "http://test.com/test"),
 			"/test",
 		},
 		{
@@ -49,37 +49,37 @@ func TestEndpoint_Absolute(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		e    *op.Endpoint
+		e    *protocol.Endpoint
 		args args
 		want string
 	}{
 		{
 			"no /",
-			op.NewEndpoint("test"),
+			protocol.NewEndpoint("test"),
 			args{"https://host"},
 			"https://host/test",
 		},
 		{
 			"endpoint without /",
-			op.NewEndpoint("test"),
+			protocol.NewEndpoint("test"),
 			args{"https://host/"},
 			"https://host/test",
 		},
 		{
 			"host without /",
-			op.NewEndpoint("/test"),
+			protocol.NewEndpoint("/test"),
 			args{"https://host"},
 			"https://host/test",
 		},
 		{
 			"both /",
-			op.NewEndpoint("/test"),
+			protocol.NewEndpoint("/test"),
 			args{"https://host/"},
 			"https://host/test",
 		},
 		{
 			"with url",
-			op.NewEndpointWithURL("test", "https://test.com/test"),
+			protocol.NewEndpointWithURL("test", "https://test.com/test"),
 			args{"https://host"},
 			"https://test.com/test",
 		},
@@ -99,23 +99,31 @@ func TestEndpoint_Absolute(t *testing.T) {
 	}
 }
 
-// TODO: impl test
 func TestEndpoint_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
-		e       *op.Endpoint
+		e       *protocol.Endpoint
 		wantErr error
 	}{
 		{
 			"nil",
 			nil,
-			op.ErrNilEndpoint,
+			protocol.ErrNilEndpoint,
+		},
+		{
+			"valid",
+			protocol.NewEndpoint("test"),
+			nil,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.e.Validate()
-			require.ErrorIs(t, err, tt.wantErr)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }
