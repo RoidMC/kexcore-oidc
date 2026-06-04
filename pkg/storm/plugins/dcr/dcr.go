@@ -52,7 +52,7 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the registration endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"registration_endpoint": shared.IssuerURL(ctx, "/register"),
+		"registration_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/register")),
 	}
 }
 
@@ -67,7 +67,7 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 	clientID := generateClientID()
 	clientSecret := generateClientSecret()
 	accessToken := generateAccessToken()
-	uri := shared.IssuerURL(r.Context(), "/register/"+clientID)
+	uri := shared.EndpointURL(r.Context(), protocol.NewEndpoint("/register/"+clientID))
 
 	reg, err := p.store.CreateClient(r.Context(), &req, clientID, clientSecret, accessToken, uri)
 	if err != nil {

@@ -300,6 +300,17 @@ func (e *Engine) Build() http.Handler {
 	// Discovery aggregation
 	e.installDiscovery()
 
+	// Validate plugin registration and storage compatibility.
+	// Fail fast if constraints are violated.
+	if err := e.Validate(); err != nil {
+		if e.logger != nil {
+			e.logger.Error("engine validation failed", "error", err)
+		}
+		panic(fmt.Sprintf("storm: engine validation failed: %s", err))
+	}
+
+	e.logPluginInfo()
+
 	// Apply middleware (CORS first, then user middleware)
 	var h http.Handler = e.router
 	if e.corsOpts != nil {

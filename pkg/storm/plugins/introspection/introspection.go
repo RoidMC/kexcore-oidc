@@ -81,7 +81,7 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the introspection endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"introspection_endpoint": shared.IssuerURL(ctx, "/introspect"),
+		"introspection_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/introspect")),
 	}
 }
 

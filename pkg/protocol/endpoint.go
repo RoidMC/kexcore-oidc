@@ -34,7 +34,7 @@ func (e *Endpoint) Absolute(host string) string {
 	if e.url != "" {
 		return e.url
 	}
-	return strings.TrimSuffix(host, "/") + e.Relative()
+	return strings.TrimRight(host, "/") + e.Relative()
 }
 
 func (e *Endpoint) Validate() error {
@@ -42,4 +42,11 @@ func (e *Endpoint) Validate() error {
 		return ErrNilEndpoint
 	}
 	return nil
+}
+
+// DiscoveryURL returns the absolute URL for this endpoint using the given issuer.
+// It is equivalent to e.Absolute(issuer) but provided as a convenience
+// for discovery document contributors.
+func (e *Endpoint) DiscoveryURL(issuer string) string {
+	return e.Absolute(issuer)
 }

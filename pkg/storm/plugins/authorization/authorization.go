@@ -142,7 +142,7 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the authorization endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"authorization_endpoint": shared.IssuerURL(ctx, "/authorize"),
+		"authorization_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/authorize")),
 	}
 }
 

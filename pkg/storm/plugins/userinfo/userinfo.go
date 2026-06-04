@@ -77,7 +77,7 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the userinfo endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"userinfo_endpoint": shared.IssuerURL(ctx, "/userinfo"),
+		"userinfo_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/userinfo")),
 	}
 }
 

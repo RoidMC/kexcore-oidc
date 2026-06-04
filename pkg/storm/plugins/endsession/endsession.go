@@ -101,7 +101,7 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the end_session endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"end_session_endpoint": shared.IssuerURL(ctx, "/end_session"),
+		"end_session_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/end_session")),
 	}
 }
 

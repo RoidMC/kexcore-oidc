@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
@@ -63,10 +64,10 @@ func (p *Plugin) Register(r chi.Router) {}
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
 		"mtls_endpoint_aliases": map[string]string{
-			"token_endpoint":         shared.IssuerURL(ctx, "/token"),
-			"userinfo_endpoint":      shared.IssuerURL(ctx, "/userinfo"),
-			"revocation_endpoint":    shared.IssuerURL(ctx, "/revoke"),
-			"introspection_endpoint": shared.IssuerURL(ctx, "/introspect"),
+			"token_endpoint":         shared.EndpointURL(ctx, protocol.NewEndpoint("/token")),
+			"userinfo_endpoint":      shared.EndpointURL(ctx, protocol.NewEndpoint("/userinfo")),
+			"revocation_endpoint":    shared.EndpointURL(ctx, protocol.NewEndpoint("/revoke")),
+			"introspection_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/introspect")),
 		},
 		"token_endpoint_auth_methods_supported": []string{
 			"tls_client_auth",

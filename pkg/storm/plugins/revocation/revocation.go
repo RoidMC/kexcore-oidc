@@ -82,7 +82,7 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the revocation endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"revocation_endpoint": shared.IssuerURL(ctx, "/revoke"),
+		"revocation_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/revoke")),
 	}
 }
 

@@ -7,7 +7,6 @@ package shared
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -55,14 +54,19 @@ func IssuerFromHost(path string) IssuerFromRequest {
 	}
 }
 
-// IssuerURL safely joins an issuer and a URL path, stripping trailing
-// slashes from the issuer to avoid double-slashes.
+// EndpointURL converts a protocol.Endpoint into an absolute URL
+// using the issuer from context, applying the same TrimRight logic as IssuerURL.
+//
+// This allows plugins to declare their paths as *protocol.Endpoint
+// and reuse the built-in Absolute() logic instead of hand-joining strings.
 //
 // Example:
 //
-//	IssuerURL(ctx, "/token")    → "http://localhost:9998/token"
-//	IssuerURL(ctx, "/register/abc") → "http://localhost:9998/register/abc"
-func IssuerURL(ctx context.Context, path string) string {
-	issuer := strings.TrimRight(IssuerFromContext(ctx), "/")
-	return issuer + path
+//	ep := protocol.NewEndpoint("/authorize")
+//	EndpointURL(ctx, ep) → "http://localhost:9998/authorize"
+func EndpointURL(ctx context.Context, ep *protocol.Endpoint) string {
+	if ep == nil {
+		return ""
+	}
+	return ep.DiscoveryURL(IssuerFromContext(ctx))
 }

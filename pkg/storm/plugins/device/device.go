@@ -57,7 +57,7 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the device authorization endpoint.
 func (p *Plugin) Contribute(ctx context.Context) map[string]any {
 	return map[string]any{
-		"device_authorization_endpoint": shared.IssuerURL(ctx, "/device_authorization"),
+		"device_authorization_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/device_authorization")),
 	}
 }
 
