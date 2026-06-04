@@ -13,8 +13,6 @@ package token
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -154,6 +152,8 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 		p.handleClientCredentials(w, r)
 	case protocol.GrantTypeBearer:
 		p.handleJWTProfile(w, r)
+	case protocol.GrantTypeTokenExchange:
+		p.handleTokenExchange(w, r)
 	default:
 		tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("unsupported grant_type: %s", grantType))
 	}
@@ -332,31 +332,135 @@ func (p *Plugin) handleJWTProfile(w http.ResponseWriter, r *http.Request) {
 	tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("jwt-bearer grant not yet implemented"))
 }
 
-// --- parsing ---
+// --- token exchange grant (RFC 8693) ---
 
-func parseAccessTokenRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.AccessTokenRequest, error) {
-	req := new(protocol.AccessTokenRequest)
-	if err := decoder.Decode(req, form); err != nil {
-		return nil, err
+func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
+	// Parse the token exchange request
+	req := new(protocol.TokenExchangeRequest)
+	if err := p.decoder.Decode(req, r.Form); err != nil {
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("cannot parse token exchange request").WithParent(err))
+		return
 	}
-	return req, nil
+
+	// Required fields
+	if req.SubjectToken == "" {
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("subject_token missing"))
+		return
+	}
+	if req.SubjectTokenType == "" {
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("subject_token_type missing"))
+		return
+	}
+
+	// Authenticate the client
+	clientID, clientSecret := "", ""
+	if id, secret, ok := r.BasicAuth(); ok {
+		var err error
+		clientID, err = url.QueryUnescape(id)
+		if err != nil {
+			tokenError(w, r, protocol.ErrInvalidClient().WithDescription("invalid basic auth header"))
+			return
+		}
+		clientSecret, err = url.QueryUnescape(secret)
+		if err != nil {
+			tokenError(w, r, protocol.ErrInvalidClient().WithDescription("invalid basic auth header"))
+			return
+		}
+	}
+
+	client, err := p.authenticateClient(r, clientID, clientSecret)
+	if err != nil {
+		tokenError(w, r, err)
+		return
+	}
+
+	// Check grant type is allowed for this client
+	if !validateGrantType(client, protocol.GrantTypeTokenExchange) {
+		tokenError(w, r, protocol.ErrUnauthorizedClient())
+		return
+	}
+
+	// Resolve subject_token to get the subject
+	subject, subjectTokenID, err := p.resolveExchangeToken(r.Context(), req.SubjectToken, req.SubjectTokenType)
+	if err != nil {
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("subject_token is invalid").WithParent(err))
+		return
+	}
+
+	// Check if storage supports token exchange
+	teStore, ok := p.tokenStore.(storm.TokenExchangeStore)
+	if !ok {
+		tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("token exchange not supported by storage"))
+		return
+	}
+
+	// Build the internal request
+	teReq := &tokenExchangeRequest{
+		subject:               subject,
+		subjectTokenIDOrToken: subjectTokenID,
+		subjectTokenType:      req.SubjectTokenType,
+		clientID:              client.GetID(),
+		audience:              req.Audience,
+		scopes:                req.Scopes,
+		requestedTokenType:    req.RequestedTokenType,
+	}
+
+	// Default requested_token_type to access_token per RFC 8693 §2.2.1
+	if teReq.requestedTokenType == "" {
+		teReq.requestedTokenType = protocol.AccessTokenType
+	}
+
+	// Validate via storage
+	if err := teStore.ValidateTokenExchangeRequest(r.Context(), teReq); err != nil {
+		tokenError(w, r, err)
+		return
+	}
+
+	// Store for audit (best-effort)
+	_ = teStore.CreateTokenExchangeRequest(r.Context(), teReq)
+
+	// Create access token
+	accessToken, validity, err := p.createAccessToken(r.Context(), teReq, client)
+	if err != nil {
+		tokenError(w, r, protocol.ErrServerError().WithParent(err))
+		return
+	}
+
+	exp := uint64(validity.Seconds())
+	resp := &protocol.TokenExchangeResponse{
+		AccessToken:     accessToken,
+		IssuedTokenType: teReq.requestedTokenType,
+		TokenType:       protocol.BearerToken,
+		ExpiresIn:       exp,
+		Scopes:          teReq.scopes,
+	}
+
+	shared.JSONResponse(w, resp, http.StatusOK)
 }
 
-func parseRefreshTokenRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.RefreshTokenRequest, error) {
-	req := new(protocol.RefreshTokenRequest)
-	if err := decoder.Decode(req, form); err != nil {
-		return nil, err
+// resolveExchangeToken resolves a subject_token to (subject, tokenIDOrToken).
+// For refresh tokens, looks up the stored token request.
+// For access tokens, decrypts and parses the opaque token.
+func (p *Plugin) resolveExchangeToken(ctx context.Context, token string, tokenType protocol.TokenType) (subject, tokenIDOrToken string, err error) {
+	switch tokenType {
+	case protocol.RefreshTokenType:
+		tokenRequest, err := p.tokenStore.TokenRequestByRefreshToken(ctx, token)
+		if err != nil {
+			return "", "", err
+		}
+		return tokenRequest.GetSubject(), token, nil
+	case protocol.AccessTokenType:
+		tokenID, subject, ok := storm.ResolveToken(ctx, p.crypto, p.keyStore, shared.IssuerFromContext(ctx), token)
+		if !ok {
+			return "", "", fmt.Errorf("invalid access token")
+		}
+		return subject, tokenID, nil
+	default:
+		return "", "", fmt.Errorf("unsupported subject_token_type: %s", tokenType)
 	}
-	return req, nil
 }
 
-func parseClientCredentialsRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.ClientCredentialsRequest, error) {
-	req := new(protocol.ClientCredentialsRequest)
-	if err := decoder.Decode(req, form); err != nil {
-		return nil, err
-	}
-	return req, nil
-}
+// --- token exchange grant (RFC 8693) ---
 
 // --- client authentication ---
 
@@ -419,59 +523,6 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 	}
 
 	return client, nil
-}
-
-// --- validation ---
-
-func validateGrantType(client storm.Client, grantType protocol.GrantType) bool {
-	type grantTypesProvider interface {
-		GrantTypes() []protocol.GrantType
-	}
-	if gp, ok := client.(grantTypesProvider); ok {
-		return slices.Contains(gp.GrantTypes(), grantType)
-	}
-	// If the client doesn't declare grant types, allow common ones
-	return grantType == protocol.GrantTypeCode || grantType == protocol.GrantTypeRefreshToken
-}
-
-// verifyPKCE validates the PKCE code_verifier against the stored code_challenge
-// per RFC 7636 §4.6. If the auth request has no code_challenge, PKCE is not required.
-func verifyPKCE(authReq storm.AuthRequest, codeVerifier string) error {
-	cc := authReq.GetCodeChallenge()
-	if cc == nil || cc.Challenge == "" {
-		return nil
-	}
-	if codeVerifier == "" {
-		return protocol.ErrInvalidGrant().WithDescription("code_verifier required (PKCE)")
-	}
-	switch cc.Method {
-	case protocol.CodeChallengeMethodS256:
-		h := sha256.Sum256([]byte(codeVerifier))
-		computed := base64.RawURLEncoding.EncodeToString(h[:])
-		if computed != cc.Challenge {
-			return protocol.ErrInvalidGrant().WithDescription("PKCE verification failed")
-		}
-	case protocol.CodeChallengeMethodPlain:
-		if codeVerifier != cc.Challenge {
-			return protocol.ErrInvalidGrant().WithDescription("PKCE verification failed")
-		}
-	default:
-		return protocol.ErrInvalidGrant().WithDescription("unsupported code_challenge_method: %s", cc.Method)
-	}
-	return nil
-}
-
-func validateRefreshScopes(requestedScopes []string, refreshReq storm.RefreshTokenRequest) error {
-	if len(requestedScopes) == 0 {
-		return nil
-	}
-	for _, scope := range requestedScopes {
-		if !slices.Contains(refreshReq.GetScopes(), scope) {
-			return protocol.ErrInvalidScope()
-		}
-	}
-	refreshReq.SetCurrentScopes(requestedScopes)
-	return nil
 }
 
 // --- token creation ---
