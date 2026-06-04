@@ -8,7 +8,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -125,7 +124,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve token to tokenID and subject
 	// Supports opaque tokens (standard + GM/T JWE) and JWT access tokens.
-	tokenID, subject, ok := resolveToken(r.Context(), p.crypto, p.keyStore, shared.IssuerFromContext(r.Context()), token)
+	tokenID, subject, ok := storm.ResolveToken(r.Context(), p.crypto, p.keyStore, shared.IssuerFromContext(r.Context()), token)
 	if !ok {
 		// Return inactive token response per RFC 7662 §2.2
 		shared.JSONResponse(w, &protocol.IntrospectionResponse{Active: false}, http.StatusOK)
@@ -139,50 +138,4 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	shared.JSONResponse(w, resp, http.StatusOK)
-}
-
-// gmDecryptor is an optional interface for GM/T JWE decryption.
-type gmDecryptor interface {
-	SM2DecryptJWE(ctx context.Context, compact string) ([]byte, error)
-}
-
-// resolveToken resolves an opaque token to its tokenID and subject.
-// Supports standard decrypted tokens, GM/T JWE tokens, and JWT access tokens.
-func resolveToken(ctx context.Context, crypto storm.UniCrypto, keyStore protocol.KeyStore, issuer, token string) (tokenID, subject string, ok bool) {
-	var plaintext []byte
-	var err error
-
-	// Try GM/T JWE decryption first (SM2+SM4-GCM per GM/T 0125.3)
-	if gm, ok := crypto.(gmDecryptor); ok {
-		plaintext, err = gm.SM2DecryptJWE(ctx, token)
-		if err == nil {
-			return parseTokenParts(plaintext)
-		}
-	}
-
-	// Standard opaque token decryption
-	plaintext, err = crypto.Decrypt(ctx, []byte(token))
-	if err == nil {
-		return parseTokenParts(plaintext)
-	}
-
-	// Opaque decryption failed - try JWT access token verification (RFC 6750 §2.1)
-	if keyStore != nil {
-		v := &protocol.AccessTokenVerifier{
-			Issuer:   issuer,
-			KeyStore: keyStore,
-		}
-		return protocol.VerifyAccessToken(ctx, token, v)
-	}
-
-	return "", "", false
-}
-
-// parseTokenParts splits "tokenID:subject" plaintext into its components.
-func parseTokenParts(plaintext []byte) (tokenID, subject string, ok bool) {
-	parts := strings.SplitN(string(plaintext), ":", 2)
-	if len(parts) != 2 {
-		return "", "", false
-	}
-	return parts[0], parts[1], true
 }

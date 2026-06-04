@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
@@ -80,7 +81,11 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 // PushLogoutTokens sends logout tokens to all RPs that have sessions
 // for the given subject and session ID (OIDC Back-Channel Logout §2.5).
-func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer string, signingKey storm.SigningKey, subject, sid string) error {
+func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer string, signingKey storm.SigningKey, subject, sid string, logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	clients, err := store.ClientsForSession(ctx, subject, sid)
 	if err != nil {
 		return err
@@ -101,10 +106,16 @@ func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer 
 
 		logoutToken, err := createLogoutToken(issuer, subject, client.GetID(), sid, signingKey)
 		if err != nil {
+			logger.Error("failed to create logout token",
+				slog.String("client_id", client.GetID()),
+				slog.String("subject", subject),
+				slog.String("sid", sid),
+				slog.Any("error", err),
+			)
 			continue
 		}
 
-		go sendLogoutToken(uri, logoutToken)
+		go sendLogoutToken(uri, logoutToken, logger)
 	}
 
 	return nil
@@ -154,16 +165,27 @@ func createLogoutToken(issuer, subject, audience, sid string, signingKey storm.S
 }
 
 // sendLogoutToken sends a logout token to a client's backchannel_logout_uri.
-func sendLogoutToken(uri, logoutToken string) {
+func sendLogoutToken(uri, logoutToken string, logger *slog.Logger) {
 	form := url.Values{}
 	form.Set("logout_token", logoutToken)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.PostForm(uri, form)
 	if err != nil {
+		logger.Error("failed to send logout token to client",
+			slog.String("uri", uri),
+			slog.Any("error", err),
+		)
 		return
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		logger.Warn("client returned error for logout token",
+			slog.String("uri", uri),
+			slog.Int("status_code", resp.StatusCode),
+		)
+	}
 }
 
 // algorithmToJWA converts a string algorithm name to jwa.SignatureAlgorithm.

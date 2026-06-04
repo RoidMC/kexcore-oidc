@@ -78,28 +78,32 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 	shared.JSONResponse(w, reg, http.StatusCreated)
 }
 
-func (p *Plugin) handleGet(w http.ResponseWriter, r *http.Request) {
-	clientID := chi.URLParam(r, "client_id")
-
-	// Authenticate via registration access token
-	token := r.Header.Get("Authorization")
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
-	}
-
+// authenticateRegistrationToken validates the registration access token
+// and ensures it matches the expected client_id.
+func (p *Plugin) authenticateRegistrationToken(r *http.Request, clientID string) (*storm.ClientRegistration, error) {
+	token := shared.ExtractBearerToken(r)
 	if token == "" {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("registration access token required"), nil)
-		return
+		return nil, protocol.ErrInvalidClient().WithDescription("registration access token required")
 	}
 
 	reg, err := p.store.GetClientRegistrationByToken(r.Context(), token)
 	if err != nil {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
-		return
+		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
 	if reg.ClientID != clientID {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client_id mismatch"), nil)
+		return nil, protocol.ErrInvalidClient().WithDescription("client_id mismatch")
+	}
+
+	return reg, nil
+}
+
+func (p *Plugin) handleGet(w http.ResponseWriter, r *http.Request) {
+	clientID := chi.URLParam(r, "client_id")
+
+	reg, err := p.authenticateRegistrationToken(r, clientID)
+	if err != nil {
+		shared.WriteError(w, r, err, nil)
 		return
 	}
 
@@ -109,24 +113,8 @@ func (p *Plugin) handleGet(w http.ResponseWriter, r *http.Request) {
 func (p *Plugin) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	clientID := chi.URLParam(r, "client_id")
 
-	token := r.Header.Get("Authorization")
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
-	}
-
-	if token == "" {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("registration access token required"), nil)
-		return
-	}
-
-	reg, err := p.store.GetClientRegistrationByToken(r.Context(), token)
-	if err != nil {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
-		return
-	}
-
-	if reg.ClientID != clientID {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client_id mismatch"), nil)
+	if _, err := p.authenticateRegistrationToken(r, clientID); err != nil {
+		shared.WriteError(w, r, err, nil)
 		return
 	}
 
@@ -148,24 +136,8 @@ func (p *Plugin) handleUpdate(w http.ResponseWriter, r *http.Request) {
 func (p *Plugin) handleDelete(w http.ResponseWriter, r *http.Request) {
 	clientID := chi.URLParam(r, "client_id")
 
-	token := r.Header.Get("Authorization")
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
-	}
-
-	if token == "" {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("registration access token required"), nil)
-		return
-	}
-
-	reg, err := p.store.GetClientRegistrationByToken(r.Context(), token)
-	if err != nil {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
-		return
-	}
-
-	if reg.ClientID != clientID {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client_id mismatch"), nil)
+	if _, err := p.authenticateRegistrationToken(r, clientID); err != nil {
+		shared.WriteError(w, r, err, nil)
 		return
 	}
 

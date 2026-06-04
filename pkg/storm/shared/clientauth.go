@@ -76,6 +76,16 @@ func (h *ClientAuthHelper) AuthenticateClient(r *http.Request) (Client, error) {
 	return client, nil
 }
 
+// ExtractBearerToken extracts a Bearer token from the Authorization header.
+// Returns the token string, or empty string if not present or not a Bearer token.
+func ExtractBearerToken(r *http.Request) string {
+	auth := r.Header.Get("Authorization")
+	if len(auth) > 7 && auth[:7] == "Bearer " {
+		return auth[7:]
+	}
+	return ""
+}
+
 // ParseClientCredentials extracts client credentials from the request
 // without verifying them against the store.
 // Returns protocol.ErrInvalidRequest if no credentials are found.
