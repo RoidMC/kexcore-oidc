@@ -20,6 +20,21 @@ type Client interface {
 	AuthMethod() protocol.AuthMethod
 }
 
+// clientStoreFunc adapts function references to ClientStore.
+// Used by NewClientAuthHelperFromFuncs to bridge stores with covariant return types.
+type clientStoreFunc struct {
+	getFn  func(ctx context.Context, clientID string) (Client, error)
+	authFn func(ctx context.Context, clientID, clientSecret string) error
+}
+
+func (f *clientStoreFunc) GetClientByClientID(ctx context.Context, clientID string) (Client, error) {
+	return f.getFn(ctx, clientID)
+}
+
+func (f *clientStoreFunc) AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string) error {
+	return f.authFn(ctx, clientID, clientSecret)
+}
+
 // ClientAuthHelper extracts and verifies client credentials from HTTP requests.
 // It supports both Basic Auth and POST body credentials.
 //
@@ -32,6 +47,16 @@ type ClientAuthHelper struct {
 // NewClientAuthHelper creates a helper backed by the given store.
 func NewClientAuthHelper(store ClientStore) *ClientAuthHelper {
 	return &ClientAuthHelper{store: store}
+}
+
+// NewClientAuthHelperFromFuncs creates a helper backed by function references.
+// Use this when bridging a store that returns clients with additional methods
+// (e.g., storm.Client with LoginURL) — Go doesn't support covariant return types.
+func NewClientAuthHelperFromFuncs(
+	getFn func(ctx context.Context, clientID string) (Client, error),
+	authFn func(ctx context.Context, clientID, clientSecret string) error,
+) *ClientAuthHelper {
+	return &ClientAuthHelper{store: &clientStoreFunc{getFn: getFn, authFn: authFn}}
 }
 
 // AuthenticateClient extracts client credentials from the request and

@@ -7,7 +7,6 @@ package introspection
 import (
 	"context"
 	"net/http"
-	"net/url"
 
 	"github.com/go-chi/chi/v5"
 
@@ -18,10 +17,10 @@ import (
 
 // Plugin implements the Token Introspection endpoint.
 type Plugin struct {
-	store       storm.IntrospectStore
-	clientStore storm.ClientStore
-	crypto      storm.UniCrypto
-	keyStore    protocol.KeyStore
+	store      storm.IntrospectStore
+	clientAuth *shared.ClientAuthHelper
+	crypto     storm.UniCrypto
+	keyStore   protocol.KeyStore
 }
 
 // Config holds the dependencies for the Introspection plugin.
@@ -34,21 +33,22 @@ type Config struct {
 
 // New creates a new Introspection plugin from a PluginContext.
 func New(ctx *storm.PluginContext) *Plugin {
+	cs := ctx.Storage.(storm.ClientStore)
 	return &Plugin{
-		store:       ctx.Storage.(storm.IntrospectStore),
-		clientStore: ctx.Storage.(storm.ClientStore),
-		crypto:      ctx.Crypto,
-		keyStore:    ctx.Storage.(storm.KeyStore),
+		store:      ctx.Storage.(storm.IntrospectStore),
+		clientAuth: storm.NewClientAuthHelper(cs),
+		crypto:     ctx.Crypto,
+		keyStore:   ctx.Storage.(storm.KeyStore),
 	}
 }
 
 // NewWithConfig creates a new Introspection plugin with explicit config.
 func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
-		store:       cfg.Store,
-		clientStore: cfg.ClientStore,
-		crypto:      cfg.Crypto,
-		keyStore:    cfg.KeyStore,
+		store:      cfg.Store,
+		clientAuth: storm.NewClientAuthHelper(cfg.ClientStore),
+		crypto:     cfg.Crypto,
+		keyStore:   cfg.KeyStore,
 	}
 }
 
@@ -90,28 +90,9 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Authenticate the client
-	clientID, clientSecret := r.Form.Get("client_id"), r.Form.Get("client_secret")
-	if id, secret, ok := r.BasicAuth(); ok {
-		var err error
-		clientID, err = url.QueryUnescape(id)
-		if err != nil {
-			shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("invalid basic auth header"), nil)
-			return
-		}
-		clientSecret, err = url.QueryUnescape(secret)
-		if err != nil {
-			shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("invalid basic auth header"), nil)
-			return
-		}
-	}
-
-	if clientID == "" {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("client authentication required"), nil)
-		return
-	}
-
-	if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
+	// Authenticate the client using the shared helper
+	client, err := p.clientAuth.AuthenticateClient(r)
+	if err != nil {
 		shared.WriteError(w, r, err, nil)
 		return
 	}
@@ -132,7 +113,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := &protocol.IntrospectionResponse{Active: true}
-	if err := p.store.SetIntrospectionFromToken(r.Context(), resp, tokenID, subject, clientID); err != nil {
+	if err := p.store.SetIntrospectionFromToken(r.Context(), resp, tokenID, subject, client.GetID()); err != nil {
 		shared.WriteError(w, r, err, nil)
 		return
 	}

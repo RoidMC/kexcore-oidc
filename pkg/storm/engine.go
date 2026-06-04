@@ -501,47 +501,9 @@ func (p *discoveryPlugin) handle(w http.ResponseWriter, r *http.Request) {
 		Extra:                                              make(map[string]any),
 	}
 
-	skip := map[string]bool{
-		"issuer": true, "authorization_endpoint": true, "token_endpoint": true,
-		"userinfo_endpoint": true, "jwks_uri": true, "registration_endpoint": true,
-		"end_session_endpoint": true, "check_session_iframe": true,
-		"backchannel_logout_endpoint": true, "backchannel_logout_session_supported": true,
-		"backchannel_logout_supported": true, "frontchannel_logout_endpoint": true,
-		"frontchannel_logout_session_supported": true, "frontchannel_logout_supported": true,
-		"token_exchange_endpoint": true, "device_authorization_endpoint": true,
-		"pushed_authorization_request_endpoint": true, "require_pushed_authorization_requests": true,
-		"introspection_endpoint": true, "revocation_endpoint": true,
-		"scopes_supported": true, "response_types_supported": true,
-		"response_modes_supported": true, "grant_types_supported": true,
-		"acr_values_supported": true, "subject_types_supported": true,
-		"id_token_signing_alg_values_supported":                    true,
-		"id_token_encryption_alg_values_supported":                 true,
-		"id_token_encryption_enc_values_supported":                 true,
-		"userinfo_signing_alg_values_supported":                    true,
-		"userinfo_encryption_alg_values_supported":                 true,
-		"userinfo_encryption_enc_values_supported":                 true,
-		"request_object_signing_alg_values_supported":              true,
-		"request_object_encryption_alg_values_supported":           true,
-		"request_object_encryption_enc_values_supported":           true,
-		"token_endpoint_auth_methods_supported":                    true,
-		"token_endpoint_auth_signing_alg_values_supported":         true,
-		"introspection_endpoint_auth_methods_supported":            true,
-		"introspection_endpoint_auth_signing_alg_values_supported": true,
-		"revocation_endpoint_auth_methods_supported":               true,
-		"revocation_endpoint_auth_signing_alg_values_supported":    true,
-		"display_values_supported":                                 true, "claim_types_supported": true,
-		"claims_supported": true, "claims_parameter_supported": true,
-		"claims_locales_supported": true, "ui_locales_supported": true,
-		"request_parameter_supported": true, "request_uri_parameter_supported": true,
-		"require_request_uri_registration":               true,
-		"code_challenge_methods_supported":               true,
-		"authorization_response_iss_parameter_supported": true,
-		"service_documentation":                          true, "op_policy_uri": true, "op_tos_uri": true,
-		"jwe_alg_values_supported": true, "jwe_enc_values_supported": true,
-		"tls_client_certificate_bound_access_tokens": true, "mtls_endpoint_aliases": true,
-	}
+	// Use protocol.KnownDiscoveryKeys (auto-generated from struct tags) to filter extra fields
 	for k, v := range cfg {
-		if !skip[k] {
+		if !protocol.KnownDiscoveryKeys[k] {
 			doc.Extra[k] = v
 		}
 	}

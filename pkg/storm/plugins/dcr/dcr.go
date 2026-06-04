@@ -155,6 +155,8 @@ func generateAccessToken() string  { return "token_" + randomHex(32) }
 
 func randomHex(n int) string {
 	b := make([]byte, n)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand.Read failed: " + err.Error())
+	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }

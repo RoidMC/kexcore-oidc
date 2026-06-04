@@ -109,14 +109,18 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 func generateRandomCode(length int) string {
 	b := make([]byte, length)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand.Read failed: " + err.Error())
+	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 func generateRandomUserCode(length int) string {
 	const charset = "BCDFGHJKLMNPQRSTVWXYZ"
 	b := make([]byte, length)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand.Read failed: " + err.Error())
+	}
 	for i := range b {
 		b[i] = charset[b[i]%byte(len(charset))]
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
 // GMDecryptor is an optional interface for GM/T JWE decryption.
@@ -58,4 +59,17 @@ func ParseTokenParts(plaintext []byte) (tokenID, subject string, ok bool) {
 		return "", "", false
 	}
 	return parts[0], parts[1], true
+}
+
+// NewClientAuthHelper creates a shared.ClientAuthHelper from a storm.ClientStore.
+// This bridges the type gap between storm.Client (superset with LoginURL)
+// and shared.Client (minimal interface) that Go's type system doesn't allow
+// via covariant return types.
+func NewClientAuthHelper(cs ClientStore) *shared.ClientAuthHelper {
+	return shared.NewClientAuthHelperFromFuncs(
+		func(ctx context.Context, clientID string) (shared.Client, error) {
+			return cs.GetClientByClientID(ctx, clientID)
+		},
+		cs.AuthorizeClientIDSecret,
+	)
 }

@@ -9,10 +9,12 @@ import (
 
 const DiscoveryEndpoint = "/.well-known/openid-configuration"
 
-var knownDiscoveryKeys map[string]bool
+// KnownDiscoveryKeys contains all JSON field names from DiscoveryConfiguration struct tags.
+// This is auto-generated via reflection and can be used to filter discovery fields.
+var KnownDiscoveryKeys map[string]bool
 
 func init() {
-	knownDiscoveryKeys = make(map[string]bool)
+	KnownDiscoveryKeys = make(map[string]bool)
 	t := reflect.TypeOf(DiscoveryConfiguration{})
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
@@ -21,7 +23,7 @@ func init() {
 			continue
 		}
 		name := strings.Split(tag, ",")[0]
-		knownDiscoveryKeys[name] = true
+		KnownDiscoveryKeys[name] = true
 	}
 }
 
@@ -325,7 +327,7 @@ func (d *DiscoveryConfiguration) UnmarshalJSON(data []byte) error {
 
 	d.Extra = make(map[string]any)
 	for k, v := range raw {
-		if knownDiscoveryKeys[k] {
+		if KnownDiscoveryKeys[k] {
 			continue
 		}
 		var val any

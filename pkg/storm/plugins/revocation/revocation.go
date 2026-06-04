@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -20,10 +19,10 @@ import (
 
 // Plugin implements the Token Revocation endpoint.
 type Plugin struct {
-	store       storm.RevocationStore
-	clientStore storm.ClientStore
-	crypto      storm.UniCrypto
-	keyStore    protocol.KeyStore
+	store      storm.RevocationStore
+	clientAuth *shared.ClientAuthHelper
+	crypto     storm.UniCrypto
+	keyStore   protocol.KeyStore
 }
 
 // Config holds the dependencies for the Revocation plugin.
@@ -36,21 +35,22 @@ type Config struct {
 
 // New creates a new Revocation plugin from a PluginContext.
 func New(ctx *storm.PluginContext) *Plugin {
+	cs := ctx.Storage.(storm.ClientStore)
 	return &Plugin{
-		store:       ctx.Storage.(storm.RevocationStore),
-		clientStore: ctx.Storage.(storm.ClientStore),
-		crypto:      ctx.Crypto,
-		keyStore:    ctx.Storage.(storm.KeyStore),
+		store:      ctx.Storage.(storm.RevocationStore),
+		clientAuth: storm.NewClientAuthHelper(cs),
+		crypto:     ctx.Crypto,
+		keyStore:   ctx.Storage.(storm.KeyStore),
 	}
 }
 
 // NewWithConfig creates a new Revocation plugin with explicit config.
 func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
-		store:       cfg.Store,
-		clientStore: cfg.ClientStore,
-		crypto:      cfg.Crypto,
-		keyStore:    cfg.KeyStore,
+		store:      cfg.Store,
+		clientAuth: storm.NewClientAuthHelper(cfg.ClientStore),
+		crypto:     cfg.Crypto,
+		keyStore:   cfg.KeyStore,
 	}
 }
 
@@ -95,12 +95,13 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	token := r.Form.Get("token")
 	tokenTypeHint := r.Form.Get("token_type_hint")
 
-	// Authenticate the client
-	clientID, err := p.authenticateClient(r)
+	// Authenticate the client using the shared helper
+	client, err := p.clientAuth.AuthenticateClient(r)
 	if err != nil {
 		shared.WriteError(w, r, err, nil)
 		return
 	}
+	clientID := client.GetID()
 
 	var subject string
 	doDecrypt := true
@@ -137,39 +138,6 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	// RFC 7009 §2.2: The revocation endpoint responds with HTTP 200 for both
 	// success and "token not found" cases.
 	w.WriteHeader(http.StatusOK)
-}
-
-func (p *Plugin) authenticateClient(r *http.Request) (string, error) {
-	clientID, clientSecret := r.Form.Get("client_id"), r.Form.Get("client_secret")
-
-	if id, secret, ok := r.BasicAuth(); ok {
-		var err error
-		clientID, err = url.QueryUnescape(id)
-		if err != nil {
-			return "", protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
-		}
-		clientSecret, err = url.QueryUnescape(secret)
-		if err != nil {
-			return "", protocol.ErrInvalidClient().WithDescription("invalid basic auth header").WithParent(err)
-		}
-	}
-
-	if clientID == "" {
-		return "", protocol.ErrInvalidClient().WithDescription("client authentication required")
-	}
-
-	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
-	if err != nil {
-		return "", protocol.ErrInvalidClient().WithParent(err)
-	}
-
-	if client.AuthMethod() != protocol.AuthMethodNone {
-		if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
-			return "", err
-		}
-	}
-
-	return clientID, nil
 }
 
 // gmDecryptor is an optional interface for GM/T JWE decryption.
