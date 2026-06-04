@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -39,7 +38,7 @@ type Plugin struct {
 	tokenStore  storm.TokenStore
 	clientStore storm.ClientStore
 	authStore   storm.AuthStore
-	crypto      storm.Crypto
+	crypto      storm.UniCrypto
 	keyStore    storm.KeyStore
 	decoder     *protocol.Decoder
 	logger      *slog.Logger
@@ -50,7 +49,7 @@ type Config struct {
 	TokenStore  storm.TokenStore
 	ClientStore storm.ClientStore
 	AuthStore   storm.AuthStore
-	Crypto      storm.Crypto
+	Crypto      storm.UniCrypto
 	KeyStore    storm.KeyStore
 	Decoder     *protocol.Decoder
 	Logger      *slog.Logger
@@ -562,25 +561,11 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 		if err != nil {
 			return "", err
 		}
-	} else if gm, ok := p.crypto.(storm.GMCrypto); ok {
-		// Try GMCrypto signing
-		signed, err = gm.Sign(ctx, signingKey.ID(), payload)
+	} else {
+		// Use UniCrypto.Sign for all signing (RSA, ECDSA, EdDSA, SM2)
+		signed, err = p.crypto.Sign(ctx, signingKey.ID(), payload)
 		if err != nil {
 			return "", err
-		}
-	} else {
-		// Standard JWS signing (RSA/EC/EdDSA) via crypto.NewSigner
-		rawKey, err := jwk.Export[any](signingKey.Key())
-		if err != nil {
-			return "", fmt.Errorf("failed to export signing key: %w", err)
-		}
-		signer, err := crypto.NewSigner(signingKey.Algorithm(), rawKey, signingKey.ID())
-		if err != nil {
-			return "", fmt.Errorf("failed to create signer: %w", err)
-		}
-		signed, err = signer.Sign(payload)
-		if err != nil {
-			return "", fmt.Errorf("failed to sign ID token: %w", err)
 		}
 	}
 
@@ -615,7 +600,7 @@ type sm9EncryptionKeyProvider interface {
 	SM9TokenEncryptionKey() *crypto.SM9MasterPublicKey
 }
 
-func encryptIDToken(signedToken string, cr storm.Crypto, alg, enc string) (string, error) {
+func encryptIDToken(signedToken string, cr storm.UniCrypto, alg, enc string) (string, error) {
 	switch alg {
 	case protocol.JWEAlgDir:
 		kp, ok := cr.(tokenEncryptionKeyProvider)
@@ -668,18 +653,11 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 	// for enhanced security per GM/T 0125.3. Otherwise, fall back to standard encryption.
 	plaintext := []byte(tokenID + ":" + request.GetSubject())
 
-	var encrypted []byte
-	if gm, ok := p.crypto.(storm.GMCrypto); ok {
-		jwe, jweErr := gm.SM2EncryptJWE(ctx, plaintext)
-		if jweErr != nil {
-			return "", 0, jweErr
-		}
-		encrypted = []byte(jwe)
-	} else {
-		encrypted, err = p.crypto.Encrypt(ctx, plaintext)
-		if err != nil {
-			return "", 0, err
-		}
+	// Encrypt the opaque bearer token using UniCrypto.
+	// The implementation handles both standard (AES-GCM) and GM (SM4-GCM/SM2+SM4) encryption.
+	encrypted, err := p.crypto.Encrypt(ctx, plaintext)
+	if err != nil {
+		return "", 0, err
 	}
 
 	validity := expiration.Sub(time.Now().UTC())

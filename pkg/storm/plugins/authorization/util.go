@@ -3,6 +3,7 @@ package authorization
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 
+	crypto_pkg "github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
@@ -354,7 +356,7 @@ func validateNonce(authReq *protocol.AuthRequest) error {
 
 // --- code creation ---
 
-func createAuthRequestCode(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.Crypto) (string, error) {
+func createAuthRequestCode(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error) {
 	encrypted, err := enc.Encrypt(ctx, []byte(authReq.GetID()))
 	if err != nil {
 		return "", err
@@ -517,4 +519,30 @@ func algorithmToJWA(alg string) (jwa.SignatureAlgorithm, error) {
 		return jwaAlg, fmt.Errorf("unsupported signing algorithm %q", alg)
 	}
 	return jwaAlg, nil
+}
+
+// hashTokenForIDToken computes the at_hash or c_hash claim value
+// per OIDC Core §2 (ID Token) and §3.2.2.1 (Implicit Flow).
+//
+// The hash is the base64url encoding of the left half of the hash of the token.
+//
+// Uses UniCrypto.Hash for unified hash computation. If crypto is nil,
+// falls back to local computation using pkg/crypto.
+func hashTokenForIDToken(token string, sigAlg string, crypto storm.UniCrypto) string {
+	if crypto != nil {
+		hashBytes, err := crypto.Hash(context.Background(), sigAlg, []byte(token))
+		if err == nil && len(hashBytes) > 0 {
+			// Take left half and base64url encode
+			halfLen := len(hashBytes) / 2
+			return base64.RawURLEncoding.EncodeToString(hashBytes[:halfLen])
+		}
+		// Fall through to local computation on error
+	}
+
+	// Fallback to local computation
+	h, err := crypto_pkg.GetHashAlgorithm(sigAlg)
+	if err != nil {
+		return ""
+	}
+	return crypto_pkg.HashString(h, token, true)
 }

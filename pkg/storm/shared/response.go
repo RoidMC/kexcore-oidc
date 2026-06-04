@@ -1,25 +1,23 @@
 package shared
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
+
+	httputil "github.com/roidmc/kexcore-oidc/pkg/util/http"
 )
+
+// SetUserInfoHeaders sets the headers required by OIDC Core §5.3.2 and RFC 6750.
+func SetUserInfoHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+}
 
 // JSONResponse writes a JSON response with the given status code.
 // If data is nil, only the status code is written.
+// Delegates to util/http.MarshalJSONWithStatus for the actual encoding.
 func JSONResponse(w http.ResponseWriter, data any, statusCode int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if data == nil {
-		return
-	}
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	buf.WriteTo(w)
+	httputil.MarshalJSONWithStatus(w, data, statusCode)
 }
 
 // RedirectResponse sends a 302 Found redirect.

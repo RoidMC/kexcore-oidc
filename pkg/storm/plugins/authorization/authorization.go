@@ -38,7 +38,7 @@ import (
 type Plugin struct {
 	authStore      storm.AuthStore
 	clientStore    storm.ClientStore
-	crypto         storm.Crypto
+	crypto         storm.UniCrypto
 	keyStore       storm.KeyStore
 	tokenStore     storm.TokenStore
 	decoder        *protocol.Decoder
@@ -55,7 +55,7 @@ var formPostTmpl = template.Must(template.New("form_post").Parse(formPostHtmlTem
 type Config struct {
 	AuthStore   storm.AuthStore
 	ClientStore storm.ClientStore
-	Crypto      storm.Crypto
+	Crypto      storm.UniCrypto
 	KeyStore    storm.KeyStore
 	TokenStore  storm.TokenStore
 	Decoder     *protocol.Decoder
@@ -411,11 +411,18 @@ func writeFormPostResponse(w http.ResponseWriter, redirectURI string, response *
 
 // --- implicit flow ---
 
-// authResponseImplicit handles the Implicit Flow response (OIDC Core §3.2.2.5).
-// Tokens are returned directly in the fragment of the redirect URI.
-// Per OIDC Core §3.2.2.5:
-//   - response_type=id_token: returns only id_token
-//   - response_type=id_token token: returns access_token, token_type, and id_token
+// authResponseImplicit handles the Implicit Flow response.
+//
+// Per OIDC Core 1.0 §3.2.2.5 (Successful Authentication Response):
+//   - response_type=id_token: returns only id_token in the fragment
+//   - response_type=id_token token: returns access_token, token_type, and id_token in the fragment
+//
+// All response parameters are added to the redirect URI's fragment component,
+// per OAuth 2.0 Multiple Response Types Encoding Practice §2.1.
+//
+// Important: When access_token is returned, the id_token MUST contain the
+// at_hash claim (OIDC Core §3.2.2.1). Therefore, we create the access_token
+// FIRST and pass it to createImplicitIDToken so it can compute at_hash.
 func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, authReq storm.AuthRequest) {
 	if _, err := url.Parse(authReq.GetRedirectURI()); err != nil {
 		shared.WriteError(w, r, protocol.ErrServerError().WithParent(err), nil)
@@ -425,10 +432,13 @@ func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, au
 	fragment := url.Values{}
 	fragment.Set("state", authReq.GetState())
 
-	// OIDC Core §3.2.2.5: response_type=id_token token MUST return access_token.
+	// Per OIDC Core §3.2.2.5: access_token is returned when response_type is "id_token token"
+	// We create it first so we can pass it to createImplicitIDToken for at_hash computation.
+	var accessToken string
 	if authReq.GetResponseType() == protocol.ResponseTypeIDToken {
-		accessToken, expiresIn, err := p.createImplicitAccessToken(r.Context(), authReq)
-		if err == nil && accessToken != "" {
+		token, expiresIn, err := p.createImplicitAccessToken(r.Context(), authReq)
+		if err == nil && token != "" {
+			accessToken = token
 			fragment.Set("access_token", accessToken)
 			fragment.Set("token_type", protocol.BearerToken)
 			if expiresIn > 0 {
@@ -437,9 +447,11 @@ func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, au
 		}
 	}
 
+	// Per OIDC Core §3.2.2.5: id_token is REQUIRED for both response types
+	// When access_token is present, id_token MUST include at_hash (§3.2.2.1)
 	if authReq.GetResponseType() == protocol.ResponseTypeIDTokenOnly ||
 		authReq.GetResponseType() == protocol.ResponseTypeIDToken {
-		idToken, err := p.createImplicitIDToken(r.Context(), authReq)
+		idToken, err := p.createImplicitIDToken(r.Context(), authReq, accessToken)
 		if err == nil && idToken != "" {
 			fragment.Set("id_token", idToken)
 		}
@@ -480,7 +492,18 @@ func (p *Plugin) createImplicitAccessToken(ctx context.Context, authReq storm.Au
 	return string(encrypted), expiresIn, nil
 }
 
-func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRequest) (string, error) {
+// createImplicitIDToken creates a signed ID token for the Implicit Flow.
+//
+// Per OIDC Core 1.0 §3.2.2.5 (Successful Authentication Response):
+//   - The ID Token is REQUIRED for all Implicit Flow responses
+//   - When access_token is also returned (response_type=id_token token),
+//     the ID Token MUST contain the at_hash claim (§3.2.2.1)
+//
+// The at_hash value is the base64url encoding of the left-most half of the
+// hash of the octets of the ASCII representation of the access_token value,
+// where the hash algorithm used is the hash algorithm used in the alg Header
+// Parameter of the ID Token's JOSE Header (OIDC Core §2).
+func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRequest, accessToken string) (string, error) {
 	if p.keyStore == nil {
 		return "", nil
 	}
@@ -497,8 +520,15 @@ func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRe
 		"iat": now.Unix(),
 		"exp": now.Add(time.Hour).Unix(),
 	}
+	// OIDC Core §3.2.2.1: nonce is REQUIRED for Implicit Flow
 	if nonce := authReq.GetNonce(); nonce != "" {
 		claims["nonce"] = nonce
+	}
+	// OIDC Core §2 / §3.2.2.1: at_hash is REQUIRED when access_token is returned
+	// "Access Token hash value. Its value is the base64url encoding of the left-most
+	// half of the hash of the octets of the ASCII representation of the access_token value"
+	if accessToken != "" {
+		claims["at_hash"] = hashTokenForIDToken(accessToken, signingKey.Algorithm(), p.crypto)
 	}
 
 	payload, err := json.Marshal(claims)

@@ -19,14 +19,14 @@ import (
 // Plugin implements the OIDC UserInfo endpoint.
 type Plugin struct {
 	store    storm.UserinfoStore
-	crypto   storm.Crypto
+	crypto   storm.UniCrypto
 	keyStore protocol.KeyStore
 }
 
 // Config holds the dependencies for the UserInfo plugin.
 type Config struct {
 	Store    storm.UserinfoStore
-	Crypto   storm.Crypto
+	Crypto   storm.UniCrypto
 	KeyStore protocol.KeyStore
 }
 
@@ -97,18 +97,20 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine the origin for the userinfo response
-	origin := ""
-	if r.Header.Get("Origin") != "" {
-		origin = r.Header.Get("Origin")
-	}
-
 	userInfo := new(protocol.UserInfo)
-	if err := p.store.SetUserinfoFromToken(r.Context(), userInfo, tokenID, subject, origin); err != nil {
+	if err := p.store.SetUserinfoFromToken(r.Context(), userInfo, tokenID, subject, r.Header.Get("Origin")); err != nil {
 		shared.WriteError(w, r, err, nil)
 		return
 	}
 
+	// OIDC Core §5.3.2: response MUST contain the "sub" claim
+	if userInfo.Subject == "" {
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("user not found"), nil)
+		return
+	}
+
+	// Set OIDC-required headers (OIDC Core §5.3.2, RFC 6750 §3)
+	shared.SetUserInfoHeaders(w)
 	shared.JSONResponse(w, userInfo, http.StatusOK)
 }
 
@@ -127,14 +129,20 @@ func extractAccessToken(r *http.Request) string {
 	return ""
 }
 
+// gmDecryptor is an optional interface for GM/T JWE decryption.
+// Implementations that support GM/T can implement this interface.
+type gmDecryptor interface {
+	SM2DecryptJWE(ctx context.Context, compact string) ([]byte, error)
+}
+
 // resolveAccessToken resolves an opaque access token to its tokenID and subject.
 // Supports standard decrypted tokens, GM/T JWE tokens, and JWT access tokens.
-func resolveAccessToken(ctx context.Context, crypto storm.Crypto, keyStore protocol.KeyStore, issuer, accessToken string) (tokenID, subject string, ok bool) {
+func resolveAccessToken(ctx context.Context, crypto storm.UniCrypto, keyStore protocol.KeyStore, issuer, accessToken string) (tokenID, subject string, ok bool) {
 	var plaintext []byte
 	var err error
 
 	// Try GM/T JWE decryption first (SM2+SM4-GCM per GM/T 0125.3)
-	if gm, ok := crypto.(storm.GMCrypto); ok {
+	if gm, ok := crypto.(gmDecryptor); ok {
 		plaintext, err = gm.SM2DecryptJWE(ctx, accessToken)
 		if err == nil {
 			return parseTokenParts(plaintext)

@@ -33,10 +33,11 @@ type Engine struct {
 	issuerFn     shared.IssuerFromRequest
 	discoveryCfg DiscoveryConfig
 
-	disabled  map[string]bool   // plugins disabled via Disable()
-	factories []PluginFactory   // plugins registered via WithPlugin()
-	crypto    Crypto            // optional, for token encryption/signing
-	decoder   *protocol.Decoder // optional, for form parsing
+	disabled          map[string]bool   // plugins disabled via Disable()
+	explicitlyEnabled map[string]bool   // plugins explicitly enabled via Enable()
+	factories         []PluginFactory   // plugins registered via WithPlugin()
+	crypto            UniCrypto         // optional, for token encryption/signing
+	decoder           *protocol.Decoder // optional, for form parsing
 }
 
 // DiscoveryConfig holds extra fields injected into the discovery document.
@@ -48,7 +49,7 @@ type DiscoveryConfig struct {
 // It wraps Storage with additional engine-level services.
 type PluginContext struct {
 	Storage Storage
-	Crypto  Crypto // may be nil if not configured
+	Crypto  UniCrypto // may be nil if not configured
 	Decoder *protocol.Decoder
 }
 
@@ -112,6 +113,20 @@ func Disable(names ...string) EngineOption {
 	}
 }
 
+// Enable explicitly enables named plugins that would otherwise not be registered.
+// This is primarily used for Optional plugins (CategoryOptional) which are
+// skipped by default unless explicitly enabled.
+func Enable(names ...string) EngineOption {
+	return func(e *Engine) {
+		if e.explicitlyEnabled == nil {
+			e.explicitlyEnabled = make(map[string]bool)
+		}
+		for _, name := range names {
+			e.explicitlyEnabled[name] = true
+		}
+	}
+}
+
 // EngineOption configures an Engine.
 type EngineOption func(*Engine)
 
@@ -137,10 +152,10 @@ func WithLogger(logger *slog.Logger) EngineOption {
 	}
 }
 
-// WithCrypto sets the Crypto implementation for token encryption/signing.
+// WithCrypto sets the UniCrypto implementation for token encryption/signing.
 // Plugins that need Crypto (authorization, token, introspection, userinfo, revocation)
 // will receive it via PluginContext.
-func WithCrypto(c Crypto) EngineOption {
+func WithCrypto(c UniCrypto) EngineOption {
 	return func(e *Engine) {
 		e.crypto = c
 	}
@@ -173,11 +188,12 @@ func WithDiscoveryConfig(cfg DiscoveryConfig) EngineOption {
 // Use Disable() to prevent specific Standard/Optional plugins from loading.
 func New(storage Storage, issuerFn shared.IssuerFromRequest, opts ...EngineOption) *Engine {
 	e := &Engine{
-		router:   chi.NewRouter(),
-		logger:   slog.Default(),
-		storage:  storage,
-		issuerFn: issuerFn,
-		disabled: make(map[string]bool),
+		router:            chi.NewRouter(),
+		logger:            slog.Default(),
+		storage:           storage,
+		issuerFn:          issuerFn,
+		disabled:          make(map[string]bool),
+		explicitlyEnabled: make(map[string]bool),
 	}
 	for _, opt := range opts {
 		opt(e)
@@ -265,11 +281,10 @@ func (e *Engine) autoRegisterPlugins() {
 	}
 }
 
-// hasExplicitFactory checks if a plugin was explicitly added via WithPlugin.
-// Currently always returns false; can be enhanced to track explicit enables.
+// hasExplicitFactory checks if a plugin was explicitly enabled via Enable().
+// This is used to determine if Optional plugins should be registered.
 func (e *Engine) hasExplicitFactory(name string) bool {
-	// TODO: track explicit enables for optional plugins
-	return false
+	return e.explicitlyEnabled[name]
 }
 
 // Register adds a plugin to the engine.

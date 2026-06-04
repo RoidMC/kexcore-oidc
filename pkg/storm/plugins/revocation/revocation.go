@@ -22,7 +22,7 @@ import (
 type Plugin struct {
 	store       storm.RevocationStore
 	clientStore storm.ClientStore
-	crypto      storm.Crypto
+	crypto      storm.UniCrypto
 	keyStore    protocol.KeyStore
 }
 
@@ -30,7 +30,7 @@ type Plugin struct {
 type Config struct {
 	Store       storm.RevocationStore
 	ClientStore storm.ClientStore
-	Crypto      storm.Crypto
+	Crypto      storm.UniCrypto
 	KeyStore    protocol.KeyStore
 }
 
@@ -172,14 +172,19 @@ func (p *Plugin) authenticateClient(r *http.Request) (string, error) {
 	return clientID, nil
 }
 
+// gmDecryptor is an optional interface for GM/T JWE decryption.
+type gmDecryptor interface {
+	SM2DecryptJWE(ctx context.Context, compact string) ([]byte, error)
+}
+
 // resolveTokenForRevocation resolves an access token to its tokenID and subject.
 // Supports standard decrypted tokens, GM/T JWE tokens, and JWT access tokens.
-func resolveTokenForRevocation(ctx context.Context, crypto storm.Crypto, keyStore protocol.KeyStore, issuer, accessToken string) (tokenID, subject string, ok bool) {
+func resolveTokenForRevocation(ctx context.Context, crypto storm.UniCrypto, keyStore protocol.KeyStore, issuer, accessToken string) (tokenID, subject string, ok bool) {
 	var plaintext []byte
 	var err error
 
 	// Try GM/T JWE decryption first (SM2+SM4-GCM per GM/T 0125.3)
-	if gm, ok := crypto.(storm.GMCrypto); ok {
+	if gm, ok := crypto.(gmDecryptor); ok {
 		plaintext, err = gm.SM2DecryptJWE(ctx, accessToken)
 		if err == nil {
 			return parseTokenParts(plaintext)

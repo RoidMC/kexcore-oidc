@@ -283,47 +283,50 @@ type PARStore interface {
 	GetPushedAuthRequest(ctx context.Context, requestURI string) (*protocol.AuthRequest, error)
 }
 
-// Crypto provides cryptographic operations for token encryption and signing.
+// UniCrypto provides a unified cryptographic interface for all algorithm families.
 //
-// The base Encrypt/Decrypt methods are used for opaque token encryption.
-// The optional GMCrypto interface extends this with GM/T (国密) algorithms.
-type Crypto interface {
-	Encrypt(ctx context.Context, plaintext []byte) ([]byte, error)
-	Decrypt(ctx context.Context, ciphertext []byte) ([]byte, error)
-}
-
-// GMCrypto extends Crypto with GM/T (国密) cryptographic operations.
-// Implementations should use pkg/crypto for the underlying SM2/SM3/SM4/SM9 operations.
+// This interface abstracts away the differences between standard algorithms
+// (RSA, ECDSA, AES, SHA) and Chinese national standards (SM2, SM3, SM4).
+// Implementations can be backed by software libraries or hardware (HSM/KMS).
 //
-// Plugins can check for this interface at construction time:
+// Usage:
 //
-//	if gm, ok := crypto.(storm.GMCrypto); ok { ... }
-type GMCrypto interface {
-	Crypto
+//	crypto.Hash(ctx, "RS256", data)       // SHA-256
+//	crypto.Hash(ctx, "SGD_SM3_SM2", data) // SM3
+//	crypto.Encrypt(ctx, plaintext)         // default encryption
+//	crypto.Sign(ctx, keyID, payload)       // sign with algorithm from key
+type UniCrypto interface {
+	// --- Hash ---
+	// Hash computes the hash of data using the algorithm identified by sigAlgorithm.
+	// The sigAlgorithm parameter follows JWA naming conventions:
+	//   - "RS256", "ES256", "PS256" → SHA-256
+	//   - "RS384", "ES384", "PS384" → SHA-384
+	//   - "RS512", "ES512", "PS512", "EdDSA" → SHA-512
+	//   - "SGD_SM3_SM2", "SGD_SM3_SM9" → SM3
+	// Returns the raw hash bytes (not base64 encoded).
+	Hash(ctx context.Context, sigAlgorithm string, data []byte) ([]byte, error)
 
-	// SM4Encrypt encrypts plaintext using SM4 in the specified mode.
-	// Supported modes: "GCM", "CCM", "CBC".
-	// Returns nonce||ciphertext||tag for AEAD modes, or IV||ciphertext for CBC.
-	SM4Encrypt(ctx context.Context, plaintext []byte, mode string) ([]byte, error)
-
-	// SM4Decrypt decrypts ciphertext using SM4 in the specified mode.
-	SM4Decrypt(ctx context.Context, ciphertext []byte, mode string) ([]byte, error)
-
-	// SM2EncryptJWE encrypts plaintext using SM2+SM4-GCM JWE (GM/T 0125.3).
-	// Returns JWE compact serialization.
-	SM2EncryptJWE(ctx context.Context, plaintext []byte) (string, error)
-
-	// SM2DecryptJWE decrypts an SM2+SM4 JWE compact serialization.
-	SM2DecryptJWE(ctx context.Context, compact string) ([]byte, error)
-
+	// --- Signing ---
 	// Sign signs the payload using the algorithm associated with the given key ID.
 	// Returns the compact JWS serialization.
-	// For SM2, the algorithm is SGD_SM3_SM2; for SM9, SGD_SM3_SM9.
 	Sign(ctx context.Context, keyID string, payload []byte) (string, error)
+
+	// --- Symmetric Encryption ---
+	// Encrypt encrypts plaintext using the configured algorithm.
+	// For standard: AES-GCM. For GM: SM4-GCM.
+	Encrypt(ctx context.Context, plaintext []byte) ([]byte, error)
+
+	// Decrypt decrypts ciphertext using the configured algorithm.
+	Decrypt(ctx context.Context, ciphertext []byte) ([]byte, error)
+
+	// --- Algorithm Query ---
+	// AlgorithmSuite returns the current algorithm suite identifier.
+	// Examples: "RSA+SHA256+AES", "SM2+SM3+SM4", "ECDSA+SHA256+AES"
+	AlgorithmSuite() string
 }
 
 // Signer provides JWT signing capability.
-// This is a simpler alternative to GMCrypto for plugins that only need signing.
+// This is a simpler alternative to UniCrypto for plugins that only need signing.
 type Signer interface {
 	// Sign signs the payload and returns the compact JWS serialization.
 	Sign(ctx context.Context, keyID string, payload []byte) (string, error)

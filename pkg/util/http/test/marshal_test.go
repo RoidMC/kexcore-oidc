@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright Zitadel 
+// Copyright Zitadel
 // Modifications Copyright 2026 RoidMC Studios
 
 package http_test
@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/http"
+	"github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/stretchr/testify/assert"
 )
 

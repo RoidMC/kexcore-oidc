@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
+	crypto_pkg "github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 )
@@ -661,6 +662,30 @@ func (c *TokenCrypto) Decrypt(_ context.Context, ciphertext []byte) ([]byte, err
 func (c *TokenCrypto) EncryptToken(tokenID string) string {
 	encrypted, _ := c.Encrypt(context.Background(), []byte(tokenID))
 	return base64.RawURLEncoding.EncodeToString(encrypted)
+}
+
+// Hash implements storm.UniCrypto.Hash for token hashing (at_hash, c_hash).
+func (c *TokenCrypto) Hash(_ context.Context, sigAlgorithm string, data []byte) ([]byte, error) {
+	// Delegate to crypto_pkg for hash computation
+	h, err := crypto_pkg.GetHashAlgorithm(sigAlgorithm)
+	if err != nil {
+		return nil, err
+	}
+	h.Write(data)
+	return h.Sum(nil), nil
+}
+
+// Sign implements storm.UniCrypto.Sign (not used in this example).
+func (c *TokenCrypto) Sign(_ context.Context, keyID string, payload []byte) (string, error) {
+	return "", fmt.Errorf("signing not supported by example TokenCrypto")
+}
+
+// AlgorithmSuite implements storm.UniCrypto.AlgorithmSuite.
+func (c *TokenCrypto) AlgorithmSuite() string {
+	if c.method == "sm4" {
+		return "SM2+SM3+SM4"
+	}
+	return "RSA+SHA256+AES"
 }
 
 // =================================================================

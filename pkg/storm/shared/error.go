@@ -38,7 +38,22 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error, logger *slog.
 		slog.Int("status_code", statusCode),
 	)
 
-	w.Header().Set("Content-Type", "application/json")
+	// Set WWW-Authenticate header for 401 responses (RFC 6750 §3)
+	if statusCode == http.StatusUnauthorized {
+		realm := ""
+		if r != nil && r.Context() != nil {
+			if issuer := protocol.IssuerFromContext(r.Context()); issuer != "" {
+				realm = issuer
+			}
+		}
+		if realm != "" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="`+realm+`", error="invalid_token"`)
+		} else {
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(oidcErr)
 }

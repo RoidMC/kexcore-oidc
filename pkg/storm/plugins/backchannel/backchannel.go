@@ -23,14 +23,14 @@ import (
 // Plugin implements the OIDC Back-Channel Logout endpoint.
 type Plugin struct {
 	store    storm.BackChannelStore
-	crypto   storm.Crypto
+	crypto   storm.UniCrypto
 	keyStore storm.KeyStore
 }
 
 // Config holds the dependencies for the BackChannel plugin.
 type Config struct {
 	Store    storm.BackChannelStore
-	Crypto   storm.Crypto
+	Crypto   storm.UniCrypto
 	KeyStore storm.KeyStore
 }
 

@@ -22,13 +22,13 @@ types:
 # This list is the single source of truth referenced by CONTRIBUTING.md.
 scopes:
   # Domain areas
-  - oidc   # Shared definitions in pkg/oidc.
-  - op     # OpenID Provider (OP) implementation in pkg/op.
+  - protocol   # Shared definitions in pkg/protocol.
+  - storm     # OpenID Provider (OP) implementation in pkg/storm
   - client # Shared client code in pkg/client.
   - rp     # Relying Party (RP) implementation in pkg/client/rp.
   - rs     # Resource Server (RS) implementation in pkg/client/rs.
   - crypto # Cryptographic utilities in pkg/crypto.
-  - http   # HTTP utilities in pkg/http.
+  - http   # HTTP utilities in pkg/util/http.
   # Miscellaneous
   - build
   - ci

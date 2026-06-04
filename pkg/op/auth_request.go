@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 )
 
 type AuthRequest interface {
@@ -300,33 +300,37 @@ func ValidateAuthReqPrompt(prompts []string, maxAge *uint) (_ *uint, err error) 
 	return maxAge, nil
 }
 
-// Note: check every scopes here currently.
-// Orignal: ValidateAuthReqScopes validates the passed scopes and deletes any unsupported scopes.
-// An error is returned if scopes is empty.
+// ValidateAuthReqScopes validates the passed scopes.
+// Standard OIDC scopes (openid, profile, email, phone, address, offline_access)
+// are allowed by default. For any other scope, IsScopeAllowed is called on the client.
+// Unsupported scopes are silently dropped (lenient mode), rather than returning an error.
+// An error is returned only if no scopes are requested at all.
 func ValidateAuthReqScopes(client Client, scopes []string) ([]string, error) {
 	if len(scopes) == 0 {
 		return nil, protocol.ErrInvalidRequest().
 			WithDescription("The scope of your request is missing. Please ensure some scopes are requested. " +
 				"If you have any questions, you may contact the administrator of the application.")
 	}
+
+	// Filter: keep standard scopes and client-allowed custom scopes.
+	valid := make([]string, 0, len(scopes))
 	for _, scope := range scopes {
-        if !client.IsScopeAllowed(scope) && scope != protocol.ScopeOpenID {
-            return nil, protocol.ErrInvalidScope().WithDescription("scope %s is not allowed for this client", scope)
-        }
-    }
-	// Some merges: I think we should check every scopes is allowed or not, there's no stuff?
-    /*
-	scopes = slices.DeleteFunc(scopes, func(scope string) bool {
-		return !(scope == protocol.ScopeOpenID ||
-			scope == protocol.ScopeProfile ||
-			scope == protocol.ScopeEmail ||
-			scope == protocol.ScopePhone ||
-			scope == protocol.ScopeAddress ||
-			scope == protocol.ScopeOfflineAccess) &&
-			!client.IsScopeAllowed(scope)
-	})
-	*/
-	return scopes, nil
+		switch scope {
+		case protocol.ScopeOpenID,
+			protocol.ScopeProfile,
+			protocol.ScopeEmail,
+			protocol.ScopePhone,
+			protocol.ScopeAddress,
+			protocol.ScopeOfflineAccess:
+			valid = append(valid, scope)
+		default:
+			if client.IsScopeAllowed(scope) {
+				valid = append(valid, scope)
+			}
+			// non-standard, not allowed by client → silently drop (lenient mode)
+		}
+	}
+	return valid, nil
 }
 
 // checkURIAgainstRedirects just checks against the valid redirect URIs and ignores

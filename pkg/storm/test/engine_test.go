@@ -209,3 +209,66 @@ func TestEngineMiddleware(t *testing.T) {
 		t.Error("middleware was not called")
 	}
 }
+
+// --- optional plugin stub ---
+
+type optionalPlugin struct {
+	name string
+}
+
+func (p *optionalPlugin) Name() string { return p.name }
+
+func (p *optionalPlugin) Register(r chi.Router) {
+	r.Get("/"+p.name, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(p.name))
+	})
+}
+
+func (p *optionalPlugin) Category() storm.PluginCategory {
+	return storm.CategoryOptional
+}
+
+func (p *optionalPlugin) Requires() []string {
+	return nil
+}
+
+func TestEngineEnableOptionalPlugin(t *testing.T) {
+	// Register an optional plugin factory
+	storm.RegisterPlugin("test_optional", 9999, func(ctx *storm.PluginContext) storm.Plugin {
+		return &optionalPlugin{name: "test_optional"}
+	})
+
+	t.Run("optional plugin skipped by default", func(t *testing.T) {
+		store := &stubStorage{}
+		engine := storm.New(store, shared.StaticIssuer("https://example.com"))
+		handler := engine.Build()
+
+		req := httptest.NewRequest(http.MethodGet, "/test_optional", nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		// Optional plugin should not be registered, so we get 404
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for optional plugin, got %d", rec.Code)
+		}
+	})
+
+	t.Run("optional plugin enabled via Enable()", func(t *testing.T) {
+		store := &stubStorage{}
+		engine := storm.New(store, shared.StaticIssuer("https://example.com"),
+			storm.Enable("test_optional"))
+		handler := engine.Build()
+
+		req := httptest.NewRequest(http.MethodGet, "/test_optional", nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		// Optional plugin should be registered and accessible
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200 for enabled optional plugin, got %d", rec.Code)
+		}
+		if rec.Body.String() != "test_optional" {
+			t.Errorf("body = %q, want %q", rec.Body.String(), "test_optional")
+		}
+	})
+}

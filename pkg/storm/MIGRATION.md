@@ -14,10 +14,10 @@ pkg/storm/
 │       └── decode_test.go
 ├── shared/
 │   ├── clientauth.go  # 客户端认证辅助（Basic Auth + POST body）
-│   ├── cookie.go      # 安全 Cookie 处理（整合自 pkg/http/cookie.go）
+│   ├── cookie.go      # 安全 Cookie 处理（整合自 pkg/util/http/cookie.go）
 │   ├── error.go       # OIDC 错误响应 + StatusError
 │   ├── issuer.go      # Issuer 注入中间件 + Context 传递
-│   ├── marshal.go     # JSON 序列化 + JSON 合并（整合自 pkg/http/marshal.go）
+│   ├── marshal.go     # JSON 序列化 + JSON 合并（整合自 pkg/util/http/marshal.go）
 │   └── response.go    # JSON/Redirect/NoContent 响应工具
 ├── plugins/
 │   ├── authorization/   # /authorize
@@ -96,8 +96,8 @@ pkg/storm/
 | Component | pkg/op (旧) | pkg/storm (新) | Status | Notes |
 |-----------|-------------|----------------|--------|-------|
 | Client Auth Helper | 内联在各 handler | `shared.ClientAuthHelper` | ✅ | 统一 Basic Auth + POST body |
-| Cookie Handler | `pkg/http/cookie.go` | `shared/cookie.go` | ✅ | 已整合 |
-| JSON Marshal | `pkg/http/marshal.go` | `shared/marshal.go` | ✅ | 已整合 |
+| Cookie Handler | `pkg/util/http/cookie.go` | `shared/cookie.go` | ✅ | 已整合 |
+| JSON Marshal | `pkg/util/http/marshal.go` | `shared/marshal.go` | ✅ | 已整合 |
 | Error Handling | `error.go` | `shared/error.go` | ✅ | StatusError + oidc.Error |
 | Issuer Middleware | `config.go` | `shared/issuer.go` | ✅ | |
 
@@ -199,7 +199,7 @@ Engine (纯路由编排)
 
 ### P3 - Low
 16. **pkg/op 完全移除**：等 storm 完全替代后，删除 `pkg/op` 目录
-17. **pkg/http 清理**：客户端工具（FormRequest, HttpRequest 等）保留在 `pkg/http`，服务端工具已整合到 `storm/shared`
+17. **pkg/util/http 清理**：客户端工具（FormRequest, HttpRequest 等）保留在 `pkg/util/http`，服务端工具已整合到 `storm/shared`
 18. **zitadel/schema 从 go.mod 移除**：等 `pkg/op` 删除后执行 `go mod tidy`
 19. **Mock 清理**：`pkg/op/mock/` 目录在旧架构删除后一并清理
 

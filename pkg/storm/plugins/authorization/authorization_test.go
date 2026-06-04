@@ -1,6 +1,7 @@
 package authorization
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -396,6 +397,40 @@ func TestIsImplicitResponseType(t *testing.T) {
 	assert.True(t, isImplicitResponseType(protocol.ResponseTypeIDTokenOnly))
 	assert.True(t, isImplicitResponseType(protocol.ResponseTypeIDToken))
 	assert.False(t, isImplicitResponseType(protocol.ResponseTypeCode))
+}
+
+// --- hashTokenForIDToken tests ---
+
+func TestHashTokenForIDToken(t *testing.T) {
+	// Test with RS256 (SHA-256)
+	// Per OIDC Core §2: at_hash is the base64url encoding of the left-most
+	// half of the hash of the octets of the ASCII representation of the access_token value.
+	t.Run("RS256 hash", func(t *testing.T) {
+		accessToken := "test-access-token-12345"
+		hash := hashTokenForIDToken(accessToken, "RS256", nil)
+		assert.NotEmpty(t, hash)
+		// The hash should be base64url encoded and non-empty
+		_, err := base64.RawURLEncoding.DecodeString(hash)
+		assert.NoError(t, err, "at_hash should be valid base64url")
+	})
+
+	t.Run("same token same hash", func(t *testing.T) {
+		accessToken := "consistent-token"
+		hash1 := hashTokenForIDToken(accessToken, "RS256", nil)
+		hash2 := hashTokenForIDToken(accessToken, "RS256", nil)
+		assert.Equal(t, hash1, hash2, "same token should produce same hash")
+	})
+
+	t.Run("different tokens different hash", func(t *testing.T) {
+		hash1 := hashTokenForIDToken("token-a", "RS256", nil)
+		hash2 := hashTokenForIDToken("token-b", "RS256", nil)
+		assert.NotEqual(t, hash1, hash2, "different tokens should produce different hashes")
+	})
+
+	t.Run("unsupported algorithm returns empty", func(t *testing.T) {
+		hash := hashTokenForIDToken("token", "UNKNOWN", nil)
+		assert.Empty(t, hash, "unsupported algorithm should return empty string")
+	})
 }
 
 // --- copyRequestObjectToAuthRequest tests ---

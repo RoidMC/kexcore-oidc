@@ -20,10 +20,10 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/roidmc/kexcore-oidc/example/server/storage"
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/op/mock"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
