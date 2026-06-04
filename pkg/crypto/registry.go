@@ -210,7 +210,16 @@ func (sm2VerifyProvider) Verify(ctx context.Context, signingInput, signature []b
 	if !ok {
 		return fmt.Errorf("sm2VerifyProvider: expected *ecdsa.PublicKey, got %T", key)
 	}
-	return VerifySM2JWSSignature(signingInput, signature, pubKey)
+	h, err := GetHashAlgorithm(SGD_SM3_SM2)
+	if err != nil {
+		return fmt.Errorf("error getting SM3 hash: %w", err)
+	}
+	h.Write(signingInput)
+	digest := h.Sum(nil)
+	if !gm.SM2Verify(pubKey, digest, signature) {
+		return fmt.Errorf("SM2 signature verification failed")
+	}
+	return nil
 }
 
 type sm9SignProvider struct{}
@@ -221,12 +230,31 @@ func (sm9SignProvider) Sign(ctx context.Context, keyID string, payload []byte) (
 	return "", fmt.Errorf("sm9SignProvider.Sign not yet implemented: use crypto.NewSigner directly")
 }
 
+// SM9VerifyArgs holds the arguments needed for SM9 signature verification.
+type SM9VerifyArgs struct {
+	MasterPubKey *sm9.SignMasterPublicKey
+	UID          []byte
+}
+
 type sm9VerifyProvider struct{}
 
 func (sm9VerifyProvider) Algorithm() string { return SGD_SM3_SM9 }
 
 func (sm9VerifyProvider) Verify(ctx context.Context, signingInput, signature []byte, key interface{}) error {
-	return fmt.Errorf("sm9VerifyProvider.Verify not yet implemented")
+	args, ok := key.(SM9VerifyArgs)
+	if !ok {
+		return fmt.Errorf("sm9VerifyProvider: expected SM9VerifyArgs, got %T", key)
+	}
+	h, err := GetHashAlgorithm(SGD_SM3_SM9)
+	if err != nil {
+		return fmt.Errorf("error getting SM3 hash: %w", err)
+	}
+	h.Write(signingInput)
+	digest := h.Sum(nil)
+	if !gm.SM9Verify(args.MasterPubKey, args.UID, digest, signature) {
+		return fmt.Errorf("SM9 signature verification failed")
+	}
+	return nil
 }
 
 type sm2JWEProvider struct{}

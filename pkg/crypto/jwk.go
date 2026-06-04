@@ -181,7 +181,7 @@ func ParseSM9SignMasterPublicKey(xBase64, yBase64 string) (*sm9.SignMasterPublic
 func VerifySM9JWSSignature(signingInput []byte, signature []byte, masterPubKey *sm9.SignMasterPublicKey, uid []byte) error {
 	// Check registry first for HSM/KMS override
 	if provider, ok := DefaultRegistry.GetVerifier(SGD_SM3_SM9); ok {
-		return provider.Verify(context.Background(), signingInput, signature, masterPubKey)
+		return provider.Verify(context.Background(), signingInput, signature, SM9VerifyArgs{MasterPubKey: masterPubKey, UID: uid})
 	}
 	// Fallback to built-in gmsm implementation
 	h, err := GetHashAlgorithm(SGD_SM3_SM9)
