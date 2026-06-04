@@ -5,6 +5,7 @@
 package crypto
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -86,7 +87,16 @@ func (s *Signer) Algorithm() string {
 }
 
 // Sign signs the payload and returns the compact serialized JWS.
+// For GM/T algorithms (SM2/SM9), it checks the ProviderRegistry first
+// for HSM/KMS overrides before falling back to built-in gmsm implementation.
 func (s *Signer) Sign(payload []byte) (string, error) {
+	// Check registry for GM/T algorithm overrides (HSM/KMS)
+	if isSM2SignAlgorithm(s.algorithm) || isSM9SignAlgorithm(s.algorithm) {
+		if provider, ok := DefaultRegistry.GetSigner(s.algorithm); ok {
+			return provider.Sign(context.Background(), s.keyID, payload)
+		}
+	}
+
 	if s.sm2Priv != nil {
 		return s.signSM2(payload)
 	}

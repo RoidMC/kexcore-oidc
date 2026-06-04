@@ -12,6 +12,7 @@ import (
 
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
+	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 // SignProvider is the interface for external JWS signing implementations.
@@ -52,23 +53,47 @@ type JWEDecryptProvider interface {
 	Decrypt(ctx context.Context, compact string, key interface{}) ([]byte, error)
 }
 
+// ContentEncryptProvider is the interface for external JWE content encryption implementations.
+// Used for "dir" mode where key wrapping is "dir" and content encryption is the actual algorithm.
+// HSM/KMS vendors can implement this to provide hardware-accelerated content encryption.
+type ContentEncryptProvider interface {
+	// Algorithm returns the JWE content encryption algorithm, e.g. "SGD_SM4_GCM", "A256GCM".
+	Algorithm() string
+	// Encrypt encrypts plaintext with the given key, IV, and AAD.
+	// Returns ciphertext + GCM tag concatenated.
+	Encrypt(ctx context.Context, key, iv, plaintext, aad []byte) ([]byte, error)
+}
+
+// ContentDecryptProvider is the interface for external JWE content decryption implementations.
+type ContentDecryptProvider interface {
+	// Algorithm returns the JWE content encryption algorithm.
+	Algorithm() string
+	// Decrypt decrypts ciphertext with the given key, IV, and AAD.
+	// Input sealed is ciphertext + GCM tag concatenated.
+	Decrypt(ctx context.Context, key, iv, sealed, aad []byte) ([]byte, error)
+}
+
 // ProviderRegistry holds registered cryptographic providers.
 // It is the central dispatch point for algorithm-specific implementations.
 type ProviderRegistry struct {
-	mu        sync.RWMutex
-	signers   map[string]SignProvider
-	verifiers map[string]VerifyProvider
-	jweEnc    map[string]JWEEncryptProvider // keyed by keyAlgorithm
-	jweDec    map[string]JWEDecryptProvider // keyed by keyAlgorithm
+	mu         sync.RWMutex
+	signers    map[string]SignProvider
+	verifiers  map[string]VerifyProvider
+	jweEnc     map[string]JWEEncryptProvider     // keyed by keyAlgorithm
+	jweDec     map[string]JWEDecryptProvider     // keyed by keyAlgorithm
+	contentEnc map[string]ContentEncryptProvider // keyed by content encryption algorithm
+	contentDec map[string]ContentDecryptProvider // keyed by content encryption algorithm
 }
 
 // NewProviderRegistry creates a new empty ProviderRegistry.
 func NewProviderRegistry() *ProviderRegistry {
 	return &ProviderRegistry{
-		signers:   make(map[string]SignProvider),
-		verifiers: make(map[string]VerifyProvider),
-		jweEnc:    make(map[string]JWEEncryptProvider),
-		jweDec:    make(map[string]JWEDecryptProvider),
+		signers:    make(map[string]SignProvider),
+		verifiers:  make(map[string]VerifyProvider),
+		jweEnc:     make(map[string]JWEEncryptProvider),
+		jweDec:     make(map[string]JWEDecryptProvider),
+		contentEnc: make(map[string]ContentEncryptProvider),
+		contentDec: make(map[string]ContentDecryptProvider),
 	}
 }
 
@@ -133,6 +158,36 @@ func (r *ProviderRegistry) GetJWEDecryptor(alg string) (JWEDecryptProvider, bool
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	p, ok := r.jweDec[alg]
+	return p, ok
+}
+
+// RegisterContentEncryptor registers a ContentEncryptProvider for the given content encryption algorithm.
+func (r *ProviderRegistry) RegisterContentEncryptor(alg string, p ContentEncryptProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.contentEnc[alg] = p
+}
+
+// GetContentEncryptor returns the registered ContentEncryptProvider for the content encryption algorithm.
+func (r *ProviderRegistry) GetContentEncryptor(alg string) (ContentEncryptProvider, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	p, ok := r.contentEnc[alg]
+	return p, ok
+}
+
+// RegisterContentDecryptor registers a ContentDecryptProvider for the given content encryption algorithm.
+func (r *ProviderRegistry) RegisterContentDecryptor(alg string, p ContentDecryptProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.contentDec[alg] = p
+}
+
+// GetContentDecryptor returns the registered ContentDecryptProvider for the content encryption algorithm.
+func (r *ProviderRegistry) GetContentDecryptor(alg string) (ContentDecryptProvider, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	p, ok := r.contentDec[alg]
 	return p, ok
 }
 
@@ -257,6 +312,34 @@ func (k *SM9MasterPublicKey) MarshalBinary() ([]byte, error) {
 	return k.PublicKey.MarshalASN1()
 }
 
+// --- built-in content encryption providers ---
+
+type sm4GCMContentProvider struct{}
+
+func (sm4GCMContentProvider) Algorithm() string { return SGD_SM4_GCM }
+
+func (sm4GCMContentProvider) Encrypt(ctx context.Context, key, iv, plaintext, aad []byte) ([]byte, error) {
+	return gm.SM4EncryptGCMWithNonce(key, iv, plaintext, aad)
+}
+
+func (sm4GCMContentProvider) Decrypt(ctx context.Context, key, iv, sealed, aad []byte) ([]byte, error) {
+	return gm.SM4DecryptGCMWithNonce(key, iv, sealed, aad)
+}
+
+type aesGCMContentProvider struct {
+	alg string
+}
+
+func (p aesGCMContentProvider) Algorithm() string { return p.alg }
+
+func (aesGCMContentProvider) Encrypt(ctx context.Context, key, iv, plaintext, aad []byte) ([]byte, error) {
+	return AESGCMEncrypt(key, iv, plaintext, aad)
+}
+
+func (aesGCMContentProvider) Decrypt(ctx context.Context, key, iv, sealed, aad []byte) ([]byte, error) {
+	return AESGCMDecrypt(key, iv, sealed, aad)
+}
+
 func init() {
 	DefaultRegistry.RegisterSigner(SGD_SM3_SM2, sm2SignProvider{})
 	DefaultRegistry.RegisterSigner(SGD_SM3_SM9, sm9SignProvider{})
@@ -266,4 +349,10 @@ func init() {
 	DefaultRegistry.RegisterJWEEncryptor(SGD_SM9_3, sm9JWEProvider{})
 	DefaultRegistry.RegisterJWEDecryptor(SGD_SM2_3, sm2JWEProvider{})
 	DefaultRegistry.RegisterJWEDecryptor(SGD_SM9_3, sm9JWEProvider{})
+	DefaultRegistry.RegisterContentEncryptor(SGD_SM4_GCM, sm4GCMContentProvider{})
+	DefaultRegistry.RegisterContentDecryptor(SGD_SM4_GCM, sm4GCMContentProvider{})
+	DefaultRegistry.RegisterContentEncryptor("A256GCM", aesGCMContentProvider{alg: "A256GCM"})
+	DefaultRegistry.RegisterContentDecryptor("A256GCM", aesGCMContentProvider{alg: "A256GCM"})
+	DefaultRegistry.RegisterContentEncryptor("A128GCM", aesGCMContentProvider{alg: "A128GCM"})
+	DefaultRegistry.RegisterContentDecryptor("A128GCM", aesGCMContentProvider{alg: "A128GCM"})
 }

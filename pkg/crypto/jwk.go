@@ -5,6 +5,7 @@
 package crypto
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"encoding/base64"
@@ -59,6 +60,11 @@ func NewSM2JWK(pubKey *ecdsa.PublicKey, kid, use string) SM2JWK {
 //   - signature: the raw signature bytes from the JWS
 //   - pubKey: the SM2 public key for verification
 func VerifySM2JWSSignature(signingInput []byte, signature []byte, pubKey *ecdsa.PublicKey) error {
+	// Check registry first for HSM/KMS override
+	if provider, ok := DefaultRegistry.GetVerifier(SGD_SM3_SM2); ok {
+		return provider.Verify(context.Background(), signingInput, signature, pubKey)
+	}
+	// Fallback to built-in gmsm implementation
 	h, err := GetHashAlgorithm(SGD_SM3_SM2)
 	if err != nil {
 		return fmt.Errorf("error getting SM3 hash: %w", err)
@@ -173,6 +179,11 @@ func ParseSM9SignMasterPublicKey(xBase64, yBase64 string) (*sm9.SignMasterPublic
 //   - masterPubKey: the SM9 signing master public key
 //   - uid: the user identifier used to derive the signing key
 func VerifySM9JWSSignature(signingInput []byte, signature []byte, masterPubKey *sm9.SignMasterPublicKey, uid []byte) error {
+	// Check registry first for HSM/KMS override
+	if provider, ok := DefaultRegistry.GetVerifier(SGD_SM3_SM9); ok {
+		return provider.Verify(context.Background(), signingInput, signature, masterPubKey)
+	}
+	// Fallback to built-in gmsm implementation
 	h, err := GetHashAlgorithm(SGD_SM3_SM9)
 	if err != nil {
 		return fmt.Errorf("error getting SM3 hash: %w", err)

@@ -10,8 +10,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-
-	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 var (
@@ -98,7 +96,19 @@ func EncryptSM4(data string, key string) (string, error) {
 }
 
 func EncryptBytesSM4(plainText []byte, key string) ([]byte, error) {
-	return gm.SM4EncryptGCM([]byte(key), plainText, nil)
+	symKey := []byte(key)
+	iv := make([]byte, AESGCMNonceSize)
+	if _, err := rand.Read(iv); err != nil {
+		return nil, err
+	}
+	sealed, err := DispatchContentEncrypt(SGD_SM4_GCM, symKey, iv, plainText, nil)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]byte, AESGCMNonceSize+len(sealed))
+	copy(result[:AESGCMNonceSize], iv)
+	copy(result[AESGCMNonceSize:], sealed)
+	return result, nil
 }
 
 func DecryptSM4(data string, key string) (string, error) {
@@ -114,5 +124,11 @@ func DecryptSM4(data string, key string) (string, error) {
 }
 
 func DecryptBytesSM4(cipherText []byte, key string) ([]byte, error) {
-	return gm.SM4DecryptGCM([]byte(key), cipherText, nil)
+	symKey := []byte(key)
+	if len(cipherText) < AESGCMNonceSize {
+		return nil, ErrCipherTextTooShort
+	}
+	iv := cipherText[:AESGCMNonceSize]
+	sealed := cipherText[AESGCMNonceSize:]
+	return DispatchContentDecrypt(SGD_SM4_GCM, symKey, iv, sealed, nil)
 }

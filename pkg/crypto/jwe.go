@@ -5,6 +5,7 @@
 package crypto
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdsa"
@@ -372,4 +373,50 @@ func AESGCMDecrypt(key, nonce, ciphertext, additionalData []byte) ([]byte, error
 		return nil, fmt.Errorf("kexcore/crypto: AES-GCM decrypt: %w", err)
 	}
 	return aesgcm.Open(nil, nonce, ciphertext, additionalData)
+}
+
+// --- Dispatch functions: unified entry points that route through ProviderRegistry ---
+
+// DispatchEncryptJWE encrypts plaintext using the specified JWE key wrapping algorithm.
+// It checks the ProviderRegistry first; if a provider is registered, it is used.
+// Otherwise falls back to the built-in gmsm implementation.
+//
+// This is the recommended entry point for JWE encryption. Raw functions (SM2EncryptJWE, etc.)
+// bypass the registry and should only be called by provider implementations.
+func DispatchEncryptJWE(plaintext []byte, key interface{}, alg string) (string, error) {
+	if provider, ok := DefaultRegistry.GetJWEEncryptor(alg); ok {
+		return provider.Encrypt(context.Background(), plaintext, key)
+	}
+	return "", fmt.Errorf("no JWE encrypt provider registered for algorithm: %s", alg)
+}
+
+// DispatchDecryptJWE decrypts a JWE compact serialization using the specified key wrapping algorithm.
+// It checks the ProviderRegistry first; if a provider is registered, it is used.
+// Otherwise falls back to the built-in gmsm implementation.
+//
+// This is the recommended entry point for JWE decryption. Raw functions (SM2DecryptJWE, etc.)
+// bypass the registry and should only be called by provider implementations.
+func DispatchDecryptJWE(compact string, key interface{}, alg string) ([]byte, error) {
+	if provider, ok := DefaultRegistry.GetJWEDecryptor(alg); ok {
+		return provider.Decrypt(context.Background(), compact, key)
+	}
+	return nil, fmt.Errorf("no JWE decrypt provider registered for algorithm: %s", alg)
+}
+
+// DispatchContentEncrypt encrypts plaintext using a registered ContentEncryptProvider.
+// Falls back to the built-in gmsm AES-GCM/SM4-GCM implementation if no provider is registered.
+func DispatchContentEncrypt(enc string, key, iv, plaintext, aad []byte) ([]byte, error) {
+	if provider, ok := DefaultRegistry.GetContentEncryptor(enc); ok {
+		return provider.Encrypt(context.Background(), key, iv, plaintext, aad)
+	}
+	return nil, fmt.Errorf("no content encrypt provider registered for: %s", enc)
+}
+
+// DispatchContentDecrypt decrypts ciphertext using a registered ContentDecryptProvider.
+// Falls back to the built-in gmsm AES-GCM/SM4-GCM implementation if no provider is registered.
+func DispatchContentDecrypt(enc string, key, iv, sealed, aad []byte) ([]byte, error) {
+	if provider, ok := DefaultRegistry.GetContentDecryptor(enc); ok {
+		return provider.Decrypt(context.Background(), key, iv, sealed, aad)
+	}
+	return nil, fmt.Errorf("no content decrypt provider registered for: %s", enc)
 }

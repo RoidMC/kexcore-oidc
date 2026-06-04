@@ -17,7 +17,6 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwe"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	crypto_gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 // SM9EncryptKey is the protocol-layer interface for SM9 encryption keys.
@@ -52,18 +51,11 @@ type JWEService interface {
 }
 
 // EncryptTokenJWE encrypts a signed JWT using the specified JWE algorithm.
-// It dispatches to the crypto provider registry for GM/T algorithms,
-// and handles standard algorithms (dir, A256GCMKW) locally.
-//
-// This function replaces the previous EncryptTokenSM2/EncryptTokenSM9 functions,
-// providing a single entry point for all JWE encryption.
+// All algorithms dispatch through the crypto ProviderRegistry for unified HSM/KMS support.
 func EncryptTokenJWE(signedToken string, key interface{}, alg, enc string) (string, error) {
 	switch alg {
 	case JWEAlgSM23, JWEAlgSM93:
-		if provider, ok := crypto.DefaultRegistry.GetJWEEncryptor(alg); ok {
-			return provider.Encrypt(context.Background(), []byte(signedToken), key)
-		}
-		return "", fmt.Errorf("no JWE encrypt provider registered for algorithm: %s", alg)
+		return crypto.DispatchEncryptJWE([]byte(signedToken), key, alg)
 
 	case JWEAlgDir:
 		return encryptTokenDir(signedToken, key, enc)
@@ -77,8 +69,7 @@ func EncryptTokenJWE(signedToken string, key interface{}, alg, enc string) (stri
 }
 
 // DecryptTokenJWE decrypts a JWE compact serialization.
-// It dispatches to the crypto provider registry for GM/T algorithms,
-// and handles standard algorithms locally.
+// All algorithms dispatch through the crypto ProviderRegistry for unified HSM/KMS support.
 func DecryptTokenJWE(compact string, key interface{}) ([]byte, error) {
 	parts := strings.Split(compact, ".")
 	if len(parts) == 3 {
@@ -102,10 +93,7 @@ func DecryptTokenJWE(compact string, key interface{}) ([]byte, error) {
 
 	switch hdr.Alg {
 	case JWEAlgSM23, JWEAlgSM93:
-		if provider, ok := crypto.DefaultRegistry.GetJWEDecryptor(hdr.Alg); ok {
-			return provider.Decrypt(context.Background(), compact, key)
-		}
-		return nil, fmt.Errorf("no JWE decrypt provider registered for algorithm: %s", hdr.Alg)
+		return crypto.DispatchDecryptJWE(compact, key, hdr.Alg)
 
 	case JWEAlgDir:
 		symKey, ok := key.([]byte)
@@ -143,18 +131,17 @@ func encryptTokenDir(payload string, key interface{}, enc string) (string, error
 	if _, err := rand.Read(iv); err != nil {
 		return "", err
 	}
-	var sealed []byte
-	switch enc {
-	case JWEEncSM4GCM:
-		sealed, err = crypto_gm.SM4EncryptGCMWithNonce(symKey, iv, []byte(payload), []byte(headerB64))
-	case JWEEncA128GCM, JWEEncA256GCM:
-		sealed, err = crypto.AESGCMEncrypt(symKey, iv, []byte(payload), []byte(headerB64))
-	default:
-		return "", fmt.Errorf("unsupported JWE content encryption: %s", enc)
+
+	// Dispatch through registry for unified algorithm support
+	provider, ok := crypto.DefaultRegistry.GetContentEncryptor(enc)
+	if !ok {
+		return "", fmt.Errorf("no content encrypt provider registered for: %s", enc)
 	}
+	sealed, err := provider.Encrypt(context.Background(), symKey, iv, []byte(payload), []byte(headerB64))
 	if err != nil {
 		return "", err
 	}
+
 	tagSize := 16
 	if len(sealed) < tagSize {
 		return "", errors.New("encryption output too short")
@@ -187,22 +174,13 @@ func decryptDirMode(compact string, key []byte, enc string) ([]byte, error) {
 	}
 	sealed := append(ciphertext, tag...)
 	aad := []byte(parts[0])
-	switch enc {
-	case JWEEncSM4GCM:
-		plaintext, err := crypto_gm.SM4DecryptGCMWithNonce(key, iv, sealed, aad)
-		if err != nil {
-			return nil, fmt.Errorf("sm4-gcm decrypt failed: %w", err)
-		}
-		return plaintext, nil
-	case JWEEncA128GCM, JWEEncA256GCM:
-		plaintext, err := crypto.AESGCMDecrypt(key, iv, sealed, aad)
-		if err != nil {
-			return nil, fmt.Errorf("aes-gcm decrypt failed: %w", err)
-		}
-		return plaintext, nil
-	default:
-		return nil, fmt.Errorf("unsupported JWE content encryption: %s", enc)
+
+	// Dispatch through registry for unified algorithm support
+	provider, ok := crypto.DefaultRegistry.GetContentDecryptor(enc)
+	if !ok {
+		return nil, fmt.Errorf("no content decrypt provider registered for: %s", enc)
 	}
+	return provider.Decrypt(context.Background(), key, iv, sealed, aad)
 }
 
 // decryptAESGCMKW decrypts a JWE using A256GCMKW key wrapping.
