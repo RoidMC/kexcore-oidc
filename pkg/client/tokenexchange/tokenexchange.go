@@ -8,8 +8,8 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 )
 
 type TokenExchanger interface {

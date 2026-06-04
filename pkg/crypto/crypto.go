@@ -10,6 +10,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+
+	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 var (
@@ -96,7 +98,7 @@ func EncryptSM4(data string, key string) (string, error) {
 }
 
 func EncryptBytesSM4(plainText []byte, key string) ([]byte, error) {
-	return SM4EncryptGCM([]byte(key), plainText, nil)
+	return gm.SM4EncryptGCM([]byte(key), plainText, nil)
 }
 
 func DecryptSM4(data string, key string) (string, error) {
@@ -112,5 +114,5 @@ func DecryptSM4(data string, key string) (string, error) {
 }
 
 func DecryptBytesSM4(cipherText []byte, key string) ([]byte, error) {
-	return SM4DecryptGCM([]byte(key), cipherText, nil)
+	return gm.SM4DecryptGCM([]byte(key), cipherText, nil)
 }

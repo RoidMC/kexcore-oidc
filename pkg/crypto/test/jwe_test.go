@@ -12,10 +12,11 @@ import (
 	"testing"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 func TestSM2EncryptDecryptJWE_RoundTrip(t *testing.T) {
-	privateKey, err := crypto.SM2GenerateKey()
+	privateKey, err := gm.SM2GenerateKey()
 	if err != nil {
 		t.Fatalf("SM2GenerateKey failed: %v", err)
 	}
@@ -41,7 +42,7 @@ func TestSM2EncryptDecryptJWE_RoundTrip(t *testing.T) {
 }
 
 func TestSM2EncryptDecryptJWE_CompactFormat(t *testing.T) {
-	privateKey, _ := crypto.SM2GenerateKey()
+	privateKey, _ := gm.SM2GenerateKey()
 	plaintext := []byte("format validation")
 
 	compact, err := crypto.SM2EncryptJWE(&privateKey.PublicKey, plaintext)
@@ -88,7 +89,7 @@ func TestSM2EncryptDecryptJWE_CompactFormat(t *testing.T) {
 }
 
 func TestSM2EncryptDecryptJWE_EmptyPayload(t *testing.T) {
-	privateKey, _ := crypto.SM2GenerateKey()
+	privateKey, _ := gm.SM2GenerateKey()
 	plaintext := []byte{}
 
 	compact, err := crypto.SM2EncryptJWE(&privateKey.PublicKey, plaintext)
@@ -107,7 +108,7 @@ func TestSM2EncryptDecryptJWE_EmptyPayload(t *testing.T) {
 }
 
 func TestSM2EncryptDecryptJWE_Randomness(t *testing.T) {
-	privateKey, _ := crypto.SM2GenerateKey()
+	privateKey, _ := gm.SM2GenerateKey()
 	plaintext := []byte("randomness test")
 
 	compacts := make(map[string]bool)
@@ -132,7 +133,7 @@ func TestSM2EncryptDecryptJWE_Randomness(t *testing.T) {
 }
 
 func TestSM2DecryptJWE_InvalidCompact(t *testing.T) {
-	privateKey, _ := crypto.SM2GenerateKey()
+	privateKey, _ := gm.SM2GenerateKey()
 
 	tests := []struct {
 		name    string
@@ -156,8 +157,8 @@ func TestSM2DecryptJWE_InvalidCompact(t *testing.T) {
 }
 
 func TestSM2DecryptJWE_WrongKey(t *testing.T) {
-	privateKey1, _ := crypto.SM2GenerateKey()
-	privateKey2, _ := crypto.SM2GenerateKey()
+	privateKey1, _ := gm.SM2GenerateKey()
+	privateKey2, _ := gm.SM2GenerateKey()
 	plaintext := []byte("wrong key test")
 
 	compact, err := crypto.SM2EncryptJWE(&privateKey1.PublicKey, plaintext)
@@ -172,7 +173,7 @@ func TestSM2DecryptJWE_WrongKey(t *testing.T) {
 }
 
 func TestSM2DecryptJWE_TamperedCiphertext(t *testing.T) {
-	privateKey, _ := crypto.SM2GenerateKey()
+	privateKey, _ := gm.SM2GenerateKey()
 	plaintext := []byte("tamper test")
 
 	compact, err := crypto.SM2EncryptJWE(&privateKey.PublicKey, plaintext)
@@ -196,7 +197,7 @@ func TestSM2DecryptJWE_TamperedCiphertext(t *testing.T) {
 }
 
 func TestSM2EncryptDecryptJWE_LargePayload(t *testing.T) {
-	privateKey, _ := crypto.SM2GenerateKey()
+	privateKey, _ := gm.SM2GenerateKey()
 	plaintext := make([]byte, 1024*10)
 	for i := range plaintext {
 		plaintext[i] = byte(i % 256)
@@ -218,7 +219,7 @@ func TestSM2EncryptDecryptJWE_LargePayload(t *testing.T) {
 }
 
 func TestSM2EncryptDecryptJWE_UnicodePayload(t *testing.T) {
-	privateKey, _ := crypto.SM2GenerateKey()
+	privateKey, _ := gm.SM2GenerateKey()
 	plaintext := []byte("你好，世界！国密 SM2/SM4 JWE 加解密测试")
 
 	compact, err := crypto.SM2EncryptJWE(&privateKey.PublicKey, plaintext)
@@ -239,13 +240,13 @@ func TestSM2EncryptDecryptJWE_UnicodePayload(t *testing.T) {
 // --- SM9 JWE tests ---
 
 func TestSM9EncryptDecryptJWE_GCM(t *testing.T) {
-	masterKey, err := crypto.SM9GenerateEncryptMasterKey()
+	masterKey, err := gm.SM9GenerateEncryptMasterKey()
 	if err != nil {
 		t.Fatalf("SM9GenerateEncryptMasterKey failed: %v", err)
 	}
 
 	uid := []byte("testuser@example.com")
-	userKey, err := crypto.SM9GenerateEncryptUserKey(masterKey, uid)
+	userKey, err := gm.SM9GenerateEncryptUserKey(masterKey, uid)
 	if err != nil {
 		t.Fatalf("SM9GenerateEncryptUserKey failed: %v", err)
 	}
@@ -268,13 +269,13 @@ func TestSM9EncryptDecryptJWE_GCM(t *testing.T) {
 }
 
 func TestSM9EncryptDecryptJWE_CCM(t *testing.T) {
-	masterKey, err := crypto.SM9GenerateEncryptMasterKey()
+	masterKey, err := gm.SM9GenerateEncryptMasterKey()
 	if err != nil {
 		t.Fatalf("SM9GenerateEncryptMasterKey failed: %v", err)
 	}
 
 	uid := []byte("testuser@example.com")
-	userKey, err := crypto.SM9GenerateEncryptUserKey(masterKey, uid)
+	userKey, err := gm.SM9GenerateEncryptUserKey(masterKey, uid)
 	if err != nil {
 		t.Fatalf("SM9GenerateEncryptUserKey failed: %v", err)
 	}
@@ -297,9 +298,9 @@ func TestSM9EncryptDecryptJWE_CCM(t *testing.T) {
 }
 
 func TestSM9EncryptDecryptJWE_DefaultEnc(t *testing.T) {
-	masterKey, _ := crypto.SM9GenerateEncryptMasterKey()
+	masterKey, _ := gm.SM9GenerateEncryptMasterKey()
 	uid := []byte("defaultuser")
-	userKey, _ := crypto.SM9GenerateEncryptUserKey(masterKey, uid)
+	userKey, _ := gm.SM9GenerateEncryptUserKey(masterKey, uid)
 
 	plaintext := []byte("default enc test")
 
@@ -335,10 +336,10 @@ func TestSM9EncryptDecryptJWE_DefaultEnc(t *testing.T) {
 }
 
 func TestSM9EncryptDecryptJWE_WrongUID(t *testing.T) {
-	masterKey, _ := crypto.SM9GenerateEncryptMasterKey()
+	masterKey, _ := gm.SM9GenerateEncryptMasterKey()
 	uid := []byte("alice@example.com")
 	wrongUID := []byte("bob@example.com")
-	userKey, _ := crypto.SM9GenerateEncryptUserKey(masterKey, uid)
+	userKey, _ := gm.SM9GenerateEncryptUserKey(masterKey, uid)
 
 	plaintext := []byte("wrong uid test")
 
@@ -355,7 +356,7 @@ func TestSM9EncryptDecryptJWE_WrongUID(t *testing.T) {
 }
 
 func TestSM9EncryptDecryptJWE_CompactFormat(t *testing.T) {
-	masterKey, _ := crypto.SM9GenerateEncryptMasterKey()
+	masterKey, _ := gm.SM9GenerateEncryptMasterKey()
 	uid := []byte("formatuser")
 
 	compact, err := crypto.SM9EncryptJWE(masterKey.PublicKey(), uid, crypto.SGD_SM4_CCM, []byte("format test"))
@@ -384,9 +385,9 @@ func TestSM9EncryptDecryptJWE_CompactFormat(t *testing.T) {
 }
 
 func TestSM9EncryptDecryptJWE_EmptyPayload(t *testing.T) {
-	masterKey, _ := crypto.SM9GenerateEncryptMasterKey()
+	masterKey, _ := gm.SM9GenerateEncryptMasterKey()
 	uid := []byte("emptyuser")
-	userKey, _ := crypto.SM9GenerateEncryptUserKey(masterKey, uid)
+	userKey, _ := gm.SM9GenerateEncryptUserKey(masterKey, uid)
 
 	compact, err := crypto.SM9EncryptJWE(masterKey.PublicKey(), uid, crypto.SGD_SM4_GCM, []byte{})
 	if err != nil {
@@ -561,7 +562,7 @@ func TestAESGCMEncrypt_InvalidKeyLength(t *testing.T) {
 // --- SM9 unsupported enc tests ---
 
 func TestSM9EncryptJWE_UnsupportedEnc(t *testing.T) {
-	masterKey, _ := crypto.SM9GenerateEncryptMasterKey()
+	masterKey, _ := gm.SM9GenerateEncryptMasterKey()
 	uid := []byte("unsupporteduser")
 
 	_, err := crypto.SM9EncryptJWE(masterKey.PublicKey(), uid, "UNKNOWN_ENC", []byte("test"))
@@ -571,9 +572,9 @@ func TestSM9EncryptJWE_UnsupportedEnc(t *testing.T) {
 }
 
 func TestSM9DecryptJWE_UnsupportedEnc(t *testing.T) {
-	masterKey, _ := crypto.SM9GenerateEncryptMasterKey()
+	masterKey, _ := gm.SM9GenerateEncryptMasterKey()
 	uid := []byte("unsupporteduser")
-	userKey, _ := crypto.SM9GenerateEncryptUserKey(masterKey, uid)
+	userKey, _ := gm.SM9GenerateEncryptUserKey(masterKey, uid)
 
 	// Craft a JWE with unsupported enc
 	header := struct {
@@ -597,7 +598,7 @@ func TestSM9DecryptJWE_UnsupportedEnc(t *testing.T) {
 // --- SM2 header mismatch tests ---
 
 func TestSM2DecryptJWE_HeaderMismatch(t *testing.T) {
-	privateKey, _ := crypto.SM2GenerateKey()
+	privateKey, _ := gm.SM2GenerateKey()
 
 	// Craft a JWE with wrong alg header
 	header := struct {
@@ -619,9 +620,9 @@ func TestSM2DecryptJWE_HeaderMismatch(t *testing.T) {
 }
 
 func TestSM9DecryptJWE_HeaderMismatch(t *testing.T) {
-	masterKey, _ := crypto.SM9GenerateEncryptMasterKey()
+	masterKey, _ := gm.SM9GenerateEncryptMasterKey()
 	uid := []byte("mismatchuser")
-	userKey, _ := crypto.SM9GenerateEncryptUserKey(masterKey, uid)
+	userKey, _ := gm.SM9GenerateEncryptUserKey(masterKey, uid)
 
 	// Craft a JWE with wrong alg header
 	header := struct {
@@ -645,7 +646,7 @@ func TestSM9DecryptJWE_HeaderMismatch(t *testing.T) {
 // --- ParseJWECompact tests ---
 
 func TestParseJWECompact_Valid(t *testing.T) {
-	privateKey, _ := crypto.SM2GenerateKey()
+	privateKey, _ := gm.SM2GenerateKey()
 	compact, _ := crypto.SM2EncryptJWE(&privateKey.PublicKey, []byte("parse test"))
 
 	parts, header, err := crypto.ParseJWECompact(compact)

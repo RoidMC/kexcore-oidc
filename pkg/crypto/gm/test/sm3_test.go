@@ -8,12 +8,12 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 func TestSM3Hash(t *testing.T) {
 	data := []byte("test message")
-	hash := crypto.SM3Hash(data)
+	hash := gm.SM3Hash(data)
 
 	if len(hash) != 32 {
 		t.Errorf("expected hash length 32, got %d", len(hash))
@@ -22,7 +22,7 @@ func TestSM3Hash(t *testing.T) {
 
 func TestSM3HashHex(t *testing.T) {
 	data := []byte("test message")
-	hashHex := crypto.SM3HashHex(data)
+	hashHex := gm.SM3HashHex(data)
 
 	if len(hashHex) != 64 {
 		t.Errorf("expected hex hash length 64, got %d", len(hashHex))
@@ -36,7 +36,7 @@ func TestSM3HashHex(t *testing.T) {
 
 func TestSM3HashString(t *testing.T) {
 	data := "test message"
-	hash := crypto.SM3HashString(data)
+	hash := gm.SM3HashString(data)
 
 	if len(hash) != 32 {
 		t.Errorf("expected hash length 32, got %d", len(hash))
@@ -45,7 +45,7 @@ func TestSM3HashString(t *testing.T) {
 
 func TestSM3HashStringHex(t *testing.T) {
 	data := "test message"
-	hashHex := crypto.SM3HashStringHex(data)
+	hashHex := gm.SM3HashStringHex(data)
 
 	if len(hashHex) != 64 {
 		t.Errorf("expected hex hash length 64, got %d", len(hashHex))
@@ -54,7 +54,7 @@ func TestSM3HashStringHex(t *testing.T) {
 
 func TestSM3Sum(t *testing.T) {
 	data := []byte("test message")
-	hash := crypto.SM3Sum(data)
+	hash := gm.SM3Sum(data)
 
 	if len(hash) != 32 {
 		t.Errorf("expected hash length 32, got %d", len(hash))
@@ -64,14 +64,14 @@ func TestSM3Sum(t *testing.T) {
 func TestSM3Consistency(t *testing.T) {
 	data := []byte("test message")
 
-	hash1 := crypto.SM3Hash(data)
-	hash2 := crypto.SM3Hash(data)
+	hash1 := gm.SM3Hash(data)
+	hash2 := gm.SM3Hash(data)
 
 	if string(hash1) != string(hash2) {
 		t.Error("same input should produce same hash")
 	}
 
-	hash3 := crypto.SM3Sum(data)
+	hash3 := gm.SM3Sum(data)
 	if string(hash1) != string(hash3[:]) {
 		t.Error("SM3Hash and SM3Sum should produce same result")
 	}
@@ -80,7 +80,7 @@ func TestSM3Consistency(t *testing.T) {
 func TestSM3EmptyInput(t *testing.T) {
 	empty := []byte{}
 
-	hash := crypto.SM3Hash(empty)
+	hash := gm.SM3Hash(empty)
 	if len(hash) != 32 {
 		t.Errorf("expected hash length 32 for empty input, got %d", len(hash))
 	}
@@ -95,7 +95,7 @@ func TestSM3KnownVectors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		hashHex := crypto.SM3HashStringHex(tt.input)
+		hashHex := gm.SM3HashStringHex(tt.input)
 		if hashHex != tt.expected {
 			t.Errorf("SM3(%q) = %s, want %s", tt.input, hashHex, tt.expected)
 		}
@@ -103,7 +103,7 @@ func TestSM3KnownVectors(t *testing.T) {
 }
 
 func TestSM3Struct(t *testing.T) {
-	h := crypto.NewSM3()
+	h := gm.NewSM3()
 
 	h.Write([]byte("test"))
 	h.Write([]byte(" "))
@@ -124,7 +124,7 @@ func TestSM3Struct(t *testing.T) {
 }
 
 func TestSM3Size(t *testing.T) {
-	h := crypto.NewSM3()
+	h := gm.NewSM3()
 
 	if h.Size() != 32 {
 		t.Errorf("expected size 32, got %d", h.Size())
@@ -132,7 +132,7 @@ func TestSM3Size(t *testing.T) {
 }
 
 func TestSM3BlockSize(t *testing.T) {
-	h := crypto.NewSM3()
+	h := gm.NewSM3()
 
 	if h.BlockSize() != 64 {
 		t.Errorf("expected block size 64, got %d", h.BlockSize())
@@ -140,7 +140,7 @@ func TestSM3BlockSize(t *testing.T) {
 }
 
 func TestSM3WriteReturn(t *testing.T) {
-	h := crypto.NewSM3()
+	h := gm.NewSM3()
 	data := []byte("test message")
 
 	n, err := h.Write(data)
@@ -153,7 +153,7 @@ func TestSM3WriteReturn(t *testing.T) {
 }
 
 func TestSM3SumWithPrefix(t *testing.T) {
-	h := crypto.NewSM3()
+	h := gm.NewSM3()
 	h.Write([]byte("test"))
 
 	prefix := []byte("prefix:")
@@ -174,7 +174,7 @@ func TestSM3LongInput(t *testing.T) {
 		data[i] = byte(i % 256)
 	}
 
-	hash := crypto.SM3Hash(data)
+	hash := gm.SM3Hash(data)
 	if len(hash) != 32 {
 		t.Errorf("expected hash length 32, got %d", len(hash))
 	}
@@ -186,7 +186,7 @@ func TestSM3HMAC(t *testing.T) {
 	key := []byte("test-hmac-key")
 	data := []byte("test message for SM3-HMAC")
 
-	mac := crypto.SM3HMAC(key, data)
+	mac := gm.SM3HMAC(key, data)
 	if len(mac) != 32 {
 		t.Errorf("expected HMAC length 32, got %d", len(mac))
 	}
@@ -196,7 +196,7 @@ func TestSM3HMACHex(t *testing.T) {
 	key := []byte("test-hmac-key")
 	data := []byte("test message")
 
-	macHex := crypto.SM3HMACHex(key, data)
+	macHex := gm.SM3HMACHex(key, data)
 	if len(macHex) != 64 {
 		t.Errorf("expected hex HMAC length 64, got %d", len(macHex))
 	}
@@ -211,8 +211,8 @@ func TestSM3HMACConsistency(t *testing.T) {
 	key := []byte("test-hmac-key")
 	data := []byte("test message")
 
-	mac1 := crypto.SM3HMAC(key, data)
-	mac2 := crypto.SM3HMAC(key, data)
+	mac1 := gm.SM3HMAC(key, data)
+	mac2 := gm.SM3HMAC(key, data)
 
 	if string(mac1) != string(mac2) {
 		t.Error("same key and data should produce same HMAC")
@@ -223,24 +223,24 @@ func TestSM3HMACVerify(t *testing.T) {
 	key := []byte("test-hmac-key")
 	data := []byte("test message")
 
-	mac := crypto.SM3HMAC(key, data)
+	mac := gm.SM3HMAC(key, data)
 
-	if !crypto.SM3HMACVerify(key, data, mac) {
+	if !gm.SM3HMACVerify(key, data, mac) {
 		t.Error("HMAC verification should succeed with correct key and data")
 	}
 
-	if crypto.SM3HMACVerify([]byte("wrong-key"), data, mac) {
+	if gm.SM3HMACVerify([]byte("wrong-key"), data, mac) {
 		t.Error("HMAC verification should fail with wrong key")
 	}
 
-	if crypto.SM3HMACVerify(key, []byte("wrong-data"), mac) {
+	if gm.SM3HMACVerify(key, []byte("wrong-data"), mac) {
 		t.Error("HMAC verification should fail with wrong data")
 	}
 
 	tamperedMAC := make([]byte, len(mac))
 	copy(tamperedMAC, mac)
 	tamperedMAC[0] ^= 0xff
-	if crypto.SM3HMACVerify(key, data, tamperedMAC) {
+	if gm.SM3HMACVerify(key, data, tamperedMAC) {
 		t.Error("HMAC verification should fail with tampered MAC")
 	}
 }
@@ -250,8 +250,8 @@ func TestSM3HMACDifferentKeys(t *testing.T) {
 	key1 := []byte("key-1")
 	key2 := []byte("key-2")
 
-	mac1 := crypto.SM3HMAC(key1, data)
-	mac2 := crypto.SM3HMAC(key2, data)
+	mac1 := gm.SM3HMAC(key1, data)
+	mac2 := gm.SM3HMAC(key2, data)
 
 	if string(mac1) == string(mac2) {
 		t.Error("different keys should produce different HMACs")
@@ -261,7 +261,7 @@ func TestSM3HMACDifferentKeys(t *testing.T) {
 func TestSM3HMACEmptyInput(t *testing.T) {
 	key := []byte("test-hmac-key")
 
-	mac := crypto.SM3HMAC(key, []byte{})
+	mac := gm.SM3HMAC(key, []byte{})
 	if len(mac) != 32 {
 		t.Errorf("expected HMAC length 32 for empty input, got %d", len(mac))
 	}

@@ -22,7 +22,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
 )

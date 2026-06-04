@@ -46,7 +46,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 

@@ -12,7 +12,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp/cli"
-	"github.com/roidmc/kexcore-oidc/pkg/http"
+	"github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 

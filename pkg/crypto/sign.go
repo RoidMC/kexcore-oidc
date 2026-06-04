@@ -15,6 +15,8 @@ import (
 	"github.com/emmansun/gmsm/sm9"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
+
+	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 // Signer encapsulates key material and algorithm for JWS signing operations.
@@ -185,7 +187,7 @@ func (s *Signer) signSM9(payload []byte) (string, error) {
 	h.Write(payload)
 	digest := h.Sum(nil)
 
-	signature, err := SM9Sign(s.sm9Priv, digest)
+	signature, err := gm.SM9Sign(s.sm9Priv, digest)
 	if err != nil {
 		return "", err
 	}

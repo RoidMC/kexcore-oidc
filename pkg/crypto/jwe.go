@@ -17,6 +17,8 @@ import (
 
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
+
+	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 var (
@@ -60,13 +62,13 @@ type jweHeader struct {
 //	base64url(protected_header) . base64url(encrypted_key) . base64url(iv) . base64url(ciphertext) . base64url(tag)
 func SM2EncryptJWE(publicKey *ecdsa.PublicKey, plaintext []byte) (string, error) {
 	// 1. Generate random CEK (128 bits for SM4)
-	cek := make([]byte, SM4BlockSize)
+	cek := make([]byte, gm.SM4BlockSize)
 	if _, err := rand.Read(cek); err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to generate CEK: %w", err)
 	}
 
 	// 2. Generate random IV (96 bits for GCM)
-	iv := make([]byte, SM4GCMNonceSize)
+	iv := make([]byte, gm.SM4GCMNonceSize)
 	if _, err := rand.Read(iv); err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to generate IV: %w", err)
 	}
@@ -83,7 +85,7 @@ func SM2EncryptJWE(publicKey *ecdsa.PublicKey, plaintext []byte) (string, error)
 	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
 
 	// 4. Wrap CEK with SM2 public key (SGD_SM2_3, ASN.1 encoding per GB/T 35276)
-	encryptedKey, err := SM2EncryptASN1(publicKey, cek)
+	encryptedKey, err := gm.SM2EncryptASN1(publicKey, cek)
 	if err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to wrap CEK with SM2: %w", err)
 	}
@@ -91,7 +93,7 @@ func SM2EncryptJWE(publicKey *ecdsa.PublicKey, plaintext []byte) (string, error)
 
 	// 5. Encrypt plaintext with SM4-GCM using AAD = headerB64
 	aad := []byte(headerB64)
-	sealed, err := SM4EncryptGCMWithNonce(cek, iv, plaintext, aad)
+	sealed, err := gm.SM4EncryptGCMWithNonce(cek, iv, plaintext, aad)
 	if err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to encrypt with SM4-GCM: %w", err)
 	}
@@ -138,7 +140,7 @@ func SM2DecryptJWE(privateKey *sm2.PrivateKey, compact string) ([]byte, error) {
 	}
 
 	// Unwrap CEK with SM2 private key
-	cek, err := SM2Decrypt(privateKey, encryptedKey)
+	cek, err := gm.SM2Decrypt(privateKey, encryptedKey)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrJWEKeyDecrypt, err)
 	}
@@ -158,7 +160,7 @@ func SM9EncryptJWE(masterPubKey *sm9.EncryptMasterPublicKey, uid []byte, enc str
 	// 1. Wrap a new CEK with SM9 (SGD_SM9_3)
 	// SM9 WrapKey generates a random key of kLen bytes and encrypts it.
 	// The returned wrappedKey is the CEK to use for content encryption.
-	cek, cipherDER, err := SM9WrapKey(masterPubKey, uid, SM4BlockSize)
+	cek, cipherDER, err := gm.SM9WrapKey(masterPubKey, uid, gm.SM4BlockSize)
 	if err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to wrap CEK with SM9: %w", err)
 	}
@@ -185,22 +187,22 @@ func SM9EncryptJWE(masterPubKey *sm9.EncryptMasterPublicKey, uid []byte, enc str
 
 	switch enc {
 	case SGD_SM4_GCM:
-		iv = make([]byte, SM4GCMNonceSize)
+		iv = make([]byte, gm.SM4GCMNonceSize)
 		if _, err := rand.Read(iv); err != nil {
 			return "", fmt.Errorf("kexcore/crypto: failed to generate IV: %w", err)
 		}
 		aad := []byte(headerB64)
-		sealed, err = SM4EncryptGCMWithNonce(cek, iv, plaintext, aad)
+		sealed, err = gm.SM4EncryptGCMWithNonce(cek, iv, plaintext, aad)
 		if err != nil {
 			return "", fmt.Errorf("kexcore/crypto: failed to encrypt with SM4-GCM: %w", err)
 		}
 	case SGD_SM4_CCM:
-		iv = make([]byte, SM4CCMNonceSize)
+		iv = make([]byte, gm.SM4CCMNonceSize)
 		if _, err := rand.Read(iv); err != nil {
 			return "", fmt.Errorf("kexcore/crypto: failed to generate IV: %w", err)
 		}
 		aad := []byte(headerB64)
-		sealed, err = SM4EncryptCCMWithNonce(cek, iv, plaintext, aad)
+		sealed, err = gm.SM4EncryptCCMWithNonce(cek, iv, plaintext, aad)
 		if err != nil {
 			return "", fmt.Errorf("kexcore/crypto: failed to encrypt with SM4-CCM: %w", err)
 		}
@@ -243,7 +245,7 @@ func SM9DecryptJWE(userKey *sm9.EncryptPrivateKey, uid []byte, compact string) (
 	}
 
 	// Unwrap CEK with SM9 private key
-	cek, err := SM9UnwrapKey(userKey, uid, cipherDER, SM4BlockSize)
+	cek, err := gm.SM9UnwrapKey(userKey, uid, cipherDER, gm.SM4BlockSize)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrJWEKeyDecrypt, err)
 	}
@@ -313,13 +315,13 @@ func decryptJWEContent(cek []byte, enc string, parts []string) ([]byte, error) {
 
 	switch enc {
 	case SGD_SM4_GCM:
-		plaintext, err := SM4DecryptGCMWithNonce(cek, iv, sealed, aad)
+		plaintext, err := gm.SM4DecryptGCMWithNonce(cek, iv, sealed, aad)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrJWEContentDecrypt, err)
 		}
 		return plaintext, nil
 	case SGD_SM4_CCM:
-		plaintext, err := SM4DecryptCCMWithNonce(cek, iv, sealed, aad)
+		plaintext, err := gm.SM4DecryptCCMWithNonce(cek, iv, sealed, aad)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrJWEContentDecrypt, err)
 		}

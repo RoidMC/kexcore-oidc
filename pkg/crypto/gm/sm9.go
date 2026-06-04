@@ -2,7 +2,7 @@
 //
 // Copyright 2026 RoidMC Studios
 
-package crypto
+package gm
 
 import (
 	"crypto/rand"

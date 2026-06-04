@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 

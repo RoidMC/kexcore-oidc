@@ -20,7 +20,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"golang.org/x/oauth2"
 
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
 )
 

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 func TestEncryptAESRoundTrip(t *testing.T) {
@@ -132,7 +133,7 @@ func TestEncryptAESTamperedCiphertext(t *testing.T) {
 }
 
 func TestEncryptSM4RoundTrip(t *testing.T) {
-	key, err := crypto.SM4GenerateKey()
+	key, err := gm.SM4GenerateKey()
 	if err != nil {
 		t.Fatalf("SM4GenerateKey failed: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestEncryptSM4RoundTrip(t *testing.T) {
 }
 
 func TestEncryptSM4OutputIsBase64(t *testing.T) {
-	key, _ := crypto.SM4GenerateKey()
+	key, _ := gm.SM4GenerateKey()
 	keyStr := string(key)
 
 	encrypted, err := crypto.EncryptSM4("test", keyStr)
@@ -170,7 +171,7 @@ func TestEncryptSM4OutputIsBase64(t *testing.T) {
 }
 
 func TestDecryptSM4InvalidInput(t *testing.T) {
-	key, _ := crypto.SM4GenerateKey()
+	key, _ := gm.SM4GenerateKey()
 	keyStr := string(key)
 
 	_, err := crypto.DecryptSM4("!!!not-valid-base64!!!", keyStr)
@@ -180,8 +181,8 @@ func TestDecryptSM4InvalidInput(t *testing.T) {
 }
 
 func TestDecryptSM4WrongKey(t *testing.T) {
-	key1, _ := crypto.SM4GenerateKey()
-	key2, _ := crypto.SM4GenerateKey()
+	key1, _ := gm.SM4GenerateKey()
+	key2, _ := gm.SM4GenerateKey()
 
 	encrypted, err := crypto.EncryptSM4("test", string(key1))
 	if err != nil {
@@ -195,7 +196,7 @@ func TestDecryptSM4WrongKey(t *testing.T) {
 }
 
 func TestEncryptSM4EmptyPlaintext(t *testing.T) {
-	key, _ := crypto.SM4GenerateKey()
+	key, _ := gm.SM4GenerateKey()
 	keyStr := string(key)
 
 	encrypted, err := crypto.EncryptSM4("", keyStr)
@@ -214,7 +215,7 @@ func TestEncryptSM4EmptyPlaintext(t *testing.T) {
 }
 
 func TestEncryptSM4TamperedCiphertext(t *testing.T) {
-	key, _ := crypto.SM4GenerateKey()
+	key, _ := gm.SM4GenerateKey()
 	keyStr := string(key)
 
 	encrypted, err := crypto.EncryptSM4("sensitive data", keyStr)

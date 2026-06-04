@@ -15,10 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 func TestNewSM2JWK(t *testing.T) {
-	key, err := crypto.SM2GenerateKey()
+	key, err := gm.SM2GenerateKey()
 	require.NoError(t, err)
 
 	jwk := crypto.NewSM2JWK(&key.PublicKey, "test-kid", "sig")
@@ -33,7 +34,7 @@ func TestNewSM2JWK(t *testing.T) {
 }
 
 func TestNewSM9SignJWK(t *testing.T) {
-	masterKey, err := crypto.SM9GenerateSignMasterKey()
+	masterKey, err := gm.SM9GenerateSignMasterKey()
 	require.NoError(t, err)
 
 	jwk, err := crypto.NewSM9SignJWK(masterKey.PublicKey(), "test-kid", "sig", 1)
@@ -50,7 +51,7 @@ func TestNewSM9SignJWK(t *testing.T) {
 }
 
 func TestParseSM9SignMasterPublicKey(t *testing.T) {
-	masterKey, err := crypto.SM9GenerateSignMasterKey()
+	masterKey, err := gm.SM9GenerateSignMasterKey()
 	require.NoError(t, err)
 
 	jwk, err := crypto.NewSM9SignJWK(masterKey.PublicKey(), "test-kid", "sig", 1)
@@ -63,7 +64,7 @@ func TestParseSM9SignMasterPublicKey(t *testing.T) {
 }
 
 func TestSM2PublicKeyFromJWK(t *testing.T) {
-	key, err := crypto.SM2GenerateKey()
+	key, err := gm.SM2GenerateKey()
 	require.NoError(t, err)
 
 	jwk := crypto.NewSM2JWK(&key.PublicKey, "test-kid", "sig")
@@ -88,10 +89,10 @@ func TestSM2PublicKeyFromJWK_InvalidPoint(t *testing.T) {
 }
 
 func TestParseJWKSBytes(t *testing.T) {
-	sm2Key, err := crypto.SM2GenerateKey()
+	sm2Key, err := gm.SM2GenerateKey()
 	require.NoError(t, err)
 
-	sm9MasterKey, err := crypto.SM9GenerateSignMasterKey()
+	sm9MasterKey, err := gm.SM9GenerateSignMasterKey()
 	require.NoError(t, err)
 
 	sm2JWK := crypto.NewSM2JWK(&sm2Key.PublicKey, "sm2-kid", "sig")
@@ -163,7 +164,7 @@ func TestIsSM9Algorithm(t *testing.T) {
 }
 
 func TestVerifySM2JWSSignature(t *testing.T) {
-	key, err := crypto.SM2GenerateKey()
+	key, err := gm.SM2GenerateKey()
 	require.NoError(t, err)
 
 	signingInput := []byte(base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"SGD_SM3_SM2"}`)) + "." +
@@ -174,7 +175,7 @@ func TestVerifySM2JWSSignature(t *testing.T) {
 	h.Write(signingInput)
 	digest := h.Sum(nil)
 
-	sig, err := crypto.SM2Sign(key, digest)
+	sig, err := gm.SM2Sign(key, digest)
 	require.NoError(t, err)
 
 	err = crypto.VerifySM2JWSSignature(signingInput, sig, &key.PublicKey)
@@ -186,10 +187,10 @@ func TestVerifySM2JWSSignature(t *testing.T) {
 
 func TestVerifySM9JWSSignature(t *testing.T) {
 	uid := []byte("test@example.com")
-	masterKey, err := crypto.SM9GenerateSignMasterKey()
+	masterKey, err := gm.SM9GenerateSignMasterKey()
 	require.NoError(t, err)
 
-	userKey, err := crypto.SM9GenerateSignUserKey(masterKey, uid)
+	userKey, err := gm.SM9GenerateSignUserKey(masterKey, uid)
 	require.NoError(t, err)
 
 	signingInput := []byte(base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"SGD_SM3_SM9","uid":"test@example.com"}`)) + "." +
@@ -200,7 +201,7 @@ func TestVerifySM9JWSSignature(t *testing.T) {
 	h.Write(signingInput)
 	digest := h.Sum(nil)
 
-	sig, err := crypto.SM9Sign(userKey, digest)
+	sig, err := gm.SM9Sign(userKey, digest)
 	require.NoError(t, err)
 
 	err = crypto.VerifySM9JWSSignature(signingInput, sig, masterKey.PublicKey(), uid)

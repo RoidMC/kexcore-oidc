@@ -14,6 +14,8 @@ import (
 
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
+
+	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 // SM2JWK represents a JSON Web Key for an SM2 public key per GM/T 0125.4-2022.
@@ -64,7 +66,7 @@ func VerifySM2JWSSignature(signingInput []byte, signature []byte, pubKey *ecdsa.
 	h.Write(signingInput)
 	digest := h.Sum(nil)
 
-	if !SM2Verify(pubKey, digest, signature) {
+	if !gm.SM2Verify(pubKey, digest, signature) {
 		return fmt.Errorf("SM2 signature verification failed")
 	}
 	return nil
@@ -178,7 +180,7 @@ func VerifySM9JWSSignature(signingInput []byte, signature []byte, masterPubKey *
 	h.Write(signingInput)
 	digest := h.Sum(nil)
 
-	if !SM9Verify(masterPubKey, uid, digest, signature) {
+	if !gm.SM9Verify(masterPubKey, uid, digest, signature) {
 		return fmt.Errorf("SM9 signature verification failed")
 	}
 	return nil

@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/roidmc/kexcore-oidc/pkg/http"
+	"github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 

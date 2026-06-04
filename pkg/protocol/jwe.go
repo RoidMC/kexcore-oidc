@@ -17,6 +17,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwe"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	crypto_gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 // SM9EncryptKey is the protocol-layer interface for SM9 encryption keys.
@@ -145,7 +146,7 @@ func encryptTokenDir(payload string, key interface{}, enc string) (string, error
 	var sealed []byte
 	switch enc {
 	case JWEEncSM4GCM:
-		sealed, err = crypto.SM4EncryptGCMWithNonce(symKey, iv, []byte(payload), []byte(headerB64))
+		sealed, err = crypto_gm.SM4EncryptGCMWithNonce(symKey, iv, []byte(payload), []byte(headerB64))
 	case JWEEncA128GCM, JWEEncA256GCM:
 		sealed, err = crypto.AESGCMEncrypt(symKey, iv, []byte(payload), []byte(headerB64))
 	default:
@@ -188,7 +189,7 @@ func decryptDirMode(compact string, key []byte, enc string) ([]byte, error) {
 	aad := []byte(parts[0])
 	switch enc {
 	case JWEEncSM4GCM:
-		plaintext, err := crypto.SM4DecryptGCMWithNonce(key, iv, sealed, aad)
+		plaintext, err := crypto_gm.SM4DecryptGCMWithNonce(key, iv, sealed, aad)
 		if err != nil {
 			return nil, fmt.Errorf("sm4-gcm decrypt failed: %w", err)
 		}
