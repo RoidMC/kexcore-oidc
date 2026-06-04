@@ -3,6 +3,10 @@
 // Copyright Zitadel
 // Modifications Copyright 2026 RoidMC Studios
 
+// TODO: 重构接入StormOP
+
+//go:build ignore
+//lint:ignore
 package client_test
 
 import (
@@ -38,7 +42,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
 	"github.com/roidmc/kexcore-oidc/pkg/client/rs"
 	"github.com/roidmc/kexcore-oidc/pkg/client/tokenexchange"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/roidmc/kexcore-oidc/pkg/op"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )

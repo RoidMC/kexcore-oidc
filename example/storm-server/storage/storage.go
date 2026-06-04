@@ -729,6 +729,29 @@ func (s *Storage) ValidateJWTProfileScopes(_ context.Context, userID string, sco
 }
 
 // =================================================================
+// TokenExchangeStore (optional, for RFC 8693 token exchange)
+// =================================================================
+
+func (s *Storage) ValidateTokenExchangeRequest(_ context.Context, req storm.TokenExchangeRequest) error {
+	if req.GetRequestedTokenType() == "" {
+		req.SetRequestedTokenType(protocol.RefreshTokenType)
+	}
+	return nil
+}
+
+func (s *Storage) CreateTokenExchangeRequest(_ context.Context, _ storm.TokenExchangeRequest) error {
+	return nil
+}
+
+func (s *Storage) GetPrivateClaimsFromTokenExchangeRequest(_ context.Context, _ storm.TokenExchangeRequest) (map[string]any, error) {
+	return nil, nil
+}
+
+func (s *Storage) SetUserinfoFromTokenExchangeRequest(_ context.Context, _ *protocol.UserInfo, _ storm.TokenExchangeRequest) error {
+	return nil
+}
+
+// =================================================================
 // Storm compatibility assertions
 // =================================================================
 
