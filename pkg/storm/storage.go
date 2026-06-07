@@ -107,6 +107,31 @@ type AuthStore interface {
 	DeleteAuthRequest(ctx context.Context, id string) error
 }
 
+// AutoCompleteAuthRequest is an optional interface that AuthStore can
+// implement to support auto-completing auth requests without going
+// through the login UI. This is used when prompt=none is requested
+// and an active session exists (OIDC Core §3.1.2.6).
+//
+// When implemented, the Authorization plugin calls CompleteAuthRequest
+// instead of redirecting to the login UI, ensuring the auth_time
+// claim reflects the original authentication time.
+type AutoCompleteAuthRequest interface {
+	CompleteAuthRequest(ctx context.Context, id string, subject string, authTime time.Time) error
+}
+
+// CodeReuseDetector is an optional interface that storage can implement
+// to detect authorization code reuse and revoke associated tokens.
+// Per RFC 6749 §4.1.2: "If an authorization code is used more than once,
+// the authorization server MUST revoke all tokens issued based on that
+// authorization code."
+type CodeReuseDetector interface {
+	// TrackTokenForAuthRequest records that a token was issued for an auth request.
+	TrackTokenForAuthRequest(authRequestID, tokenID string)
+	// RevokeTokensForUsedCode revokes all tokens issued for a used code.
+	// Returns the auth request ID if found, or empty string if the code was not used.
+	RevokeTokensForUsedCode(code string) string
+}
+
 // AuthRequest represents an in-flight authorization request.
 type AuthRequest interface {
 	GetID() string
@@ -123,6 +148,7 @@ type AuthRequest interface {
 	GetScopes() []string
 	GetState() string
 	GetSubject() string
+	GetClaims() *protocol.ClaimsRequest
 	Done() bool
 }
 

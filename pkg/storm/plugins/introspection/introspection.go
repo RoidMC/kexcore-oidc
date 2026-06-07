@@ -117,7 +117,8 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 	resp := &protocol.IntrospectionResponse{Active: true}
 	if err := p.store.SetIntrospectionFromToken(r.Context(), resp, tokenID, subject, client.GetID()); err != nil {
-		shared.WriteError(w, r, err, nil)
+		// Token not found in storage (revoked or expired) — return inactive per RFC 7662 §2.2
+		shared.JSONResponse(w, &protocol.IntrospectionResponse{Active: false}, http.StatusOK)
 		return
 	}
 

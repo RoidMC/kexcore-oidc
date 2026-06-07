@@ -97,7 +97,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 	userInfo := new(protocol.UserInfo)
 	if err := p.store.SetUserinfoFromToken(r.Context(), userInfo, tokenID, subject, r.Header.Get("Origin")); err != nil {
-		shared.WriteError(w, r, err, nil)
+		shared.WriteError(w, r, shared.NewStatusError(protocol.ErrInvalidRequest().WithDescription("invalid access token"), http.StatusUnauthorized), nil)
 		return
 	}
 

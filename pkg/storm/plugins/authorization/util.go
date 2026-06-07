@@ -69,6 +69,13 @@ func validateAuthRequestParams(client storm.Client, authReq *protocol.AuthReques
 	if err := validateRedirectURI(client, authReq.RedirectURI, authReq.ResponseType); err != nil {
 		return err
 	}
+	return validateAuthRequestParamsExceptRedirectURI(client, authReq)
+}
+
+// validateAuthRequestParamsExceptRedirectURI validates all params except redirect_uri.
+// This is called after redirect_uri has been validated separately, so that
+// remaining errors can be safely redirected to the registered URI.
+func validateAuthRequestParamsExceptRedirectURI(client storm.Client, authReq *protocol.AuthRequest) error {
 	if err := validatePrompt(authReq); err != nil {
 		return err
 	}

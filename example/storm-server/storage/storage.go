@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -44,8 +45,20 @@ type Storage struct {
 	authCodes     map[string]string
 	codeToAuthReq map[string]string
 
+	// codeTokens tracks which tokens were issued for each auth request ID.
+	// Used to revoke tokens when an authorization code is reused (RFC 6749 §4.1.2).
+	codeTokens map[string][]string
+
+	// usedCodes tracks codes that have been used (code -> authRequestID).
+	// Used to detect code reuse and revoke associated tokens.
+	usedCodes map[string]string
+
 	tokens        map[string]*Token
 	refreshTokens map[string]*RefreshToken
+
+	// sessions tracks which users have authenticated (subject → auth_time).
+	// A real implementation would use cookies or a distributed session store.
+	sessions map[string]time.Time
 
 	userStore UserStore
 
@@ -251,8 +264,11 @@ func NewStorage(userStore UserStore, algorithms []string) *Storage {
 		authRequests:  make(map[string]*AuthRequest),
 		authCodes:     make(map[string]string),
 		codeToAuthReq: make(map[string]string),
+		codeTokens:    make(map[string][]string),
+		usedCodes:     make(map[string]string),
 		tokens:        make(map[string]*Token),
 		refreshTokens: make(map[string]*RefreshToken),
+		sessions:      make(map[string]time.Time),
 		userStore:     userStore,
 		signingKeys:   signingKeys,
 		tokenTTL:      1 * time.Hour,
@@ -356,7 +372,8 @@ func (s *Storage) CreateAuthRequest(_ context.Context, req *protocol.AuthRequest
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	ar := authRequestToInternal(req, userID)
+	user := s.userStore.GetUserByID(userID)
+	ar := authRequestToInternal(req, userID, user)
 	ar.ID = uuid.NewString()
 	s.authRequests[ar.ID] = ar
 	return ar, nil
@@ -406,10 +423,48 @@ func (s *Storage) DeleteAuthRequest(_ context.Context, id string) error {
 
 	delete(s.authRequests, id)
 	if code, ok := s.authCodes[id]; ok {
+		// Move to usedCodes for code reuse detection
+		s.usedCodes[code] = id
 		delete(s.codeToAuthReq, code)
 		delete(s.authCodes, id)
 	}
 	return nil
+}
+
+// TrackTokenForAuthRequest records that a token was issued for an auth request.
+// This is used to revoke tokens when an authorization code is reused.
+func (s *Storage) TrackTokenForAuthRequest(authRequestID, tokenID string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.codeTokens[authRequestID] = append(s.codeTokens[authRequestID], tokenID)
+}
+
+// RevokeTokensForUsedCode revokes all tokens that were issued for a used code.
+// Returns the auth request ID if the code was found, or empty string if not.
+func (s *Storage) RevokeTokensForUsedCode(code string) string {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	authRequestID, ok := s.usedCodes[code]
+	if !ok {
+		return ""
+	}
+
+	// Revoke all tokens issued for this auth request
+	if tokenIDs, ok := s.codeTokens[authRequestID]; ok {
+		for _, tokenID := range tokenIDs {
+			delete(s.tokens, tokenID)
+			// Also revoke any refresh tokens linked to this access token
+			for rtID, rt := range s.refreshTokens {
+				if rt.AccessToken == tokenID {
+					delete(s.refreshTokens, rtID)
+				}
+			}
+		}
+		delete(s.codeTokens, authRequestID)
+	}
+
+	return authRequestID
 }
 
 // =================================================================
@@ -459,6 +514,10 @@ func (s *Storage) createAccessToken(_ context.Context, req storm.TokenRequest, p
 		Audience:      req.GetAudience(),
 		Expiration:    expiration,
 		Scopes:        req.GetScopes(),
+	}
+	// Preserve claims request from auth request (OIDC Core §5.5)
+	if authReq, ok := req.(storm.AuthRequest); ok {
+		token.Claims = authReq.GetClaims()
 	}
 	s.tokens[tokenID] = token
 
@@ -612,7 +671,61 @@ func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *protocol.Use
 		}
 	}
 
+	// OIDC Core §5.5: claims parameter can request specific claims
+	// even without the corresponding scope.
+	if token.Claims != nil && token.Claims.UserInfo != nil {
+		applyUserInfoClaims(userinfo, user, token.Claims.UserInfo)
+	}
+
 	return nil
+}
+
+// applyUserInfoClaims applies claims requested via the OIDC §5.5 claims parameter
+// to the UserInfo response. Claims requested here are returned even if the
+// corresponding scope was not requested.
+func applyUserInfoClaims(userinfo *protocol.UserInfo, user *User, claims map[string]*protocol.ClaimRequest) {
+	for name := range claims {
+		switch name {
+		case "name":
+			userinfo.Name = user.FirstName + " " + user.LastName
+		case "given_name":
+			userinfo.GivenName = user.FirstName
+		case "family_name":
+			userinfo.FamilyName = user.LastName
+		case "middle_name":
+			userinfo.AppendClaims("middle_name", "N/A")
+		case "nickname":
+			userinfo.Nickname = user.Username
+		case "preferred_username":
+			userinfo.PreferredUsername = user.Username
+		case "profile":
+			userinfo.AppendClaims("profile", "https://example.com")
+		case "picture":
+			userinfo.AppendClaims("picture", "https://example.com/avatar.png")
+		case "website":
+			userinfo.AppendClaims("website", "https://example.com")
+		case "email":
+			userinfo.Email = user.Email
+			userinfo.EmailVerified = protocol.Bool(user.EmailVerified)
+		case "gender":
+			userinfo.AppendClaims("gender", "other")
+		case "birthdate":
+			userinfo.AppendClaims("birthdate", "2000-01-01")
+		case "zoneinfo":
+			userinfo.Zoneinfo = "UTC"
+		case "locale":
+			userinfo.Locale = protocol.NewLocale(user.PreferredLanguage)
+		case "phone_number":
+			userinfo.PhoneNumber = user.Phone
+			userinfo.PhoneNumberVerified = protocol.Bool(user.PhoneVerified)
+		case "address":
+			userinfo.Address = &protocol.UserInfoAddress{
+				Formatted: "N/A",
+			}
+		case "updated_at":
+			userinfo.UpdatedAt = protocol.Time(time.Now().Unix())
+		}
+	}
 }
 
 // =================================================================
@@ -680,6 +793,27 @@ func (s *Storage) TerminateSession(_ context.Context, userID, clientID string) e
 	return nil
 }
 
+// GetSession implements authorization.SessionProvider.
+// It checks whether the given subject has an active session and
+// returns the original authentication time.
+func (s *Storage) GetSession(_ context.Context, _ *http.Request, _ string) (string, time.Time, bool) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	for subj, authTime := range s.sessions {
+		if !authTime.IsZero() {
+			return subj, authTime, true
+		}
+	}
+	return "", time.Time{}, false
+}
+
+// CreateSession records a subject as having an active session.
+func (s *Storage) CreateSession(subject string, authTime time.Time) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.sessions[subject] = authTime
+}
+
 // =================================================================
 // Login support
 // =================================================================
@@ -698,9 +832,37 @@ func (s *Storage) CheckUsernamePassword(username, password, id string) error {
 		request.UserID = user.ID
 		request.done = true
 		request.authTime = time.Now()
+		if len(request.ACRValues) > 0 {
+			request.acr = request.ACRValues[0]
+		}
+		s.sessions[user.ID] = request.authTime
 		return nil
 	}
 	return fmt.Errorf("invalid username or password")
+}
+
+// CompleteAuthRequest implements storm.AutoCompleteAuthRequest.
+// It marks an auth request as done with the given subject and
+// the original authentication time, without going through the
+// login UI. Used for prompt=none with active sessions.
+func (s *Storage) CompleteAuthRequest(_ context.Context, id string, subject string, authTime time.Time) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	request, ok := s.authRequests[id]
+	if !ok {
+		return fmt.Errorf("auth request not found: %s", id)
+	}
+	if request.done {
+		return fmt.Errorf("auth request already completed: %s", id)
+	}
+	request.UserID = subject
+	request.done = true
+	request.authTime = authTime
+	if len(request.ACRValues) > 0 {
+		request.acr = request.ACRValues[0]
+	}
+	return nil
 }
 
 // =================================================================

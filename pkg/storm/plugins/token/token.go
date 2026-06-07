@@ -185,6 +185,12 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 	// Retrieve the auth request by code
 	authReq, err := p.authStore.AuthRequestByCode(r.Context(), tokenReq.Code)
 	if err != nil {
+		// RFC 6749 §4.1.2: If an authorization code is used more than once,
+		// the authorization server MUST revoke all tokens issued based on
+		// that authorization code.
+		if detector, ok := p.authStore.(storm.CodeReuseDetector); ok {
+			detector.RevokeTokensForUsedCode(tokenReq.Code)
+		}
 		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("invalid code").WithParent(err))
 		return
 	}
@@ -221,10 +227,17 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Create token response using authReq as TokenRequest
-	resp, err := p.createTokenResponseFromTokenRequest(r.Context(), authReq, client, true)
+	resp, tokenID, err := p.createTokenResponseFromTokenRequest(r.Context(), authReq, client, true)
 	if err != nil {
 		tokenError(w, r, err)
 		return
+	}
+
+	// Track token for code reuse detection (RFC 6749 §4.1.2)
+	// Use the internal tokenID (UUID), not the encrypted access token string,
+	// because s.tokens map is keyed by UUID.
+	if detector, ok := p.authStore.(storm.CodeReuseDetector); ok && tokenID != "" {
+		detector.TrackTokenForAuthRequest(authReq.GetID(), tokenID)
 	}
 
 	// Clean up the auth request
@@ -278,7 +291,7 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := p.createTokenResponseFromTokenRequest(r.Context(), refreshReq, client, true)
+	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), refreshReq, client, true)
 	if err != nil {
 		tokenError(w, r, err)
 		return
@@ -429,7 +442,7 @@ func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 	_ = teStore.CreateTokenExchangeRequest(r.Context(), teReq)
 
 	// Create access token
-	accessToken, validity, err := p.createAccessToken(r.Context(), teReq, client)
+	accessToken, _, _, validity, err := p.createAccessToken(r.Context(), teReq, client)
 	if err != nil {
 		tokenError(w, r, protocol.ErrServerError().WithParent(err))
 		return
@@ -537,15 +550,18 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 // --- token creation ---
 
 // createTokenResponseFromTokenRequest creates a token response from any TokenRequest implementation.
-func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, request storm.TokenRequest, client storm.Client, createAccessToken bool) (*protocol.AccessTokenResponse, error) {
+// Returns the response and the internal tokenID (UUID) for code reuse tracking.
+func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, request storm.TokenRequest, client storm.Client, createAccessToken bool) (*protocol.AccessTokenResponse, string, error) {
 	var accessToken string
+	var tokenID string
+	var refreshToken string
 	var validity time.Duration
 	var err error
 
 	if createAccessToken {
-		accessToken, validity, err = p.createAccessToken(ctx, request, client)
+		accessToken, tokenID, refreshToken, validity, err = p.createAccessToken(ctx, request, client)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 
@@ -564,10 +580,13 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 		ExpiresIn:   exp,
 		Scope:       request.GetScopes(),
 	}
+	if refreshToken != "" {
+		resp.RefreshToken = refreshToken
+	}
 	if idToken != "" {
 		resp.IDToken = idToken
 	}
-	return resp, nil
+	return resp, tokenID, nil
 }
 
 // createIDToken creates a signed ID token for the given request.
@@ -607,6 +626,15 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 			claims["amr"] = amr
 		}
 	}
+	// Merge extra claims from auth request (e.g. claims.id_token requested values).
+	// Standard claims set above take precedence and cannot be overridden.
+	if ext, ok := request.(idTokenClaimsExtender); ok {
+		for k, v := range ext.ExtraIDTokenClaims() {
+			if _, exists := claims[k]; !exists {
+				claims[k] = v
+			}
+		}
+	}
 	if len(request.GetAudience()) > 1 {
 		claims["azp"] = request.GetClientID()
 	}
@@ -644,6 +672,10 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 	}
 
 	return signed, nil
+}
+
+type idTokenClaimsExtender interface {
+	ExtraIDTokenClaims() map[string]any
 }
 
 type idTokenEncryptionClient interface {
@@ -688,7 +720,7 @@ func encryptIDToken(signedToken string, cr storm.UniCrypto, alg, enc string) (st
 	}
 }
 
-func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenRequest, client storm.Client) (string, time.Duration, error) {
+func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenRequest, client storm.Client) (encryptedToken string, tokenID string, refreshToken string, validity time.Duration, err error) {
 	// Determine if we need a refresh token
 	needsRefresh := false
 	if authReq, ok := request.(storm.AuthRequest); ok {
@@ -697,38 +729,32 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 			validateGrantType(client, protocol.GrantTypeRefreshToken)
 	}
 
-	var tokenID string
 	var expiration time.Time
-	var err error
 
 	if needsRefresh {
-		tokenID, _, expiration, err = p.tokenStore.CreateAccessAndRefreshTokens(ctx, request, "")
+		tokenID, refreshToken, expiration, err = p.tokenStore.CreateAccessAndRefreshTokens(ctx, request, "")
 	} else {
 		tokenID, expiration, err = p.tokenStore.CreateAccessToken(ctx, request)
 	}
 
 	if err != nil {
-		return "", 0, err
+		return "", "", "", 0, err
 	}
 
 	// Encrypt the opaque bearer token.
-	// If the Crypto implementation supports GM/T (GMCrypto), use SM2+SM4-GCM JWE
-	// for enhanced security per GM/T 0125.3. Otherwise, fall back to standard encryption.
 	plaintext := []byte(tokenID + ":" + request.GetSubject())
-
-	// Encrypt the opaque bearer token using UniCrypto.
-	// The implementation handles both standard (AES-GCM) and GM (SM4-GCM/SM2+SM4) encryption.
 	encrypted, err := p.crypto.Encrypt(ctx, plaintext)
 	if err != nil {
-		return "", 0, err
+		return "", "", "", 0, err
 	}
 
-	validity := expiration.Sub(time.Now().UTC())
-	return base64.RawURLEncoding.EncodeToString(encrypted), validity, nil
+	validity = expiration.Sub(time.Now().UTC())
+	encryptedToken = base64.RawURLEncoding.EncodeToString(encrypted)
+	return encryptedToken, tokenID, refreshToken, validity, nil
 }
 
 func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenRequest storm.TokenRequest, client storm.Client) (*protocol.AccessTokenResponse, error) {
-	accessToken, validity, err := p.createAccessToken(ctx, tokenRequest, client)
+	accessToken, _, _, validity, err := p.createAccessToken(ctx, tokenRequest, client)
 	if err != nil {
 		return nil, err
 	}

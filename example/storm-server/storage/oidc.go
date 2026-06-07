@@ -37,10 +37,17 @@ type AuthRequest struct {
 	ResponseMode  protocol.ResponseMode
 	Nonce         string
 	CodeChallenge *OIDCCodeChallenge
+	ACRValues     []string
+	Claims        *protocol.ClaimsRequest
+
+	// extraIDTokenClaims holds claims requested via claims.id_token (OIDC §5.5)
+	// that should be merged into the ID token.
+	extraIDTokenClaims map[string]any
 
 	done      bool
 	authTime  time.Time
 	sessionID string
+	acr       string
 }
 
 func (a *AuthRequest) LogValue() slog.Value {
@@ -54,8 +61,16 @@ func (a *AuthRequest) LogValue() slog.Value {
 	)
 }
 
-func (a *AuthRequest) GetID() string  { return a.ID }
-func (a *AuthRequest) GetACR() string { return "" }
+func (a *AuthRequest) GetID() string { return a.ID }
+func (a *AuthRequest) GetACR() string {
+	if a.done && a.acr != "" {
+		return a.acr
+	}
+	if len(a.ACRValues) > 0 {
+		return a.ACRValues[0]
+	}
+	return ""
+}
 func (a *AuthRequest) GetAMR() []string {
 	if a.done {
 		return []string{"pwd"}
@@ -75,8 +90,15 @@ func (a *AuthRequest) GetResponseMode() protocol.ResponseMode { return a.Respons
 func (a *AuthRequest) GetScopes() []string                    { return a.Scopes }
 func (a *AuthRequest) GetState() string                       { return a.TransferState }
 func (a *AuthRequest) GetSubject() string                     { return a.UserID }
+func (a *AuthRequest) GetClaims() *protocol.ClaimsRequest     { return a.Claims }
 func (a *AuthRequest) Done() bool                             { return a.done }
-func (a *AuthRequest) GetSessionID() string                   { return a.sessionID }
+
+// ExtraIDTokenClaims implements idTokenClaimsExtender for the token plugin.
+// Returns claims requested via the OIDC §5.5 claims.id_token parameter.
+func (a *AuthRequest) ExtraIDTokenClaims() map[string]any {
+	return a.extraIDTokenClaims
+}
+func (a *AuthRequest) GetSessionID() string { return a.sessionID }
 
 func PromptToInternal(oidcPrompt protocol.SpaceDelimitedArray) []string {
 	prompts := make([]string, 0, len(oidcPrompt))
@@ -97,7 +119,7 @@ func MaxAgeToInternal(maxAge *uint) *time.Duration {
 	return &dur
 }
 
-func authRequestToInternal(authReq *protocol.AuthRequest, userID string) *AuthRequest {
+func authRequestToInternal(authReq *protocol.AuthRequest, userID string, user *User) *AuthRequest {
 	var codeChallenge *OIDCCodeChallenge
 	if authReq.CodeChallenge != "" {
 		codeChallenge = &OIDCCodeChallenge{
@@ -106,21 +128,79 @@ func authRequestToInternal(authReq *protocol.AuthRequest, userID string) *AuthRe
 		}
 	}
 	return &AuthRequest{
-		CreationDate:  time.Now(),
-		ApplicationID: authReq.ClientID,
-		CallbackURI:   authReq.RedirectURI,
-		TransferState: authReq.State,
-		Prompt:        PromptToInternal(authReq.Prompt),
-		UiLocales:     authReq.UILocales,
-		LoginHint:     authReq.LoginHint,
-		MaxAuthAge:    MaxAgeToInternal(authReq.MaxAge),
-		UserID:        userID,
-		Scopes:        authReq.Scopes,
-		ResponseType:  authReq.ResponseType,
-		ResponseMode:  authReq.ResponseMode,
-		Nonce:         authReq.Nonce,
-		CodeChallenge: codeChallenge,
+		CreationDate:       time.Now(),
+		ApplicationID:      authReq.ClientID,
+		CallbackURI:        authReq.RedirectURI,
+		TransferState:      authReq.State,
+		Prompt:             PromptToInternal(authReq.Prompt),
+		UiLocales:          authReq.UILocales,
+		LoginHint:          authReq.LoginHint,
+		MaxAuthAge:         MaxAgeToInternal(authReq.MaxAge),
+		UserID:             userID,
+		Scopes:             authReq.Scopes,
+		ResponseType:       authReq.ResponseType,
+		ResponseMode:       authReq.ResponseMode,
+		Nonce:              authReq.Nonce,
+		CodeChallenge:      codeChallenge,
+		ACRValues:          authReq.ACRValues,
+		Claims:             authReq.Claims,
+		extraIDTokenClaims: buildIDTokenClaims(authReq.Claims, user),
 	}
+}
+
+// buildIDTokenClaims returns extra claims to merge into the ID token
+// based on the OIDC §5.5 claims.id_token request parameter.
+func buildIDTokenClaims(cr *protocol.ClaimsRequest, user *User) map[string]any {
+	if cr == nil || cr.IDToken == nil || user == nil {
+		return nil
+	}
+	claims := make(map[string]any)
+	for name := range cr.IDToken {
+		switch name {
+		case "auth_time", "acr", "amr", "azp":
+			// Handled directly by the token plugin; skip.
+		case "name":
+			claims["name"] = user.FirstName + " " + user.LastName
+		case "given_name":
+			claims["given_name"] = user.FirstName
+		case "family_name":
+			claims["family_name"] = user.LastName
+		case "middle_name":
+			claims["middle_name"] = "N/A"
+		case "nickname":
+			claims["nickname"] = user.Username
+		case "preferred_username":
+			claims["preferred_username"] = user.Username
+		case "profile":
+			claims["profile"] = "https://example.com"
+		case "picture":
+			claims["picture"] = "https://example.com/avatar.png"
+		case "website":
+			claims["website"] = "https://example.com"
+		case "email":
+			claims["email"] = user.Email
+			claims["email_verified"] = user.EmailVerified
+		case "gender":
+			claims["gender"] = "other"
+		case "birthdate":
+			claims["birthdate"] = "2000-01-01"
+		case "zoneinfo":
+			claims["zoneinfo"] = "UTC"
+		case "locale":
+			claims["locale"] = user.PreferredLanguage
+		case "phone_number":
+			claims["phone_number"] = user.Phone
+			claims["phone_number_verified"] = user.PhoneVerified
+		case "address":
+			claims["address"] = map[string]string{"formatted": "N/A"}
+		case "updated_at":
+			claims["updated_at"] = time.Now().Unix()
+		}
+	}
+	if len(claims) == 0 {
+		return nil
+	}
+	return claims
 }
 
 type OIDCCodeChallenge struct {

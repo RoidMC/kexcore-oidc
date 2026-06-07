@@ -5,7 +5,11 @@
 
 package storage
 
-import "time"
+import (
+	"time"
+
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+)
 
 type Token struct {
 	ID             string
@@ -15,6 +19,7 @@ type Token struct {
 	Audience       []string
 	Expiration     time.Time
 	Scopes         []string
+	Claims         *protocol.ClaimsRequest
 }
 
 type RefreshToken struct {

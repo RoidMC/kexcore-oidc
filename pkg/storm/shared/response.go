@@ -16,7 +16,10 @@ func SetUserInfoHeaders(w http.ResponseWriter) {
 // JSONResponse writes a JSON response with the given status code.
 // If data is nil, only the status code is written.
 // Delegates to util/http.MarshalJSONWithStatus for the actual encoding.
+// Sets Cache-Control and Pragma headers per RFC 6749 §5.1.
 func JSONResponse(w http.ResponseWriter, data any, statusCode int) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	httputil.MarshalJSONWithStatus(w, data, statusCode)
 }
 

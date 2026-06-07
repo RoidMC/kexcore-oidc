@@ -374,7 +374,7 @@ func TestUserInfo_StoreError_Forbidden(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer valid-token")
 	w := serveRequest(plugin, r)
 
-	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 // TestUserInfo_ChiRouter_GET validates that the plugin registers the GET route

@@ -80,6 +80,47 @@ const (
 	PromptSelectAccount = "select_account"
 )
 
+// OIDC Core 1.0 §5.5 — Claims Request Parameter
+//
+//	https://openid.net/specs/openid-connect-core-1_0.html#ClaimsParameter
+//
+// The claims parameter value is a JSON object with two top-level members:
+//
+//	"id_token" and "userinfo", each being a JSON object mapping claim names
+//	to either null or a ClaimRequest object.
+type ClaimsRequest struct {
+	IDToken  map[string]*ClaimRequest `json:"id_token,omitempty"`
+	UserInfo map[string]*ClaimRequest `json:"userinfo,omitempty"`
+}
+
+// ClaimRequest represents a single claim request specification.
+// OIDC Core 1.0 §5.5 — Individual Claims Request
+//
+//	https://openid.net/specs/openid-connect-core-1_0.html#IndividualClaimsRequest
+type ClaimRequest struct {
+	Essential bool  `json:"essential,omitempty"`
+	Value     any   `json:"value,omitempty"`
+	Values    []any `json:"values,omitempty"`
+}
+
+// HasEssentialClaim checks if a claim is requested as essential in the given claims map.
+func HasEssentialClaim(claims map[string]*ClaimRequest, name string) bool {
+	if claims == nil {
+		return false
+	}
+	cr, ok := claims[name]
+	return ok && cr.Essential
+}
+
+// IsClaimRequested checks if a claim is requested (either essential or voluntary) in the claims map.
+func IsClaimRequested(claims map[string]*ClaimRequest, name string) bool {
+	if claims == nil {
+		return false
+	}
+	_, ok := claims[name]
+	return ok
+}
+
 // AuthRequest according to:
 // https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest
 type AuthRequest struct {
@@ -103,8 +144,9 @@ type AuthRequest struct {
 	CodeChallenge       string              `json:"code_challenge" schema:"code_challenge"`
 	CodeChallengeMethod CodeChallengeMethod `json:"code_challenge_method" schema:"code_challenge_method"`
 
-	RequestParam string `schema:"request"`
-	RequestURI   string `schema:"request_uri"`
+	RequestParam string         `schema:"request"`
+	RequestURI   string         `schema:"request_uri"`
+	Claims       *ClaimsRequest `json:"claims" schema:"claims"`
 }
 
 // PushedAuthRequest represents the parameters sent to the Pushed Authorization Request endpoint.

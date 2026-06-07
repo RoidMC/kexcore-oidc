@@ -5,442 +5,184 @@
 KexCore OIDC is a full-stack OIDC SDK (OP + RP) for Go, supporting OAuth 2.1,
 OpenID Connect Core 1.0, and Chinese Commercial Cryptography (SM2/SM3/SM4/SM9).
 
-The project contains **two OP (OpenID Provider) implementations**:
-
-1. **Legacy Provider** (`/pkg/op`) — Based on zitadel/oidc, monolithic interface pattern
-2. **StormEngine Provider** (`/pkg/storm`) — Plugin-based architecture, inspired by Caddy v2
-
-### Independence from Upstream
-
-The `protocol/` package is the **single source of truth** for OAuth 2.1 / OIDC protocol
-primitives. The legacy `oidc/` package (Zitadel fork) has been **fully removed** — no files
-remain in `pkg/oidc/`. All types, errors, verifiers, and tests now live in `protocol/`.
+Two OP implementations:
+1. **Legacy Provider** (`/pkg/op`) — Zitadel fork, monolithic interface, to be replaced
+2. **StormEngine Provider** (`/pkg/storm`) — Plugin-based, inspired by Caddy v2
 
 | Layer | Source | Status |
 |---|---|---|
-| `protocol/` | Self-developed (RoidMC) | **Active** — all protocol primitives |
+| `protocol/` | Self-developed (RoidMC) | **Active** — all OAuth/OIDC types, errors, verifiers |
 | `storm/` | Self-developed (RoidMC) | New OP engine |
-| `op/` | Zitadel fork | Legacy, to be replaced by StormEngine |
+| `op/` | Zitadel fork | Legacy |
 | `client/` | Zitadel fork | RP client, uses `protocol/` types |
-| `oidc/` | Zitadel fork | **Removed** — fully migrated to `protocol/` |
+| `crypto/` | Self-developed | SM2/SM3/SM4/SM9 + HSM/KMS provider registry |
 
-The `protocol/` package has **zero dependency on Zitadel** — no imports, no type aliases
-from `zitadel/oidc`, independent copyright (RoidMC Studios). It implements the same RFC
-standards as Zitadel but with original code, original API design, and its own test suite.
-
-`github.com/zitadel/schema` has been fully replaced by `protocol.Encoder` and `protocol.Decoder`
-(self-developed, RoidMC copyright). The dependency is removed from `go.mod`.
-`pkg/util/codec` has been removed — all StormEngine plugins now use `protocol.Decoder` directly.
-
-`protocol/` defines:
-- `AuthMethod` constants (`AuthMethodBasic`, `AuthMethodPost`, `AuthMethodNone`, `AuthMethodPrivateKeyJWT`)
-- `DiscoveryEndpoint` constant (`"/.well-known/openid-configuration"`)
-- Error types (23 error codes + 24 sentinel errors) with RoidMC copyright
-- Discovery configuration with precise types (`string`/`[]string` instead of `any`)
-- Authorization types (`AuthRequest`, `PushedAuthRequest/Response`, `RequestObject`)
-- Session types (`EndSessionRequest`)
-- Token types (`TokenClaims`, `AccessTokenClaims`, `IDTokenClaims`, `AccessTokenResponse`, `Tokens[C]`)
-- JWT Profile types (`JWTProfileAssertionClaims`, `LogoutTokenClaims`, `ActorClaims`)
-- Wire format types (`ResponseType`, `ResponseMode`, `Display`, `SpaceDelimitedArray`, `Locales`)
-- OIDC constants (scopes, response types, response modes, prompts)
-- Token verification (verifier interfaces, JWT parsing, signature checking, expiry, audience, etc.)
-- Encryption (JWE encrypt/decrypt via `protocol.EncryptTokenJWE` / `DecryptTokenJWE`,
-  dispatches to `crypto.DefaultRegistry` for GM/T algorithms; supports AES-GCM, SM4-GCM, SM2, SM9)
-- Encoder (struct → url.Values using `schema` struct tags)
-- Decoder (url.Values → struct using `schema` struct tags; replaces `zitadel/schema`)
-- Introspection types (`IntrospectionResponse`, `IntrospectionRequest`)
-
-## Package: protocol/ — OAuth 2.1 / OIDC Protocol Primitives
-
-### Design
-
-The `protocol/` package is the single source of truth for OAuth 2.1 / OIDC protocol-level
-types, errors, and shared utilities. It is used by both StormEngine (OP) and the RP client.
-
-```
-/pkg/protocol/
-    authorization.go — AuthRequest, PushedAuthRequest/Response, RequestObject, scope/prompt/response constants
-    claims.go       — JWT claims interfaces (Claims, ClaimsSignature, IDClaims)
-    device.go       — DeviceAuthorizationRequest/Response, DeviceAccessTokenRequest (RFC 8628)
-    discovery.go    — DiscoveryConfiguration (OIDC Discovery 1.0 + OAuth 2.1 metadata)
-    error.go        — Error types (RFC 6749 §5.2, OIDC Core §3.1.2.6, RFC 8628)
-    jwe.go          — JWE interfaces (JWEService, SM9EncryptKey), EncryptTokenJWE/DecryptTokenJWE dispatch
-    jws.go          — JWS interfaces (JWSSigner, JWSVerifier, JWSService), VerifySignatureWithRegistry dispatch
-    keyset.go       — JWK KeySet abstraction
-    pkce.go         — CodeChallengeMethod
-    registry.go     — SignatureRegistry (user extension point, delegates to crypto.DefaultRegistry)
-    session.go      — EndSessionRequest (OIDC RP-Initiated Logout 1.0)
-    token.go        — TokenClaims, AccessTokenClaims, IDTokenClaims, Tokens[C], ActorClaims,
-                      LogoutTokenClaims, JWTProfileAssertionClaims, AccessTokenResponse,
-                      TokenExchangeResponse, JWT Profile helpers, ClaimHash, BearerToken consts
-    token_request.go — Token request types (AccessTokenRequest, RefreshTokenRequest, JWTTokenRequest, etc.)
-    introspection.go — IntrospectionResponse, IntrospectionRequest, ClientAssertionParams
-    types.go        — Core types (AuthMethod, GrantType, Display, Locales, SpaceDelimitedArray,
-                      Gender, Locale, Bool, Time, Audience, AMR, MaxAge, etc.)
-    userinfo.go     — UserInfo, UserInfoProfile, UserInfoEmail, UserInfoPhone, UserInfoAddress
-    util.go         — Internal utilities (mergeAndMarshalClaims, unmarshalJSONMulti, Encoder)
-    verifier.go     — Token verification (Verifier interface, ACR/AZP verifiers, JWT parsing,
-                      signature checking, expiry/issuer/audience/nonce/auth_time checks,
-                      JWE constants (JWEAlg*, JWEEnc*), Encrypt/DecryptToken convenience funcs,
-                      VerifyAccessToken, VerifyIDTokenHint, VerifyJWTAssertion,
-                      VerifyAccessTokenGeneric[C], VerifyIDTokenHintGeneric[C],
-                      AccessTokenVerifier, IDTokenHintVerifier, IDTokenHintExpiredError)
-```
-
-### Key Design Decisions
-
-1. **Precise types, not `any`**: DiscoveryConfiguration fields use `string` / `[]string`
-   instead of `any`, eliminating type-assertion boilerplate at call sites.
-
-2. **`Extra map[string]any` for extensibility**: Standard fields have typed access; plugins
-   contribute non-standard metadata via `Extra`. `MarshalJSON` merges both with defensive
-   checks. `UnmarshalJSON` separates known fields from extras.
-
-3. **Complete OIDC Discovery 1.0 compliance**: Fields ordered per spec (issuer first),
-   `,omitempty` on optional fields. RFC 8705 mTLS fields (`mtls_endpoint_aliases`,
-   `tls_client_certificate_bound_access_tokens`) included.
-
-4. **Independent error type system**: 23 error codes with RFC annotations, 24 sentinel
-   errors for internal validation failures, complete `DefaultToServerError` mapping.
-   Copyright: RoidMC Studios (no Apache 2.0 contamination).
-
-5. **Zero dependency on legacy `oidc/`**: All types, functions, errors, verifiers, and tests
-   are self-contained in `protocol/`. No sentinel error mapping needed.
-
-6. **Zero dependency on `gmsm` in `protocol/`**: The `protocol/` package has no import of
-   `github.com/emmansun/gmsm`. All GM/T cryptographic operations (SM2/SM9 JWS verification,
-   SM2/SM9 JWE encryption/decryption) are dispatched to `crypto.DefaultRegistry` via
-   `VerifySignatureWithRegistry` (jws.go) and `EncryptTokenJWE` / `DecryptTokenJWE` (jwe.go).
-   SM9 keys are abstracted behind `protocol.SM9EncryptKey` interface. This enables HSM/KMS
-   vendors to provide custom implementations without touching the protocol layer.
-
-### Test Coverage
-
-- `protocol/util_test.go` — mergeAndMarshalClaims, unmarshalJSONMulti, Encoder
-- `protocol/test/authorization_test.go` — LogValue, getters, JSON, constants
-- `protocol/test/device_authorization_test.go` — verification_url/uri/uri_complete
-- `protocol/test/userinfo_test.go` — AppendClaims, GetAddress, Marshal round-trip, Bool
-- `protocol/test/keyset_test.go` — FindMatchingKey (18 sub-tests)
-- `protocol/test/token_test.go` — TokenClaims, AccessTokenClaims, IDTokenClaims, LogoutTokenClaims, Tokens[C]
-- `protocol/test/types_test.go` — Audience, AMR, Display, Locale, Locales, Scopes, Time
-- `protocol/test/introspection_test.go` — SetUserInfo, GetAddress, MarshalJSON/UnmarshalJSON
-- `protocol/test/verifier_test.go` — DecryptToken, ParseToken, CheckSubject/Issuer/Audience/AZP/Signature/Expiration/IssuedAt/Nonce/ACR/AuthTime, NewAccessTokenVerifier, VerifyAccessTokenGeneric, NewIDTokenHintVerifier, VerifyIDTokenHintGeneric, IDTokenHintExpiredError, ExampleVerifyAccessTokenGeneric_customClaims
-- `protocol/test/discovery_test.go` — DiscoveryConfiguration round-trip
-- `protocol/test/regression/` — Regression tests
+`protocol/` is the single source of truth — zero Zitadel dependency, independent copyright.
+`zitadel/schema` replaced by `protocol.Encoder`/`protocol.Decoder`.
 
 ## Architecture: StormEngine
 
 ### Design Philosophy
 
-StormEngine is the **OIDC OP version of Caddy** — a plugin-based, embeddable OIDC server SDK.
-
-Core principles:
 - **Plugin = RFC Endpoint**: Each plugin maps to one RFC/OIDC Core section
 - **Interface Isolation (ISP)**: Each plugin declares only the storage interfaces it needs
 - **Capability Discovery**: Engine discovers storage capabilities via Go type assertions
-- **Zero Breaking Changes**: New features = new plugin + new interface, never modify existing interfaces
+- **Zero Breaking Changes**: New features = new plugin + new interface
 
-### Why This Architecture
-
-Go's implicit interface satisfaction naturally leads to "small interfaces + type assertion discovery".
-This is the same pattern Caddy v2 uses, and is fundamentally different from Zitadel/oidc's approach
-of growing monolithic interfaces (Caddy v1 pattern).
-
-| Aspect | StormEngine (Caddy v2) | Zitadel/oidc (Caddy v1) |
-|---|---|---|
-| Adding features | New plugin + new interface | Modify existing interface |
-| Storage requirement | Only what plugin uses | Everything at once |
-| Type safety | Interface satisfaction checked at startup | Runtime type assertions in handler |
-| Breaking changes | Impossible (new code only) | Common (interface changes) |
-
-### Plugin System
-
-Each plugin follows this pattern:
+### Plugin Pattern
 
 ```go
-type Plugin struct {
-    config Config
-}
-
-type Config struct {
-    // plugin-specific configuration
-}
-
-func New(config Config) *Plugin { return &Plugin{config: config} }
-func (p *Plugin) Name() string { return "plugin-name" }
-func (p *Plugin) Contribute(engine *Engine) error {
-    // register endpoints, middleware, etc.
-}
+type Plugin struct { /* dependencies */ }
+type Config struct { /* plugin-specific config */ }
+func NewWithConfig(cfg Config) *Plugin
+func (p *Plugin) Name() string
+func (p *Plugin) Contribute(engine *Engine) error
 ```
 
 ### Implemented Plugins
 
-| Plugin | File | RFC/OIDC Section |
+| Plugin | RFC/OIDC Section |
+|---|---|
+| Discovery | OIDC Discovery 1.0 |
+| Authorization | OIDC Core §3 (code/implicit/hybrid, PKCE, PAR, Request Object) |
+| Token | RFC 6749 §4 (code exchange, refresh, JWT Profile, Token Exchange) |
+| UserInfo | OIDC Core §5.3 |
+| JWKS | OIDC Core §7.3 |
+| DCR | RFC 7591 |
+| End Session | OIDC Session §5 |
+| Device Authorization | RFC 8628 |
+| PAR | RFC 9101 |
+| mTLS | RFC 8705 |
+| DPoP | RFC 9449 |
+| Back-Channel Logout | OIDC Back-Channel §2.5 (placeholder) |
+| Pairwise Subject | OIDC Core §8.1 |
+
+### Authorization Plugin Extension Points
+
+**Client-level (per-client behavior):**
+
+| Extension | Interface | Description |
 |---|---|---|
-| Discovery | discovery | OIDC Discovery 1.0 |
-| Authorization | authorization | OIDC Core §3 |
-| Token | token | RFC 6749 §4 |
-| UserInfo | userinfo | OIDC Core §5.3 |
-| JWKS | keys | OIDC Core §7.3 |
-| DCR | dcr | RFC 7591 |
-| End Session | endsession | OIDC Session §5 |
-| Device Authorization | device | RFC 8628 |
-| Token Exchange | token | RFC 8693 |
-| PAR | par | RFC 9101 |
-| mTLS | mtls | RFC 8705 |
-| DPoP | dpop | RFC 9449 |
-| Private Key JWT | token | RFC 7523 §2.2 |
-| Request Object | authorization | OIDC Core §6.1 |
-| id_token_hint | authorization | OIDC Core §3.1.2.2 |
-| Implicit Flow (disabled) | authorization | OIDC Core §3.2 |
-| Back-Channel Logout | backchannel | OIDC Back-Channel §2.5 |
-| Resource Indicators | token | RFC 8707 |
-| HTTPS redirect_uri | authorization | OIDC Core §15.6.3 |
-| Pairwise Subject | pairwise | OIDC Core §8.1 |
-| ID Token signing (RSA/ECDSA/EdDSA) | token | RFC 7515 |
-| ID Token signing (SM2/SM9) | token | GM/T 0125 |
-| OAuth 2.1 Discovery | discovery | OAuth 2.1 |
+| Extra ID token claims | `IDTokenClaimsExtender` | AuthRequest → `ExtraIDTokenClaims() map[string]any` |
+| ID token lifetime | `IDTokenLifetimeProvider` | Client → `IDTokenLifetime() time.Duration` (default: 1h) |
+| Redirect URI list | `RedirectURIClient` | Client → `RedirectURIs() []string` |
+| Glob redirect URI | `RedirectURIGlobClient` | Client → `RedirectURIGlobs() []string` |
+| Application type | `ApplicationTypeClient` | Client → `ApplicationType()` (web/native/user_agent) |
+| Dev mode | `DevModeClient` | Client → `DevMode() bool` |
+| Scope validation | `ScopeValidationClient` | Client → `StrictScopeValidation() bool` |
+| Custom validation | `AuthorizeValidatorClient` | Client → `AuthorizeValidator() AuthorizeValidator` |
+| Response types | `responseTypesProvider` | Client → `ResponseTypes() []ResponseType` |
+
+**Tenant-level (global per Engine):**
+
+| Extension | Config field | Description |
+|---|---|---|
+| Custom auth code | `Config.CreateAuthCode` | Hook for authorization code generation |
+| Implicit flow | `Config.EnableImplicit` | Enable/disable (default: disabled per OAuth 2.1) |
+| PAR | `Config.PARStore` | Pushed Authorization Requests |
+| Session management | `Config.SessionProvider` | `prompt=none` enforcement (OIDC Core §3.1.2.6). Optional; when nil, `prompt=none` is not enforced. Auto-discovered from storage via type assertion. |
+
+Standard claims (`iss`, `sub`, `aud`, `iat`, `exp`, `nonce`, `at_hash`) cannot be overridden
+by `IDTokenClaimsExtender` — they always take precedence.
+
+### Multi-tenant Support
+
+Two modes, both supported by the same SDK:
+
+1. **Multi-Engine**: Each tenant = own Engine + issuer + storage. `IssuerMiddleware` routes by URL.
+2. **Single-Engine**: One Engine, one issuer. Storage maps `client_id` → tenant config internally.
+   Client objects implement optional interfaces for per-tenant behavior.
 
 ### Not Implemented (by design)
 
 | Feature | Reason |
 |---|---|
-| Front-Channel Logout | Pure backend API SDK, no browser iframes |
-| Session Management (iframe) | Pure backend API SDK, no browser iframes |
+| Front-Channel Logout | Backend SDK, no browser iframes |
+| Session Management (iframe) | Backend SDK, no browser iframes |
 | Hybrid Flow | Removed in OAuth 2.1 |
 
-### Gaps for OIDF Basic Certification
+## Gaps for OIDF Basic Certification
 
-| Gap | Location | What's Missing |
-|---|---|---|
-| `c_hash` claim | token.go `createIDToken` | Code hash, OIDC Core §3.3.2.11 |
-| `auth_time` claim | token.go `createIDToken` | User authentication time |
-| `acr` claim | token.go `createIDToken` | Authentication Context Class Reference |
-| `amr` claim | token.go `createIDToken` | Authentication Methods References |
-| `azp` claim | token.go `createIDToken` | Authorized Party |
-| UserInfo scope filtering | userinfo.go | Return claims based on requested scopes |
-| JWE ID Token encryption | `protocol.EncryptTokenJWE` | Implemented for dir/SM2/SM9 modes via crypto ProviderRegistry |
-| CORS middleware | engine.go | Cross-Origin Resource Sharing headers |
-| Tests | (all plugins) | Zero test files in storm package |
+| Gap | Can inject via `IDTokenClaimsExtender`? |
+|---|---|
+| `c_hash` claim | Yes |
+| `auth_time` claim | Yes |
+| `acr` claim | Yes |
+| `amr` claim | Yes |
+| `azp` claim | Yes |
+| UserInfo scope filtering | No — needs `userinfo.go` change |
+| CORS middleware | No — needs `engine.go` change |
 
-### Known Issues
+## Known Issues
 
 - `UserinfoStore.SetUserinfoFromToken` lacks `scopes []string` parameter
 - `TokenRequest` interface missing `GetAuthTime()`, `GetNonce()`, `GetACR()`, `GetAMR()`
-- `Storage` interface defined but not enforced by `WithStorage(storage any)`
-- `Client` interface too small, plugins define ad-hoc `xxxProvider` interfaces via type assertion
-- `SigningService` partially extracted — JWS verification and JWE encrypt/decrypt now dispatch
-  through `crypto.DefaultRegistry`; signing still done directly in plugins via `crypto.NewSigner`
+- `op/` package still contains legacy mock files — to be removed after migration
 
-## Package: crypto/ — Encryption Utilities
+## Gaps Fixed (2026-06-07)
 
-### Design
-
-`pkg/crypto/` provides symmetric encryption (AES-GCM, SM4-GCM/CCM/CBC/ECB), asymmetric
-encryption (SM2), signing (SM2, SM9), hashing (SM3), and key exchange (SM2/SM9).
-
-It also contains `registry.go` — the **ProviderRegistry** that serves as the algorithm
-implementation layer in the JCA-like architecture. HSM/KMS vendors register custom
-providers here; the protocol layer dispatches through `DefaultRegistry`.
-
-All encryption modes use **authenticated encryption** (GCM or CCM). The former AES-CTR
-implementation (from Zitadel, no authentication tag) was replaced with AES-GCM to unify
-with SM4-GCM and improve security. Copyright: RoidMC Studios.
-
-### Key Functions
-
-| Function | Mode | Notes |
-|---|---|---|
-| `EncryptAES` / `DecryptAES` | AES-256-GCM | String I/O, base64url encoded |
-| `EncryptBytesAES` / `DecryptBytesAES` | AES-256-GCM | []byte I/O, raw binary |
-| `EncryptSM4` / `DecryptSM4` | SM4-GCM | String I/O, base64url encoded |
-| `SM4EncryptGCM` / `SM4DecryptGCM` | SM4-GCM | []byte I/O, nonce explicit |
-| `SM4EncryptCBC` / `SM4DecryptCBC` | SM4-CBC | PKCS#7 padding |
-| `SM4EncryptECB` / `SM4DecryptECB` | SM4-ECB | PKCS#7 padding |
-
-### Wire Format (AES-GCM / SM4-GCM)
-
-```
-[nonce (12 bytes)] [ciphertext + GCM tag (16 bytes)]
-```
-
-Base64url encoded for string API. `ErrCipherTextTooShort` if input < 12 bytes.
-
-## Crypto Architecture: JCA-like Provider Pattern
-
-The project uses a **Java JCA-inspired** layered architecture for cryptographic operations.
-`protocol/` acts as the unified interface layer (like `javax.crypto`), while `crypto/` provides
-pluggable algorithm implementations (like JCA Providers).
-
-### Layer Diagram
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Upper layers (op/, storm/, client/)                          │
-│  Call protocol.EncryptTokenJWE / protocol.VerifySignature    │
-└────────────────────────┬─────────────────────────────────────┘
-                         │
-┌────────────────────────▼─────────────────────────────────────┐
-│  protocol/ — JCA Interface Layer                              │
-│                                                              │
-│  jws.go: JWSSigner / JWSVerifier / JWSService interfaces     │
-│  jwe.go: JWEService / SM9EncryptKey interfaces               │
-│  registry.go: SignatureRegistry (user extension point)       │
-│  verifier.go: EncryptToken/DecryptToken convenience funcs    │
-│                                                              │
-│  Dispatches to crypto.DefaultRegistry for GM/T algorithms    │
-│  Falls back to jwx for standard algorithms (RSA, EC, EdDSA) │
-│  **Zero dependency on gmsm**                                 │
-└────────────────────────┬─────────────────────────────────────┘
-                         │
-┌────────────────────────▼─────────────────────────────────────┐
-│  crypto/ — Provider Implementation Layer                      │
-│                                                              │
-│  registry.go: ProviderRegistry + DefaultRegistry             │
-│  Provider interfaces: SignProvider / VerifyProvider           │
-│    JWEEncryptProvider / JWEDecryptProvider                    │
-│                                                              │
-│  Default: gmsm implementations (SM2/SM9/SM4)                 │
-│  Extensible: HSM / KMS / any external crypto service         │
-└──────────────────────────────────────────────────────────────┘
-```
-
-### Key Files
-
-| File | Role |
+| Issue | Status |
 |---|---|
-| `protocol/jws.go` | JWS interfaces + `VerifySignatureWithRegistry` (central JWS dispatch) |
-| `protocol/jwe.go` | JWE interfaces + `EncryptTokenJWE` / `DecryptTokenJWE` (central JWE dispatch) |
-| `protocol/registry.go` | `SignatureRegistry` — user extension point for custom JWS verifiers |
-| `protocol/verifier.go` | All verifier implementations: `AccessTokenVerifier`, `IDTokenHintVerifier`, `VerifyAccessTokenGeneric[C]`, `VerifyIDTokenHintGeneric[C]`, `VerifyJWTAssertion`, `IDTokenHintExpiredError` (soft error); JWE constants + `EncryptToken*`/`DecryptToken*` |
-| `crypto/registry.go` | `ProviderRegistry` — algorithm provider registration + gmsm defaults |
-| `crypto/sign.go` | SM2/SM9 signing implementations |
-| `crypto/jwe.go` | SM2/SM9 JWE encrypt/decrypt implementations |
+| `Bool(false)` omitted by `omitempty` (`email_verified`, `phone_number_verified`) | Fixed — removed `omitempty` from `UserInfoEmail.EmailVerified` and `UserInfoPhone.PhoneNumberVerified` |
+| `prompt=none` not enforced (OIDC Core §3.1.2.6) | Fixed — `SessionProvider` interface in authorization plugin |
+| `profile` scope missing claims (`nickname`, `zoneinfo`, `updated_at`, etc.) | Fixed — example `SetUserinfoFromToken` populates all OIDC Core §5.4 claims |
+| `address` scope not handled | Fixed — example `SetUserinfoFromToken` returns `UserInfoAddress` |
+| `phone` scope missing `phone_number` (empty string omitted) | Fixed — example test user has phone number |
+| Access token not decryptable (SHA256 hash → AES-GCM) | Fixed — `TokenCrypto.Encrypt/Decrypt` uses AES-GCM |
+| ID token missing from token response (signing with public key) | Fixed — `signingKey.Key()` returns private key; `createIDToken` uses `crypto.SignJWS` |
+| UserInfo returning 400 for invalid tokens (should be 401) | Fixed — RFC 6750 §3.1 `WWW-Authenticate` header |
+| OIDC Core §5.5 `claims` parameter not supported | Fixed — `ClaimsRequest` type, `GetClaims()` interface, ID Token + UserInfo claims injection |
+| Authorization code reuse token tracking used encrypted token instead of UUID | Fixed — `createAccessToken` returns `tokenID`; `TrackTokenForAuthRequest` uses UUID |
+| UserInfo/Introspection returned 500 for revoked tokens | Fixed — UserInfo: 401 + `WWW-Authenticate`; Introspection: `{"active": false}` |
+| Unregistered redirect_uri redirected errors to attacker URI | Fixed — redirect_uri validated before other params; unregistered → HTTP 400 direct |
+| Token endpoint Cache-Control headers missing | Fixed — `shared.JSONResponse` sets `Cache-Control: no-store` + `Pragma: no-cache` |
+| Refresh token not issued for authorization_code grant | Fixed — `createAccessToken` returns `refreshToken` from `CreateAccessAndRefreshTokens` |
 
-### Provider Interfaces (crypto/registry.go)
+## TODO
 
-| Interface | Method | Purpose |
+- **InMemoryStorage** — Default storage for dev/testing
+- **Client Builder** — Move client helpers to `storm/client` package
+- **CORS middleware** in `engine.go`
+- **Test coverage**: authorization 30+ tests, token 35 tests done
+
+## Security Audit (2026-06-04)
+
+| Issue | Severity | Status |
 |---|---|---|
-| `SignProvider` | `Sign(ctx, keyID, payload) → JWS` | External JWS signing (HSM, KMS) |
-| `VerifyProvider` | `Verify(ctx, signingInput, signature, key) → error` | External JWS verification |
-| `JWEEncryptProvider` | `Encrypt(ctx, plaintext, key) → JWE` | External JWE encryption |
-| `JWEDecryptProvider` | `Decrypt(ctx, compact, key) → plaintext` | External JWE decryption |
-
-### SM9 Key Abstraction
-
-`protocol.SM9EncryptKey` (protocol layer) and `crypto.SM9EncryptKey` (crypto layer) hide
-`*sm9.EncryptMasterPublicKey` from upper layers. The canonical implementation is
-`crypto.SM9MasterPublicKey`, which implements both interfaces. HSM/KMS vendors implement
-`protocol.SM9EncryptKey` to provide their own SM9 key material without importing gmsm.
-
-| Interface | Layer | Methods | Purpose |
-|---|---|---|---|
-| `protocol.SM9EncryptKey` | protocol | `MarshalBinary()`, `GetUID()` | gmsm-free abstraction for OP/RP |
-| `crypto.SM9EncryptKey` | crypto | `Resolve() → (*sm9.EncryptMasterPublicKey, []byte, error)` | gmsm-aware for Provider dispatch |
-| `crypto.SM9MasterPublicKey` | crypto | implements both | Concrete wrapper |
-
-### Registered Providers (init())
-
-| Algorithm | Sign | Verify | JWE Encrypt | JWE Decrypt |
-|---|---|---|---|---|
-| `SGD_SM3_SM2` | `sm2SignProvider` (stub) | `sm2VerifyProvider` ✅ | — | — |
-| `SGD_SM3_SM9` | `sm9SignProvider` (stub) | `sm9VerifyProvider` (stub) | — | — |
-| `SGD_SM2_3` | — | — | `sm2JWEProvider` ✅ | `sm2JWEProvider` ✅ |
-| `SGD_SM9_3` | — | — | `sm9JWEProvider` ✅ | `sm9JWEProvider` ✅ |
-
-Standard algorithms (RSA, ECDSA, EdDSA, AES-GCM, A256GCMKW) are handled by jwx directly,
-not through the Provider registry.
-
-### JWE Algorithm Constants (protocol/verifier.go)
-
-| Constant | Value | Key Wrapping | Content Encryption | Status |
-|---|---|---|---|---|
-| `JWEAlgDir` | `"dir"` | Direct symmetric | SM4-GCM / AES-GCM | ✅ |
-| `JWEAlgA256GCMKW` | `"A256GCMKW"` | AES-256-GCM | AES-256-GCM | ✅ |
-| `JWEAlgSM23` | `"SGD_SM2_3"` | SM2 | SM4-GCM | ✅ |
-| `JWEAlgSM93` | `"SGD_SM9_3"` | SM9 | SM4-GCM | ✅ |
-| `JWEEncSM4GCM` | `"SGD_SM4_GCM"` | — | SM4-GCM | ✅ |
-| `JWEEncA256GCM` | `"A256GCM"` | — | AES-256-GCM | ✅ |
-| `JWEEncA128GCM` | `"A128GCM"` | — | AES-128-GCM | ✅ |
-
-### How to Register a Custom Provider
-
-```go
-// Example: Register an HSM-based SM2 signer
-hsmProvider := myHSMProvider{client: hsmClient}
-crypto.DefaultRegistry.RegisterSigner("SGD_SM3_SM2", hsmProvider)
-
-// Example: Register a KMS-based JWE encryptor
-kmsProvider := myKMSProvider{client: kmsClient}
-crypto.DefaultRegistry.RegisterJWEEncryptor("SGD_SM2_3", kmsProvider)
-```
-
-Once registered, all `protocol.EncryptTokenJWE` / `VerifySignatureWithRegistry` calls
-for that algorithm will automatically dispatch to the custom provider.
-
-## Key Dependencies
-
-| Package | Version | Purpose |
-|---|---|---|
-| github.com/lestrrat-go/jwx/v4 | v4 | JWK, JWS, JWA, JWT |
-| github.com/go-chi/chi/v5 | v5 | HTTP routing |
-| github.com/emmansun/gmsm | latest | SM2/SM3/SM4/SM9 |
-| github.com/rs/cors | latest | CORS (used in legacy only) |
-
-## Building and Running
-
-```bash
-# Build all
-go build ./...
-
-# Run storm-server example
-go run ./example/storm-server/
-
-# Discovery
-curl http://localhost:9998/.well-known/openid-configuration
-
-# JWKS
-curl http://localhost:9998/.well-known/jwks.json
-```
+| XSS in form_post template | High | Fixed — `html/template` |
+| Open redirect via unvalidated redirect_uri | High | Fixed — `shared.WriteError` |
+| Fragment URL in Go 1.22+ | Medium | Fixed — manual `#fragment` |
+| `isLocalhost` included `0.0.0.0` | Medium | Fixed |
+| Implicit Flow missing `access_token` | High | Fixed |
+| `writeAuthError` ignored `response_mode` | High | Fixed |
+| `validateIDTokenHint` didn't extract subject | Medium | Fixed |
+| IDTokenClaimsExtender override protection | None | N/A — standard claims take precedence |
 
 ## Conventions
 
-- Code comments follow the language of the conversation (Chinese for architecture discussion)
+- Code comments follow conversation language (Chinese for architecture)
 - No comments in code unless asked
-- Follow existing code style when editing
-- Use `shared.IssuerURL(ctx, "/path")` for endpoint URLs (avoids double slashes)
+- Use `shared.IssuerURL(ctx, "/path")` for endpoint URLs
 - Use `shared.IssuerFromContext(ctx)` for issuer string
-- All OAuth errors use `protocol.ErrXxx().WithDescription("...").WithParent(err)` pattern
-- Plugin structure: `Plugin` struct + `Config` struct + `New(Config)` + `Name()` + `Contribute()`
-- `protocol/` is the single source of truth for all OAuth/OIDC type definitions
-- `protocol/verifier.go` is the single source of truth for **all verifier implementations** (AccessTokenVerifier, IDTokenHintVerifier, generic + non-generic verify functions)
-- `op/` uses `protocol.AccessTokenVerifier` / `protocol.IDTokenHintVerifier` directly (no wrapper); only `op.JWTProfileVerifier` is OP-specific (has SM9 support)
-- `op/WithAccessTokenVerifierOpts` / `op/WithIDTokenHintVerifierOpts` accept `protocol.AccessTokenVerifierOpt` / `protocol.IDTokenHintVerifierOpt`
-- `storm/shared/verifier.go` re-exports `protocol.VerifyAccessToken` / `protocol.VerifyIDTokenHint` (non-generic) for storm plugins
-- Generic functions (`VerifyAccessTokenGeneric[C]`, `VerifyIDTokenHintGeneric[C]`) cannot be assigned to variables in Go — use them directly: `protocol.VerifyAccessTokenGeneric[*MyClaims](ctx, token, v)`
-- `protocol/authorization.go` defines `AuthRequest`, `PushedAuthRequest/Response`, `RequestObject`, and all OIDC constants
-- `protocol/token.go` defines all token types including `Tokens[C]` (generic OAuth2+OIDC token wrapper)
-- `protocol/util.go` defines `Encoder` (struct → url.Values) and `Decoder` (url.Values → struct) via `schema` tags; replaces `zitadel/schema` and `pkg/util/codec`
-- `Decoder.RegisterParser` allows StormEngine plugins to register custom type parsers at runtime
-- `protocol/session.go` defines `EndSessionRequest` for RP-Initiated Logout
+- OAuth errors: `protocol.ErrXxx().WithDescription("...").WithParent(err)`
+- Plugin: `Plugin` struct + `Config` struct + `NewWithConfig(Config)` + `Name()` + `Contribute()`
+- `protocol/` is single source of truth for all OAuth/OIDC types
+- Use `protocol.CheckSignatureWithKeyStore()` for KeyStore-based signature verification
+- For `IDTokenHintVerifier`, set `verifier.KeyStore = keyStore`
+- Generic functions: use directly, cannot assign to variables
 
-### protocol.Encoder / protocol.Decoder vs zitadel/schema
+## Key Dependencies
 
-| Feature | `zitadel/schema` (original) | `protocol.Decoder/Encoder` (replacement) |
-|---|---|---|
-| Struct tag | `schema` | `schema` (unified) |
-| Custom type parsing | Global `Converter` registry | Instance-level `RegisterParser` |
-| Ignore unknown keys | `IgnoreUnknownKeys(bool)` | `IgnoreUnknownKeys(bool)` |
-| `omitempty` support | Native | Supported |
-| `encoding.TextMarshaler` / `TextUnmarshaler` | Native | Supported |
-| Pointer auto-init | Native | Supported |
-| Slice decoding | Full `[]T` support | `[]string` via `strings.Fields` |
-| Error aggregation | `schema.MultiError` (collects all field errors) | `fmt.Errorf` (returns first error only) |
-| Nested struct | Supported | **Not supported** (flat structs only) |
-| `[]string` encoding | Per-element encoding | `fmt.Sprintf("%v", v)` |
+| Package | Purpose |
+|---|---|
+| `lestrrat-go/jwx/v4` | JWK, JWS, JWA, JWT |
+| `go-chi/chi/v5` | HTTP routing |
+| `emmansun/gmsm` | SM2/SM3/SM4/SM9 |
 
-**Limitations** (acceptable for OIDC/OAuth form parsing):
-1. **No nested struct support** — All `protocol/` request types are flat; no nesting needed.
-2. **No `MultiError`** — HTTP form parsing reports the first error; sufficient for OAuth error responses.
-3. **Slice encoding simplified** — `Encoder` uses `fmt.Sprintf("%v", v)` for non-custom types; `protocol/` types use `SpaceDelimitedArray` which has a custom encoder.
-4. **Error type simplified** — Returns `fmt.Errorf` instead of `schema.MultiError`; call sites use `errors.Is` where needed.
+## Building
+
+```bash
+go build ./...
+go run ./example/storm-server/
+curl http://localhost:9998/.well-known/openid-configuration
+```

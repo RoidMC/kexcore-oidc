@@ -23,6 +23,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -41,21 +42,36 @@ const defaultIDTokenLifetime = 1 * time.Hour
 
 // Plugin implements the OIDC Authorization endpoint.
 type Plugin struct {
-	authStore      storm.AuthStore
-	clientStore    storm.ClientStore
-	crypto         storm.UniCrypto
-	keyStore       storm.KeyStore
-	tokenStore     storm.TokenStore
-	decoder        *protocol.Decoder
-	enableImplicit bool
-	parStore       storm.PARStore
-	createAuthCode func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
+	authStore       storm.AuthStore
+	clientStore     storm.ClientStore
+	crypto          storm.UniCrypto
+	keyStore        storm.KeyStore
+	tokenStore      storm.TokenStore
+	decoder         *protocol.Decoder
+	enableImplicit  bool
+	parStore        storm.PARStore
+	sessionProvider SessionProvider
+	createAuthCode  func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
 }
 
 //go:embed template/form_post.html.tmpl
 var formPostHtmlTemplate string
 
 var formPostTmpl = template.Must(template.New("form_post").Parse(formPostHtmlTemplate))
+
+// SessionProvider is an optional interface for checking whether an
+// end-user session exists. When the client storage implements this,
+// the Authorization plugin uses it to enforce prompt=none (OIDC Core
+// §3.1.2.6): if no session exists the endpoint returns login_required
+// immediately instead of redirecting to the login UI.
+//
+// When a session exists, GetSession returns the subject and the
+// original authentication time (auth_time). The auth_time is used
+// to populate the auth_time claim in ID tokens, ensuring consistency
+// across multiple token issuances for the same session.
+type SessionProvider interface {
+	GetSession(ctx context.Context, r *http.Request, clientID string) (subject string, authTime time.Time, ok bool)
+}
 
 // Config holds the dependencies for the Authorization plugin.
 type Config struct {
@@ -78,6 +94,11 @@ type Config struct {
 	// generation (Tenant-level). When nil, the default implementation
 	// encrypts the auth request ID using the configured Crypto.
 	CreateAuthCode func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
+
+	// SessionProvider is an optional session checker for prompt=none
+	// enforcement. When nil, prompt=none is not enforced at the
+	// authorization endpoint (the login UI is always shown).
+	SessionProvider SessionProvider
 }
 
 // New creates a new Authorization plugin from a PluginContext.
@@ -93,12 +114,29 @@ func New(ctx *storm.PluginContext) *Plugin {
 		keyStore:    ctx.Storage.(storm.KeyStore),
 		decoder:     ctx.Decoder,
 	}
+	// Register custom parser for OIDC §5.5 claims parameter (JSON object).
+	ctx.Decoder.RegisterParser(
+		reflect.TypeOf(&protocol.ClaimsRequest{}),
+		func(s string) (reflect.Value, error) {
+			if s == "" {
+				return reflect.Zero(reflect.TypeOf(&protocol.ClaimsRequest{})), nil
+			}
+			cr := new(protocol.ClaimsRequest)
+			if err := json.Unmarshal([]byte(s), cr); err != nil {
+				return reflect.Value{}, fmt.Errorf("invalid claims parameter: %w", err)
+			}
+			return reflect.ValueOf(cr), nil
+		},
+	)
 	// Optionally extract TokenStore and PARStore from storage.
 	if ts, ok := ctx.Storage.(storm.TokenStore); ok {
 		p.tokenStore = ts
 	}
 	if ps, ok := ctx.Storage.(storm.PARStore); ok {
 		p.parStore = ps
+	}
+	if sp, ok := ctx.Storage.(SessionProvider); ok {
+		p.sessionProvider = sp
 	}
 	return p
 }
@@ -107,15 +145,16 @@ func New(ctx *storm.PluginContext) *Plugin {
 // Use this when you need to override defaults (e.g., enable implicit flow).
 func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
-		authStore:      cfg.AuthStore,
-		clientStore:    cfg.ClientStore,
-		crypto:         cfg.Crypto,
-		keyStore:       cfg.KeyStore,
-		tokenStore:     cfg.TokenStore,
-		decoder:        cfg.Decoder,
-		enableImplicit: cfg.EnableImplicit,
-		parStore:       cfg.PARStore,
-		createAuthCode: cfg.CreateAuthCode,
+		authStore:       cfg.AuthStore,
+		clientStore:     cfg.ClientStore,
+		crypto:          cfg.Crypto,
+		keyStore:        cfg.KeyStore,
+		tokenStore:      cfg.TokenStore,
+		decoder:         cfg.Decoder,
+		enableImplicit:  cfg.EnableImplicit,
+		parStore:        cfg.PARStore,
+		sessionProvider: cfg.SessionProvider,
+		createAuthCode:  cfg.CreateAuthCode,
 	}
 }
 
@@ -228,7 +267,18 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validateAuthRequestParams(client, authReq); err != nil {
+	// Validate redirect_uri first — separately from other params.
+	// Per OIDC Core §3.1.2.4: if redirect_uri is not registered, the OP
+	// MUST NOT redirect to it and MUST display an error directly.
+	redirectURIErr := validateRedirectURI(client, authReq.RedirectURI, authReq.ResponseType)
+	if redirectURIErr != nil {
+		shared.WriteError(w, r, redirectURIErr, nil)
+		return
+	}
+
+	// Now that redirect_uri is validated, remaining errors can be
+	// safely redirected to the registered URI.
+	if err := validateAuthRequestParamsExceptRedirectURI(client, authReq); err != nil {
 		writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode, err)
 		return
 	}
@@ -260,6 +310,93 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode, err)
 			return
 		}
+	}
+
+	// OIDC Core §3.1.2.6: prompt=none MUST NOT display any UI.
+	// If no session exists, return login_required immediately.
+	// If a session exists, auto-complete the auth request with the
+	// original auth_time and skip the login UI entirely.
+	if slices.Contains(authReq.Prompt, protocol.PromptNone) {
+		if p.sessionProvider == nil {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+				protocol.ErrLoginRequired().WithDescription("prompt=none but no session provider configured"))
+			return
+		}
+		subject, authTime, ok := p.sessionProvider.GetSession(r.Context(), r, authReq.ClientID)
+		if !ok {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+				protocol.ErrLoginRequired().WithDescription("user is not logged in"))
+			return
+		}
+
+		// Auto-complete: create auth request with subject, mark done
+		// with the original auth_time, then directly produce the auth
+		// response — no login UI redirect.
+		completer, ok := p.authStore.(storm.AutoCompleteAuthRequest)
+		if !ok {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+				protocol.ErrServerError().WithDescription("prompt=none requires AutoCompleteAuthRequest support"))
+			return
+		}
+		req, err := p.authStore.CreateAuthRequest(r.Context(), authReq, subject)
+		if err != nil {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+				protocol.DefaultToServerError(err, "unable to save auth request"))
+			return
+		}
+		if err := completer.CompleteAuthRequest(r.Context(), req.GetID(), subject, authTime); err != nil {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+				protocol.DefaultToServerError(err, "unable to complete auth request"))
+			return
+		}
+		completed, err := p.authStore.AuthRequestByID(r.Context(), req.GetID())
+		if err != nil {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+				protocol.DefaultToServerError(err, "unable to fetch completed auth request"))
+			return
+		}
+		p.authResponse(w, r, completed)
+		return
+	}
+
+	// OIDC Core §3.1.2.1: max_age specifies the allowable elapsed
+	// time since the last authentication. If the session auth_time
+	// is within the max_age window, skip re-authentication and
+	// auto-complete with the original auth_time.
+	if authReq.MaxAge != nil && p.sessionProvider != nil {
+		subject, authTime, ok := p.sessionProvider.GetSession(r.Context(), r, authReq.ClientID)
+		if ok {
+			elapsed := time.Since(authTime)
+			if elapsed <= time.Duration(*authReq.MaxAge)*time.Second {
+				completer, ok := p.authStore.(storm.AutoCompleteAuthRequest)
+				if !ok {
+					writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+						protocol.ErrServerError().WithDescription("max_age auto-complete requires AutoCompleteAuthRequest support"))
+					return
+				}
+				req, err := p.authStore.CreateAuthRequest(r.Context(), authReq, subject)
+				if err != nil {
+					writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+						protocol.DefaultToServerError(err, "unable to save auth request"))
+					return
+				}
+				if err := completer.CompleteAuthRequest(r.Context(), req.GetID(), subject, authTime); err != nil {
+					writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+						protocol.DefaultToServerError(err, "unable to complete auth request"))
+					return
+				}
+				completed, err := p.authStore.AuthRequestByID(r.Context(), req.GetID())
+				if err != nil {
+					writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+						protocol.DefaultToServerError(err, "unable to fetch completed auth request"))
+					return
+				}
+				p.authResponse(w, r, completed)
+				return
+			}
+			// max_age exceeded — fall through to login UI for re-authentication
+		}
+		// No session — fall through to login UI
 	}
 
 	req, err := p.authStore.CreateAuthRequest(r.Context(), authReq, "")

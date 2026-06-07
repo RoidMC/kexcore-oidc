@@ -45,7 +45,7 @@ func (c *Client) LoginURL(id string) string              { return c.loginURLFn(i
 func (c *Client) RedirectURIs() []string                 { return c.redirectURIs }
 func (c *Client) PostLogoutRedirectURIs() []string       { return c.postLogoutRedirectURIs }
 func (c *Client) ResponseTypes() []protocol.ResponseType { return c.responseTypes }
-func (c *Client) GrantTypes() []protocol.GrantType           { return c.grantTypes }
+func (c *Client) GrantTypes() []protocol.GrantType       { return c.grantTypes }
 func (c *Client) DevMode() bool                          { return c.devMode }
 func (c *Client) IDTokenLifetime() time.Duration         { return 1 * time.Hour }
 func (c *Client) ClockSkew() time.Duration               { return c.clockSkew }
@@ -98,6 +98,12 @@ func OIDFTestClient(id, secret string, redirectURIs ...string) *Client {
 	c.postLogoutRedirectURIs = []string{
 		"https://www.certification.openid.net/test/a/kexcore-test/post_logout_redirect",
 	}
+	return c
+}
+
+func OIDFTestClientSecretPost(id, secret string, redirectURIs ...string) *Client {
+	c := OIDFTestClient(id, secret, redirectURIs...)
+	c.authMethod = protocol.AuthMethodPost
 	return c
 }
 
