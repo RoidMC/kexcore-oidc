@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
@@ -58,7 +59,7 @@ func (p *helloPlugin) Register(r chi.Router) {
 
 type contribPlugin struct {
 	name string
-	kv   map[string]any
+	fn   func(ctx context.Context, cfg *protocol.DiscoveryConfiguration)
 }
 
 func (p *contribPlugin) Name() string { return p.name }
@@ -69,8 +70,10 @@ func (p *contribPlugin) Register(r chi.Router) {
 	})
 }
 
-func (p *contribPlugin) Contribute(ctx context.Context) map[string]any {
-	return p.kv
+func (p *contribPlugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	if p.fn != nil {
+		p.fn(ctx, cfg)
+	}
 }
 
 // --- tests ---
@@ -133,8 +136,8 @@ func TestEngineReady(t *testing.T) {
 func TestEngineDiscovery(t *testing.T) {
 	store := &stubStorage{}
 	engine := storm.New(store, shared.StaticIssuer("https://example.com"))
-	engine.Register(&contribPlugin{name: "auth", kv: map[string]any{
-		"authorization_endpoint": "https://example.com/authorize",
+	engine.Register(&contribPlugin{name: "auth", fn: func(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+		cfg.AuthorizationEndpoint = "https://example.com/authorize"
 	}})
 	handler := engine.Build()
 
@@ -158,22 +161,30 @@ func TestEngineDiscovery(t *testing.T) {
 	}
 }
 
-func TestEngineDiscoveryCollision(t *testing.T) {
+func TestEngineDiscoveryOverride(t *testing.T) {
+	// Later plugins can override fields set by earlier plugins.
 	store := &stubStorage{}
 	engine := storm.New(store, shared.StaticIssuer("https://example.com"))
-	engine.Register(&contribPlugin{name: "a", kv: map[string]any{
-		"authorization_endpoint": "https://a.com/authorize",
+	engine.Register(&contribPlugin{name: "a", fn: func(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+		cfg.AuthorizationEndpoint = "https://a.com/authorize"
 	}})
-	engine.Register(&contribPlugin{name: "b", kv: map[string]any{
-		"authorization_endpoint": "https://b.com/authorize",
+	engine.Register(&contribPlugin{name: "b", fn: func(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+		cfg.AuthorizationEndpoint = "https://b.com/authorize"
 	}})
+	handler := engine.Build()
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for discovery key collision")
-		}
-	}()
-	engine.Build()
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/openid-configuration", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	// Last writer wins
+	if body["authorization_endpoint"] != "https://b.com/authorize" {
+		t.Errorf("authorization_endpoint = %v, want https://b.com/authorize", body["authorization_endpoint"])
+	}
 }
 
 func TestEngineHandlerBeforeBuild(t *testing.T) {

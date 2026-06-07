@@ -78,10 +78,13 @@ func (p *Plugin) Register(r chi.Router) {
 }
 
 // Contribute returns the discovery fields for the introspection endpoint.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"introspection_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/introspect")),
-	}
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.IntrospectionEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/introspect"))
+
+	// Introspection endpoint capabilities
+	cfg.IntrospectionEndpointAuthMethodsSupported = append(cfg.IntrospectionEndpointAuthMethodsSupported,
+		"client_secret_basic", "client_secret_post", "private_key_jwt",
+	)
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

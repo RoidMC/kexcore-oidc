@@ -75,17 +75,15 @@ func (p *Plugin) Register(r chi.Router) {
 }
 
 // Contribute returns the discovery fields for the userinfo endpoint.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"userinfo_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/userinfo")),
-	}
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.UserinfoEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/userinfo"))
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	// Extract access token from Authorization header or form body
 	accessToken := extractAccessToken(r)
 	if accessToken == "" {
-		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("access token is missing"), nil)
+		shared.WriteError(w, r, shared.NewStatusError(protocol.ErrInvalidRequest().WithDescription("access token is missing"), http.StatusUnauthorized), nil)
 		return
 	}
 
@@ -93,7 +91,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	// Supports opaque tokens (standard + GM/T JWE) and JWT access tokens.
 	tokenID, subject, ok := storm.ResolveToken(r.Context(), p.crypto, p.keyStore, shared.IssuerFromContext(r.Context()), accessToken)
 	if !ok {
-		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid access token"), nil)
+		shared.WriteError(w, r, shared.NewStatusError(protocol.ErrInvalidRequest().WithDescription("invalid access token"), http.StatusUnauthorized), nil)
 		return
 	}
 

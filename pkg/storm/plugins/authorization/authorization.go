@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,10 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
+// defaultIDTokenLifetime is the default lifetime for ID tokens issued
+// in the Implicit Flow. Can be overridden per-client via IDTokenLifetimeProvider.
+const defaultIDTokenLifetime = 1 * time.Hour
+
 // Plugin implements the OIDC Authorization endpoint.
 type Plugin struct {
 	authStore      storm.AuthStore
@@ -44,6 +49,7 @@ type Plugin struct {
 	decoder        *protocol.Decoder
 	enableImplicit bool
 	parStore       storm.PARStore
+	createAuthCode func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
 }
 
 //go:embed template/form_post.html.tmpl
@@ -67,6 +73,11 @@ type Config struct {
 	// PARStore enables Pushed Authorization Requests (RFC 9101).
 	// When set, request_uri references are resolved from this store.
 	PARStore storm.PARStore
+
+	// CreateAuthCode is an optional hook to customize authorization code
+	// generation (Tenant-level). When nil, the default implementation
+	// encrypts the auth request ID using the configured Crypto.
+	CreateAuthCode func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
 }
 
 // New creates a new Authorization plugin from a PluginContext.
@@ -104,6 +115,7 @@ func NewWithConfig(cfg Config) *Plugin {
 		decoder:        cfg.Decoder,
 		enableImplicit: cfg.EnableImplicit,
 		parStore:       cfg.PARStore,
+		createAuthCode: cfg.CreateAuthCode,
 	}
 }
 
@@ -139,11 +151,20 @@ func (p *Plugin) Register(r chi.Router) {
 	r.Get("/authorize/callback", p.handleCallback)
 }
 
-// Contribute returns the discovery fields for the authorization endpoint.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"authorization_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/authorize")),
-	}
+// Contribute populates the discovery fields for the authorization endpoint.
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.AuthorizationEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/authorize"))
+
+	// Authorization endpoint capabilities
+	cfg.ScopesSupported = append(cfg.ScopesSupported,
+		"openid", "profile", "email", "address", "phone", "offline_access",
+	)
+	cfg.ResponseTypesSupported = append(cfg.ResponseTypesSupported, "code")
+	cfg.ResponseModesSupported = append(cfg.ResponseModesSupported,
+		"query", "fragment", "form_post",
+	)
+	cfg.GrantTypesSupported = append(cfg.GrantTypesSupported, "authorization_code")
+	cfg.CodeChallengeMethodsSupported = append(cfg.CodeChallengeMethodsSupported, "S256")
 }
 
 // --- authorize handler ---
@@ -299,7 +320,11 @@ func (p *Plugin) authResponse(w http.ResponseWriter, r *http.Request, authReq st
 
 // authResponseCode handles the authorization code response.
 func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authReq storm.AuthRequest) {
-	code, err := createAuthRequestCode(r.Context(), authReq, p.authStore, p.crypto)
+	createCode := createAuthRequestCode
+	if p.createAuthCode != nil {
+		createCode = p.createAuthCode
+	}
+	code, err := createCode(r.Context(), authReq, p.authStore, p.crypto)
 	if err != nil {
 		writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(), authReq.GetResponseMode(),
 			protocol.DefaultToServerError(err, "failed to create auth code"))
@@ -451,7 +476,12 @@ func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, au
 	// When access_token is present, id_token MUST include at_hash (§3.2.2.1)
 	if authReq.GetResponseType() == protocol.ResponseTypeIDTokenOnly ||
 		authReq.GetResponseType() == protocol.ResponseTypeIDToken {
-		idToken, err := p.createImplicitIDToken(r.Context(), authReq, accessToken)
+		// Resolve client for IDTokenLifetimeProvider extension.
+		var client storm.Client
+		if c, err := p.clientStore.GetClientByClientID(r.Context(), authReq.GetClientID()); err == nil {
+			client = c
+		}
+		idToken, err := p.createImplicitIDToken(r.Context(), authReq, accessToken, client)
 		if err == nil && idToken != "" {
 			fragment.Set("id_token", idToken)
 		}
@@ -489,7 +519,7 @@ func (p *Plugin) createImplicitAccessToken(ctx context.Context, authReq storm.Au
 
 	validity := expiration.Sub(time.Now().UTC())
 	expiresIn := uint64(validity.Seconds())
-	return string(encrypted), expiresIn, nil
+	return base64.RawURLEncoding.EncodeToString(encrypted), expiresIn, nil
 }
 
 // createImplicitIDToken creates a signed ID token for the Implicit Flow.
@@ -503,7 +533,7 @@ func (p *Plugin) createImplicitAccessToken(ctx context.Context, authReq storm.Au
 // hash of the octets of the ASCII representation of the access_token value,
 // where the hash algorithm used is the hash algorithm used in the alg Header
 // Parameter of the ID Token's JOSE Header (OIDC Core §2).
-func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRequest, accessToken string) (string, error) {
+func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRequest, accessToken string, client storm.Client) (string, error) {
 	if p.keyStore == nil {
 		return "", nil
 	}
@@ -512,13 +542,21 @@ func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRe
 		return "", err
 	}
 
+	// Determine ID token lifetime: per-client override or default (1 hour).
+	lifetime := defaultIDTokenLifetime
+	if client != nil {
+		if lp, ok := client.(IDTokenLifetimeProvider); ok {
+			lifetime = lp.IDTokenLifetime()
+		}
+	}
+
 	now := time.Now().UTC()
 	claims := map[string]any{
 		"iss": shared.IssuerFromContext(ctx),
 		"sub": authReq.GetSubject(),
 		"aud": authReq.GetClientID(),
 		"iat": now.Unix(),
-		"exp": now.Add(time.Hour).Unix(),
+		"exp": now.Add(lifetime).Unix(),
 	}
 	// OIDC Core §3.2.2.1: nonce is REQUIRED for Implicit Flow
 	if nonce := authReq.GetNonce(); nonce != "" {
@@ -529,6 +567,16 @@ func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRe
 	// half of the hash of the octets of the ASCII representation of the access_token value"
 	if accessToken != "" {
 		claims["at_hash"] = hashTokenForIDToken(accessToken, signingKey.Algorithm(), p.crypto)
+	}
+
+	// Merge extra claims from auth request (e.g. acr, amr, c_hash).
+	// Standard claims set above take precedence and cannot be overridden.
+	if ext, ok := authReq.(IDTokenClaimsExtender); ok {
+		for k, v := range ext.ExtraIDTokenClaims() {
+			if _, exists := claims[k]; !exists {
+				claims[k] = v
+			}
+		}
 	}
 
 	payload, err := json.Marshal(claims)

@@ -67,12 +67,18 @@ type UserInfoProfile struct {
 type UserInfoEmail struct {
 	Email string `json:"email,omitempty"`
 
-	EmailVerified Bool `json:"email_verified,omitempty"`
+	// EmailVerified MUST NOT use omitempty: OIDC Core §5.4 requires this
+	// claim to be present when the email scope is granted, and false is a
+	// meaningful value (not "absent").
+	EmailVerified Bool `json:"email_verified"`
 }
 
 type UserInfoPhone struct {
-	PhoneNumber         string `json:"phone_number,omitempty"`
-	PhoneNumberVerified Bool   `json:"phone_number_verified,omitempty"`
+	PhoneNumber string `json:"phone_number,omitempty"`
+
+	// PhoneNumberVerified MUST NOT use omitempty: OIDC Core §5.4 requires
+	// this claim to be present when the phone scope is granted.
+	PhoneNumberVerified Bool `json:"phone_number_verified"`
 }
 
 type UserInfoAddress struct {

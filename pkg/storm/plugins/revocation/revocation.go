@@ -80,10 +80,13 @@ func (p *Plugin) Register(r chi.Router) {
 }
 
 // Contribute returns the discovery fields for the revocation endpoint.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"revocation_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/revoke")),
-	}
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.RevocationEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/revoke"))
+
+	// Revocation endpoint capabilities
+	cfg.RevocationEndpointAuthMethodsSupported = append(cfg.RevocationEndpointAuthMethodsSupported,
+		"client_secret_basic", "client_secret_post", "private_key_jwt",
+	)
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

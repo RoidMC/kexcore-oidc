@@ -61,19 +61,19 @@ func (p *Plugin) Name() string { return "mtls" }
 func (p *Plugin) Register(r chi.Router) {}
 
 // Contribute returns discovery fields for mTLS.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"mtls_endpoint_aliases": map[string]string{
-			"token_endpoint":         shared.EndpointURL(ctx, protocol.NewEndpoint("/token")),
-			"userinfo_endpoint":      shared.EndpointURL(ctx, protocol.NewEndpoint("/userinfo")),
-			"revocation_endpoint":    shared.EndpointURL(ctx, protocol.NewEndpoint("/revoke")),
-			"introspection_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/introspect")),
-		},
-		"token_endpoint_auth_methods_supported": []string{
-			"tls_client_auth",
-			"self_signed_tls_client_auth",
-		},
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.MTLSEndpointAliases = map[string]string{
+		"token_endpoint":         shared.EndpointURL(ctx, protocol.NewEndpoint("/token")),
+		"userinfo_endpoint":      shared.EndpointURL(ctx, protocol.NewEndpoint("/userinfo")),
+		"revocation_endpoint":    shared.EndpointURL(ctx, protocol.NewEndpoint("/revoke")),
+		"introspection_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/introspect")),
 	}
+	cfg.TLSClientCertificateBoundAccessTokens = true
+	// Append mTLS auth methods to the existing list
+	cfg.TokenEndpointAuthMethodsSupported = append(cfg.TokenEndpointAuthMethodsSupported,
+		"tls_client_auth",
+		"self_signed_tls_client_auth",
+	)
 }
 
 // --- Context helpers ---

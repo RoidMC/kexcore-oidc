@@ -67,7 +67,7 @@ func NewUserStore(issuer string) UserStore {
 				LastName:          "User",
 				Email:             "test-user@zitadel.ch",
 				EmailVerified:     true,
-				Phone:             "",
+				Phone:             "+1-202-555-0100",
 				PhoneVerified:     false,
 				PreferredLanguage: language.German,
 				IsAdmin:           true,

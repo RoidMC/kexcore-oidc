@@ -57,10 +57,8 @@ func (p *Plugin) Register(r chi.Router) {
 }
 
 // Contribute returns the discovery fields for the PAR endpoint.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"pushed_authorization_request_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/par")),
-	}
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.PushedAuthorizationRequestEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/par"))
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

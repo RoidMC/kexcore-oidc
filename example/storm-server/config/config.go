@@ -12,7 +12,7 @@ import (
 
 const (
 	DefaultIssuerPort        = "9998"
-	DefaultSigningAlgorithms = "RS256,RS384,RS512,EdDSA,SGD_SM3_SM2,SGD_SM3_SM9"
+	DefaultSigningAlgorithms = "HS256,HS384,HS512,PS256,PS384,PS512,ES256,ES384,ES512,RS256,RS384,RS512,EdDSA"
 )
 
 func DefaultSigningAlgorithmsSlice() []string {

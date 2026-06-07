@@ -239,16 +239,14 @@ func TestUserInfo_MissingToken_Unauthorized(t *testing.T) {
 	// No Authorization header
 	w := serveRequest(plugin, r)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 
 	errResp := extractErrorBody(t, w.Body.Bytes())
 	assert.Equal(t, protocol.InvalidRequest, errResp.ErrorType)
 	assert.Contains(t, errResp.Description, "access token is missing")
 
 	// RFC 6750 §3: 401 requires WWW-Authenticate header
-	// Note: WriteError returns 400 (BadRequest) not 401 for InvalidRequest,
-	// so WWW-Authenticate is not expected here.
-	_ = errResp
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "invalid_token")
 }
 
 // TestUserInfo_InvalidToken_Unauthorized validates that an invalid/expired token
@@ -274,7 +272,7 @@ func TestUserInfo_InvalidToken_Returns401(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer invalid-token")
 	w := serveRequest(plugin, r)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 
 	errResp := extractErrorBody(t, w.Body.Bytes())
 	assert.Equal(t, protocol.InvalidRequest, errResp.ErrorType)
@@ -325,7 +323,7 @@ func TestUserInfo_OpaqueToken_DecryptError(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer bad-opaque-token")
 	w := serveRequest(plugin, r)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 
 	errResp := extractErrorBody(t, w.Body.Bytes())
 	assert.Equal(t, protocol.InvalidRequest, errResp.ErrorType)
@@ -350,7 +348,7 @@ func TestUserInfo_ParseTokenParts_Invalid(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer malformed-token")
 	w := serveRequest(plugin, r)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 
 	errResp := extractErrorBody(t, w.Body.Bytes())
 	assert.Equal(t, protocol.InvalidRequest, errResp.ErrorType)
@@ -472,7 +470,7 @@ func TestUserInfo_EmptyBearerToken(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer ")
 	w := serveRequest(plugin, r)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 
 	errResp := extractErrorBody(t, w.Body.Bytes())
 	assert.Equal(t, protocol.InvalidRequest, errResp.ErrorType)
@@ -649,7 +647,7 @@ func TestUserInfo_JWTToken_Resolved(t *testing.T) {
 	w := serveRequest(plugin, r)
 
 	// Should fail since both opaque and JWT paths are unavailable
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 
 	errResp := extractErrorBody(t, w.Body.Bytes())
 	assert.Equal(t, protocol.InvalidRequest, errResp.ErrorType)
@@ -661,11 +659,10 @@ func TestUserInfo_Contribute(t *testing.T) {
 	plugin := newTestPlugin(&fakeUserinfoStore{}, &fakeCrypto{}, &fakeKeyStore{})
 
 	ctx := shared.ContextWithIssuer(context.Background(), testIssuer)
-	contrib := plugin.Contribute(ctx)
+	cfg := &protocol.DiscoveryConfiguration{Extra: make(map[string]any)}
+	plugin.Contribute(ctx, cfg)
 
-	endpoint, ok := contrib["userinfo_endpoint"]
-	require.True(t, ok)
-	assert.Equal(t, testIssuer+"/userinfo", endpoint)
+	assert.Equal(t, testIssuer+"/userinfo", cfg.UserinfoEndpoint)
 }
 
 // TestUserInfo_PluginLifecycle validates the basic plugin interface methods.

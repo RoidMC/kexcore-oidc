@@ -6,6 +6,7 @@ package storm
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -34,7 +35,16 @@ func ResolveToken(ctx context.Context, crypto UniCrypto, keyStore protocol.KeySt
 		}
 	}
 
-	// Standard opaque token decryption
+	// Standard opaque token decryption.
+	// Tokens are base64-encoded ciphertext, but also try raw bytes
+	// for backward compatibility with tokens issued before base64 encoding.
+	if raw, decErr := base64.RawURLEncoding.DecodeString(token); decErr == nil {
+		plaintext, err = crypto.Decrypt(ctx, raw)
+		if err == nil {
+			return ParseTokenParts(plaintext)
+		}
+	}
+	// Fallback: try raw bytes (for tokens issued before base64 encoding)
 	plaintext, err = crypto.Decrypt(ctx, []byte(token))
 	if err == nil {
 		return ParseTokenParts(plaintext)

@@ -23,6 +23,24 @@ type Key interface {
 	Key() jwk.Key
 }
 
+// CertificateProvider is an optional extension of Key for X.509 certificate chain support.
+// OP implementations can satisfy this interface to include x5c/x5t/x5u fields in JWKS.
+//
+// Usage in JWKS endpoint:
+//
+//	if cp, ok := key.(protocol.CertificateProvider); ok {
+//	    certs, err := cp.CertificateChain()
+//	    if err == nil && len(certs) > 0 {
+//	        jwkKey.Set(jwk.X509CertChainKey, certs)
+//	    }
+//	}
+type CertificateProvider interface {
+	// CertificateChain returns the DER-encoded X.509 certificate chain for this key.
+	// The first element is the end-entity certificate.
+	// Returns nil if no certificate is associated with this key.
+	CertificateChain() ([][]byte, error)
+}
+
 // GMJWKProvider is an optional extension of Key for GM/T (国密) keys.
 // OP implementations can satisfy this interface to provide custom JWKS
 // serialization for SM2/SM9 keys that jwx cannot represent as jwk.Key.

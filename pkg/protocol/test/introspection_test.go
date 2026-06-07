@@ -75,7 +75,7 @@ func TestIntrospectionResponse_MarshalJSON(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, `{"active":false,"username":"testuser","preferred_username":"testuser"}`, string(got))
+	assert.Equal(t, `{"active":false,"username":"testuser","preferred_username":"testuser","email_verified":false,"phone_number_verified":false}`, string(got))
 }
 
 func TestIntrospectionResponse_UnmarshalJSON_StringAMR(t *testing.T) {

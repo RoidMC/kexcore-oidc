@@ -15,10 +15,55 @@ import (
 	gmsm "github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
 	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 
 	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
+
+// SignJWS signs the payload using the given JWK and returns compact JWS serialization.
+// The JWK must contain a private key and have an "alg" header set.
+func SignJWS(payload []byte, key jwk.Key) (string, error) {
+	algStr, ok := key.Algorithm()
+	if !ok || algStr.String() == "" {
+		return "", fmt.Errorf("crypto: JWK has no algorithm set")
+	}
+
+	// GM/T algorithms are handled by the Signer
+	if isSM2SignAlgorithm(algStr.String()) || isSM9SignAlgorithm(algStr.String()) {
+		return signJWSWithGM(payload, key)
+	}
+
+	alg, ok := jwa.LookupSignatureAlgorithm(algStr.String())
+	if !ok {
+		return "", fmt.Errorf("crypto: unsupported signature algorithm %q", algStr.String())
+	}
+
+	headers := jws.NewHeaders()
+	_ = headers.Set(jws.AlgorithmKey, alg)
+	if kid, ok := key.KeyID(); ok && kid != "" {
+		_ = headers.Set(jws.KeyIDKey, kid)
+	}
+
+	signed, err := jws.Sign(payload, jws.WithKey(alg, key, jws.WithProtectedHeaders(headers)))
+	if err != nil {
+		return "", fmt.Errorf("crypto: failed to sign JWS: %w", err)
+	}
+	return string(signed), nil
+}
+
+// signJWSWithGM handles GM/T signing (SM2/SM9) using the JWK.
+func signJWSWithGM(payload []byte, key jwk.Key) (string, error) {
+	kid, _ := key.KeyID()
+	algStr, _ := key.Algorithm()
+
+	signer, err := NewSigner(algStr.String(), key, kid)
+	if err != nil {
+		return "", fmt.Errorf("crypto: failed to create GM signer: %w", err)
+	}
+
+	return signer.Sign(payload)
+}
 
 // Signer encapsulates key material and algorithm for JWS signing operations.
 type Signer struct {

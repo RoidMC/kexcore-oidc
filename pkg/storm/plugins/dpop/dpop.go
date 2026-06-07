@@ -24,6 +24,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
+
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
@@ -59,10 +61,8 @@ func (p *Plugin) Name() string { return "dpop" }
 func (p *Plugin) Register(r chi.Router) {}
 
 // Contribute returns discovery fields for DPoP.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"dpop_signing_alg_values_supported": []string{"ES256", "RS256"},
-	}
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.Extra["dpop_signing_alg_values_supported"] = []string{"ES256", "RS256"}
 }
 
 // --- Context helpers ---

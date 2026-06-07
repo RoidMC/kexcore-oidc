@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -25,6 +26,7 @@ import (
 	// Each plugin registers itself in the global registry.
 
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/authorization"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/discovery"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/endsession"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/introspection"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/keys"
@@ -171,7 +173,7 @@ func loginHandler(stor *storage.Storage, issuer string) http.Handler {
 			renderLogin(w, id, issuer, err.Error())
 			return
 		}
-		http.Redirect(w, r, issuer+"authorize/callback?id="+id, http.StatusFound)
+		http.Redirect(w, r, strings.TrimRight(issuer, "/")+"/authorize/callback?id="+id, http.StatusFound)
 	})
 	return r
 }
@@ -184,7 +186,7 @@ var loginTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 {{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
 <form method="POST" action="/login/username">
 <input type="hidden" name="id" value="{{.ID}}">
-<p><label>Username: <input name="username" value="test-user@localhost"></label></p>
+<p><label>Username: <input name="username" value="test-user@{{.Domain}}"></label></p>
 <p><label>Password: <input name="password" type="password" value="verysecure"></label></p>
 <p><button type="submit">Login</button></p>
 </form>
@@ -192,9 +194,15 @@ var loginTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 </body></html>`))
 
 func renderLogin(w http.ResponseWriter, id, issuer, errMsg string) {
+	trimmed := strings.TrimRight(issuer, "/")
+	domain := trimmed
+	if u, err := url.Parse(trimmed); err == nil && u.Host != "" {
+		domain = u.Hostname()
+	}
 	loginTmpl.Execute(w, map[string]string{
 		"ID":     id,
-		"Issuer": strings.TrimRight(issuer, "/"),
+		"Issuer": trimmed,
+		"Domain": domain,
 		"Error":  errMsg,
 	})
 }

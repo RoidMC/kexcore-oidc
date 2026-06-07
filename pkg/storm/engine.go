@@ -1,7 +1,6 @@
 package storm
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -382,22 +381,6 @@ func (e *Engine) installDiscovery() {
 		}
 	}
 
-	// Collision detection: every key must be unique
-	seen := make(map[string]string) // key -> plugin name
-	for _, c := range contributors {
-		// Use a background context for pre-flight key enumeration.
-		// Actual values are resolved at request time.
-		for k := range c.Contribute(context.Background()) {
-			if prev, exists := seen[k]; exists {
-				panic(fmt.Sprintf(
-					"storm: discovery key collision: %q declared by both %q and %q",
-					k, prev, c.Name(),
-				))
-			}
-			seen[k] = c.Name()
-		}
-	}
-
 	dp := &discoveryPlugin{
 		issuerFn:     e.issuerFn,
 		contributors: contributors,
@@ -424,107 +407,19 @@ func (p *discoveryPlugin) handle(w http.ResponseWriter, r *http.Request) {
 	issuer := p.issuerFn(r)
 	ctx = shared.ContextWithIssuer(ctx, issuer)
 
-	cfg := map[string]any{
-		"issuer": issuer,
+	cfg := &protocol.DiscoveryConfiguration{
+		Issuer: issuer,
+		Extra:  make(map[string]any),
 	}
 
 	for _, c := range p.contributors {
-		for k, v := range c.Contribute(ctx) {
-			cfg[k] = v
-		}
+		c.Contribute(ctx, cfg)
 	}
 
 	for k, v := range p.extraFields {
-		cfg[k] = v
-	}
-
-	doc := &protocol.DiscoveryConfiguration{
-		Issuer:                                             issuer,
-		AuthorizationEndpoint:                              stringVal(cfg["authorization_endpoint"]),
-		TokenEndpoint:                                      stringVal(cfg["token_endpoint"]),
-		UserinfoEndpoint:                                   stringVal(cfg["userinfo_endpoint"]),
-		JWKSURI:                                            stringVal(cfg["jwks_uri"]),
-		RegistrationEndpoint:                               stringVal(cfg["registration_endpoint"]),
-		EndSessionEndpoint:                                 stringVal(cfg["end_session_endpoint"]),
-		CheckSessionIframe:                                 stringVal(cfg["check_session_iframe"]),
-		BackChannelLogoutEndpoint:                          stringVal(cfg["backchannel_logout_endpoint"]),
-		BackChannelLogoutSessionSupported:                  boolVal(cfg["backchannel_logout_session_supported"]),
-		BackChannelLogoutSupported:                         boolVal(cfg["backchannel_logout_supported"]),
-		FrontChannelLogoutEndpoint:                         stringVal(cfg["frontchannel_logout_endpoint"]),
-		FrontChannelLogoutSessionSupported:                 boolVal(cfg["frontchannel_logout_session_supported"]),
-		FrontChannelLogoutSupported:                        boolVal(cfg["frontchannel_logout_supported"]),
-		TokenExchangeEndpoint:                              stringVal(cfg["token_exchange_endpoint"]),
-		DeviceAuthorizationEndpoint:                        stringVal(cfg["device_authorization_endpoint"]),
-		PushedAuthorizationRequestEndpoint:                 stringVal(cfg["pushed_authorization_request_endpoint"]),
-		RequirePushedAuthorizationRequests:                 boolVal(cfg["require_pushed_authorization_requests"]),
-		IntrospectionEndpoint:                              stringVal(cfg["introspection_endpoint"]),
-		RevocationEndpoint:                                 stringVal(cfg["revocation_endpoint"]),
-		ScopesSupported:                                    stringSliceVal(cfg["scopes_supported"]),
-		ResponseTypesSupported:                             stringSliceVal(cfg["response_types_supported"]),
-		ResponseModesSupported:                             stringSliceVal(cfg["response_modes_supported"]),
-		GrantTypesSupported:                                stringSliceVal(cfg["grant_types_supported"]),
-		ACRValuesSupported:                                 stringSliceVal(cfg["acr_values_supported"]),
-		SubjectTypesSupported:                              stringSliceVal(cfg["subject_types_supported"]),
-		IDTokenSigningAlgValuesSupported:                   stringSliceVal(cfg["id_token_signing_alg_values_supported"]),
-		IDTokenEncryptionAlgValuesSupported:                stringSliceVal(cfg["id_token_encryption_alg_values_supported"]),
-		IDTokenEncryptionEncValuesSupported:                stringSliceVal(cfg["id_token_encryption_enc_values_supported"]),
-		UserinfoSigningAlgValuesSupported:                  stringSliceVal(cfg["userinfo_signing_alg_values_supported"]),
-		UserinfoEncryptionAlgValuesSupported:               stringSliceVal(cfg["userinfo_encryption_alg_values_supported"]),
-		UserinfoEncryptionEncValuesSupported:               stringSliceVal(cfg["userinfo_encryption_enc_values_supported"]),
-		RequestObjectSigningAlgValuesSupported:             stringSliceVal(cfg["request_object_signing_alg_values_supported"]),
-		RequestObjectEncryptionAlgValuesSupported:          stringSliceVal(cfg["request_object_encryption_alg_values_supported"]),
-		RequestObjectEncryptionEncValuesSupported:          stringSliceVal(cfg["request_object_encryption_enc_values_supported"]),
-		TokenEndpointAuthMethodsSupported:                  stringSliceVal(cfg["token_endpoint_auth_methods_supported"]),
-		TokenEndpointAuthSigningAlgValuesSupported:         stringSliceVal(cfg["token_endpoint_auth_signing_alg_values_supported"]),
-		IntrospectionEndpointAuthMethodsSupported:          stringSliceVal(cfg["introspection_endpoint_auth_methods_supported"]),
-		IntrospectionEndpointAuthSigningAlgValuesSupported: stringSliceVal(cfg["introspection_endpoint_auth_signing_alg_values_supported"]),
-		RevocationEndpointAuthMethodsSupported:             stringSliceVal(cfg["revocation_endpoint_auth_methods_supported"]),
-		RevocationEndpointAuthSigningAlgValuesSupported:    stringSliceVal(cfg["revocation_endpoint_auth_signing_alg_values_supported"]),
-		DisplayValuesSupported:                             stringSliceVal(cfg["display_values_supported"]),
-		ClaimTypesSupported:                                stringSliceVal(cfg["claim_types_supported"]),
-		ClaimsSupported:                                    stringSliceVal(cfg["claims_supported"]),
-		ClaimsParameterSupported:                           boolVal(cfg["claims_parameter_supported"]),
-		ClaimsLocalesSupported:                             stringSliceVal(cfg["claims_locales_supported"]),
-		UILocalesSupported:                                 stringSliceVal(cfg["ui_locales_supported"]),
-		RequestParameterSupported:                          boolVal(cfg["request_parameter_supported"]),
-		RequestURIParameterSupported:                       boolVal(cfg["request_uri_parameter_supported"]),
-		RequireRequestURIRegistration:                      boolVal(cfg["require_request_uri_registration"]),
-		CodeChallengeMethodsSupported:                      stringSliceVal(cfg["code_challenge_methods_supported"]),
-		AuthorizationResponseISSParameterSupported:         boolVal(cfg["authorization_response_iss_parameter_supported"]),
-		ServiceDocumentation:                               stringVal(cfg["service_documentation"]),
-		OPPolicyURI:                                        stringVal(cfg["op_policy_uri"]),
-		OPTermsOfServiceURI:                                stringVal(cfg["op_tos_uri"]),
-		JWEAlgValuesSupported:                              stringSliceVal(cfg["jwe_alg_values_supported"]),
-		JWEEncValuesSupported:                              stringSliceVal(cfg["jwe_enc_values_supported"]),
-		TLSClientCertificateBoundAccessTokens:              boolVal(cfg["tls_client_certificate_bound_access_tokens"]),
-		MTLSEndpointAliases:                                cfg["mtls_endpoint_aliases"],
-		Extra:                                              make(map[string]any),
-	}
-
-	// Use protocol.KnownDiscoveryKeys (auto-generated from struct tags) to filter extra fields
-	for k, v := range cfg {
-		if !protocol.KnownDiscoveryKeys[k] {
-			doc.Extra[k] = v
-		}
+		cfg.Extra[k] = v
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	enc := json.NewEncoder(w)
-	enc.Encode(doc)
-}
-
-func boolVal(v any) bool {
-	b, _ := v.(bool)
-	return b
-}
-
-func stringVal(v any) string {
-	s, _ := v.(string)
-	return s
-}
-
-func stringSliceVal(v any) []string {
-	s, _ := v.([]string)
-	return s
+	json.NewEncoder(w).Encode(cfg)
 }

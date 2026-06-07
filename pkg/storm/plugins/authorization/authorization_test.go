@@ -1,12 +1,20 @@
 package authorization
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -647,4 +655,504 @@ func TestWriteFormPostError_JavascriptURI(t *testing.T) {
 	body := w.Body.String()
 	// html/template sanitizes javascript: URIs in action attributes
 	assert.NotContains(t, body, "javascript:alert(1)")
+}
+
+// --- extension point fakes ---
+
+// fakeAuthRequest implements storm.AuthRequest.
+type fakeAuthRequest struct {
+	id           string
+	clientID     string
+	subject      string
+	nonce        string
+	redirectURI  string
+	responseType protocol.ResponseType
+	responseMode protocol.ResponseMode
+	scopes       []string
+	state        string
+	extraClaims  map[string]any // nil = no IDTokenClaimsExtender
+}
+
+func (r *fakeAuthRequest) GetID() string                             { return r.id }
+func (r *fakeAuthRequest) GetACR() string                            { return "" }
+func (r *fakeAuthRequest) GetAMR() []string                          { return nil }
+func (r *fakeAuthRequest) GetAudience() []string                     { return nil }
+func (r *fakeAuthRequest) GetAuthTime() time.Time                    { return time.Time{} }
+func (r *fakeAuthRequest) GetClientID() string                       { return r.clientID }
+func (r *fakeAuthRequest) GetCodeChallenge() *protocol.CodeChallenge { return nil }
+func (r *fakeAuthRequest) GetNonce() string                          { return r.nonce }
+func (r *fakeAuthRequest) GetRedirectURI() string                    { return r.redirectURI }
+func (r *fakeAuthRequest) GetResponseType() protocol.ResponseType    { return r.responseType }
+func (r *fakeAuthRequest) GetResponseMode() protocol.ResponseMode    { return r.responseMode }
+func (r *fakeAuthRequest) GetScopes() []string                       { return r.scopes }
+func (r *fakeAuthRequest) GetState() string                          { return r.state }
+func (r *fakeAuthRequest) GetSubject() string                        { return r.subject }
+func (r *fakeAuthRequest) Done() bool                                { return false }
+
+// ExtraIDTokenClaims implements IDTokenClaimsExtender when extraClaims is non-nil.
+func (r *fakeAuthRequest) ExtraIDTokenClaims() map[string]any { return r.extraClaims }
+
+// fakeClientExtended extends fakeClient with IDTokenLifetimeProvider.
+type fakeClientExtended struct {
+	fakeClient
+	idTokenLifetime time.Duration
+}
+
+func (c *fakeClientExtended) IDTokenLifetime() time.Duration { return c.idTokenLifetime }
+
+// Ensure fakeClientExtended implements the new interface.
+var _ IDTokenLifetimeProvider = (*fakeClientExtended)(nil)
+
+// fakeSigningKey implements storm.SigningKey for testing.
+type fakeSigningKey struct {
+	id  string
+	alg string
+	key jwk.Key
+}
+
+func (k *fakeSigningKey) ID() string        { return k.id }
+func (k *fakeSigningKey) Algorithm() string { return k.alg }
+func (k *fakeSigningKey) Key() jwk.Key      { return k.key }
+
+// fakeKeyStore implements storm.KeyStore for testing.
+type fakeKeyStore struct {
+	signingKey storm.SigningKey
+}
+
+func (ks *fakeKeyStore) KeySet(_ context.Context) ([]protocol.Key, error) {
+	return nil, nil
+}
+func (ks *fakeKeyStore) SignatureAlgorithms(_ context.Context) ([]string, error) {
+	return []string{ks.signingKey.Algorithm()}, nil
+}
+func (ks *fakeKeyStore) SigningKey(_ context.Context) (storm.SigningKey, error) {
+	return ks.signingKey, nil
+}
+
+// newTestSigningKey generates a test ECDSA P-256 signing key.
+func newTestSigningKey(t *testing.T) (storm.SigningKey, jwk.Key) {
+	t.Helper()
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	jwkKey, err := jwk.Import[jwk.Key](privKey)
+	require.NoError(t, err)
+	_ = jwkKey.Set(jwk.AlgorithmKey, "ES256")
+	_ = jwkKey.Set(jwk.KeyIDKey, "test-key-1")
+
+	return &fakeSigningKey{id: "test-key-1", alg: "ES256", key: jwkKey}, jwkKey
+}
+
+// parseIDTokenClaims parses the payload of a JWS compact serialization
+// without verifying the signature.
+func parseIDTokenClaims(t *testing.T, token string) map[string]any {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	require.Len(t, parts, 3, "expected JWS compact format with 3 parts")
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+
+	var claims map[string]any
+	err = json.Unmarshal(payload, &claims)
+	require.NoError(t, err)
+	return claims
+}
+
+// --- createImplicitIDToken extension point tests ---
+
+func TestCreateImplicitIDToken_DefaultLifetime(t *testing.T) {
+	signingKey, _ := newTestSigningKey(t)
+	p := &Plugin{
+		keyStore: &fakeKeyStore{signingKey: signingKey},
+	}
+	authReq := &fakeAuthRequest{
+		clientID: "client-1",
+		subject:  "user-1",
+		nonce:    "test-nonce",
+	}
+
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "access-token-123", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	claims := parseIDTokenClaims(t, token)
+	assert.Equal(t, "user-1", claims["sub"])
+	assert.Equal(t, "client-1", claims["aud"])
+	assert.Equal(t, "test-nonce", claims["nonce"])
+	assert.NotEmpty(t, claims["at_hash"])
+
+	// Default lifetime: exp - iat should be ~3600 seconds
+	iat := int64(claims["iat"].(float64))
+	exp := int64(claims["exp"].(float64))
+	assert.Equal(t, int64(3600), exp-iat, "default ID token lifetime should be 1 hour")
+}
+
+func TestCreateImplicitIDToken_CustomLifetime(t *testing.T) {
+	signingKey, _ := newTestSigningKey(t)
+	p := &Plugin{
+		keyStore: &fakeKeyStore{signingKey: signingKey},
+	}
+	authReq := &fakeAuthRequest{
+		clientID: "client-1",
+		subject:  "user-1",
+	}
+	client := &fakeClientExtended{
+		fakeClient:      fakeClient{id: "client-1"},
+		idTokenLifetime: 2 * time.Hour,
+	}
+
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", client)
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	claims := parseIDTokenClaims(t, token)
+	iat := int64(claims["iat"].(float64))
+	exp := int64(claims["exp"].(float64))
+	assert.Equal(t, int64(7200), exp-iat, "custom lifetime should be 2 hours")
+}
+
+func TestCreateImplicitIDToken_ExtraClaims(t *testing.T) {
+	signingKey, _ := newTestSigningKey(t)
+	p := &Plugin{
+		keyStore: &fakeKeyStore{signingKey: signingKey},
+	}
+	authReq := &fakeAuthRequest{
+		clientID: "client-1",
+		subject:  "user-1",
+		extraClaims: map[string]any{
+			"acr": "urn:mace:incommon:iap:silver",
+			"amr": []string{"pwd", "otp"},
+		},
+	}
+
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	claims := parseIDTokenClaims(t, token)
+	assert.Equal(t, "urn:mace:incommon:iap:silver", claims["acr"])
+	// amr is a slice, JSON unmarshals as []interface{}
+	amr, ok := claims["amr"].([]interface{})
+	require.True(t, ok, "amr should be an array")
+	assert.Equal(t, []interface{}{"pwd", "otp"}, amr)
+}
+
+func TestCreateImplicitIDToken_ExtraClaimsNoOverride(t *testing.T) {
+	signingKey, _ := newTestSigningKey(t)
+	p := &Plugin{
+		keyStore: &fakeKeyStore{signingKey: signingKey},
+	}
+	authReq := &fakeAuthRequest{
+		clientID: "client-1",
+		subject:  "user-1",
+		extraClaims: map[string]any{
+			"sub": "hacker",   // should NOT override
+			"iss": "evil.com", // should NOT override
+			"acr": "high",     // should be added
+		},
+	}
+
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	claims := parseIDTokenClaims(t, token)
+	// Standard claims must not be overridden
+	assert.Equal(t, "user-1", claims["sub"], "sub must not be overridden by extra claims")
+	assert.NotEqual(t, "evil.com", claims["iss"], "iss must not be overridden by extra claims")
+	// Extra claims that don't conflict should be added
+	assert.Equal(t, "high", claims["acr"])
+}
+
+func TestCreateImplicitIDToken_NoExtraClaims(t *testing.T) {
+	signingKey, _ := newTestSigningKey(t)
+	p := &Plugin{
+		keyStore: &fakeKeyStore{signingKey: signingKey},
+	}
+	// fakeAuthRequest with nil extraClaims does NOT implement IDTokenClaimsExtender
+	authReq := &fakeAuthRequest{
+		clientID:    "client-1",
+		subject:     "user-1",
+		extraClaims: nil,
+	}
+
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	claims := parseIDTokenClaims(t, token)
+	assert.Nil(t, claims["acr"], "no extra claims should be present")
+	assert.Nil(t, claims["amr"])
+}
+
+func TestCreateImplicitIDToken_NilKeyStore(t *testing.T) {
+	p := &Plugin{} // no keyStore
+	authReq := &fakeAuthRequest{clientID: "client-1", subject: "user-1"}
+
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", nil)
+	require.NoError(t, err)
+	assert.Empty(t, token, "should return empty token when keyStore is nil")
+}
+
+func TestCreateImplicitIDToken_WithAccessToken(t *testing.T) {
+	signingKey, _ := newTestSigningKey(t)
+	p := &Plugin{
+		keyStore: &fakeKeyStore{signingKey: signingKey},
+	}
+	authReq := &fakeAuthRequest{
+		clientID: "client-1",
+		subject:  "user-1",
+		nonce:    "n-1",
+	}
+
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "my-access-token", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	claims := parseIDTokenClaims(t, token)
+	assert.NotEmpty(t, claims["at_hash"], "at_hash must be present when access_token is provided")
+	assert.Equal(t, "n-1", claims["nonce"])
+}
+
+func TestCreateImplicitIDToken_WithoutAccessToken(t *testing.T) {
+	signingKey, _ := newTestSigningKey(t)
+	p := &Plugin{
+		keyStore: &fakeKeyStore{signingKey: signingKey},
+	}
+	authReq := &fakeAuthRequest{
+		clientID: "client-1",
+		subject:  "user-1",
+	}
+
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	claims := parseIDTokenClaims(t, token)
+	assert.Nil(t, claims["at_hash"], "at_hash must be absent when access_token is empty")
+}
+
+// --- multi-tenant scenario tests ---
+
+func TestMultiTenant_DifferentClientsDifferentLifetime(t *testing.T) {
+	signingKey, _ := newTestSigningKey(t)
+	p := &Plugin{
+		keyStore: &fakeKeyStore{signingKey: signingKey},
+	}
+
+	// Tenant A client: 30 min lifetime
+	clientA := &fakeClientExtended{
+		fakeClient:      fakeClient{id: "tenant-a-client"},
+		idTokenLifetime: 30 * time.Minute,
+	}
+	// Tenant B client: 2 hour lifetime
+	clientB := &fakeClientExtended{
+		fakeClient:      fakeClient{id: "tenant-b-client"},
+		idTokenLifetime: 2 * time.Hour,
+	}
+	// Tenant C client: no custom lifetime (default)
+	clientC := &fakeClient{id: "tenant-c-client"}
+
+	authReqA := &fakeAuthRequest{clientID: "tenant-a-client", subject: "user-1"}
+	authReqB := &fakeAuthRequest{clientID: "tenant-b-client", subject: "user-2"}
+	authReqC := &fakeAuthRequest{clientID: "tenant-c-client", subject: "user-3"}
+
+	tokenA, err := p.createImplicitIDToken(context.Background(), authReqA, "", clientA)
+	require.NoError(t, err)
+	tokenB, err := p.createImplicitIDToken(context.Background(), authReqB, "", clientB)
+	require.NoError(t, err)
+	tokenC, err := p.createImplicitIDToken(context.Background(), authReqC, "", clientC)
+	require.NoError(t, err)
+
+	claimsA := parseIDTokenClaims(t, tokenA)
+	claimsB := parseIDTokenClaims(t, tokenB)
+	claimsC := parseIDTokenClaims(t, tokenC)
+
+	lifetimeA := int64(claimsA["exp"].(float64)) - int64(claimsA["iat"].(float64))
+	lifetimeB := int64(claimsB["exp"].(float64)) - int64(claimsB["iat"].(float64))
+	lifetimeC := int64(claimsC["exp"].(float64)) - int64(claimsC["iat"].(float64))
+
+	assert.Equal(t, int64(1800), lifetimeA, "tenant-a should have 30 min lifetime")
+	assert.Equal(t, int64(7200), lifetimeB, "tenant-b should have 2 hour lifetime")
+	assert.Equal(t, int64(3600), lifetimeC, "tenant-c should have default 1 hour lifetime")
+}
+
+func TestMultiTenant_DifferentClientsDifferentExtraClaims(t *testing.T) {
+	signingKey, _ := newTestSigningKey(t)
+	p := &Plugin{
+		keyStore: &fakeKeyStore{signingKey: signingKey},
+	}
+
+	// Client A: has acr claim
+	authReqA := &fakeAuthRequest{
+		clientID: "high-security-client",
+		subject:  "user-1",
+		extraClaims: map[string]any{
+			"acr": "urn:mace:incommon:iap:silver",
+		},
+	}
+	// Client B: no extra claims
+	authReqB := &fakeAuthRequest{
+		clientID:    "basic-client",
+		subject:     "user-2",
+		extraClaims: nil,
+	}
+
+	tokenA, err := p.createImplicitIDToken(context.Background(), authReqA, "", nil)
+	require.NoError(t, err)
+	tokenB, err := p.createImplicitIDToken(context.Background(), authReqB, "", nil)
+	require.NoError(t, err)
+
+	claimsA := parseIDTokenClaims(t, tokenA)
+	claimsB := parseIDTokenClaims(t, tokenB)
+
+	assert.Equal(t, "urn:mace:incommon:iap:silver", claimsA["acr"],
+		"high-security client should have acr claim")
+	assert.Nil(t, claimsB["acr"],
+		"basic client should not have acr claim")
+}
+
+func TestMultiTenant_SamePluginDifferentClientConfigs(t *testing.T) {
+	// Simulates a single Engine (single issuer) serving multiple tenants
+	// where each tenant's client has different configurations.
+	signingKey, _ := newTestSigningKey(t)
+	p := &Plugin{
+		keyStore: &fakeKeyStore{signingKey: signingKey},
+	}
+
+	// Tenant A: high-security, short lifetime, custom claims
+	clientA := &fakeClientExtended{
+		fakeClient:      fakeClient{id: "bank-client", appType: ApplicationTypeWeb},
+		idTokenLifetime: 15 * time.Minute,
+	}
+	authReqA := &fakeAuthRequest{
+		clientID: "bank-client",
+		subject:  "bank-user",
+		nonce:    "bank-nonce",
+		extraClaims: map[string]any{
+			"acr": "urn:mace:incommon:iap:bronze",
+			"amr": []string{"mfa"},
+		},
+	}
+
+	// Tenant B: low-security, long lifetime, no extra claims
+	clientB := &fakeClientExtended{
+		fakeClient:      fakeClient{id: "blog-client", appType: ApplicationTypeWeb},
+		idTokenLifetime: 24 * time.Hour,
+	}
+	authReqB := &fakeAuthRequest{
+		clientID: "blog-client",
+		subject:  "blog-user",
+	}
+
+	tokenA, err := p.createImplicitIDToken(context.Background(), authReqA, "at-1", clientA)
+	require.NoError(t, err)
+	tokenB, err := p.createImplicitIDToken(context.Background(), authReqB, "", clientB)
+	require.NoError(t, err)
+
+	claimsA := parseIDTokenClaims(t, tokenA)
+	claimsB := parseIDTokenClaims(t, tokenB)
+
+	// Verify tenant A specifics
+	lifetimeA := int64(claimsA["exp"].(float64)) - int64(claimsA["iat"].(float64))
+	assert.Equal(t, int64(900), lifetimeA, "bank client: 15 min lifetime")
+	assert.Equal(t, "urn:mace:incommon:iap:bronze", claimsA["acr"])
+	assert.NotEmpty(t, claimsA["at_hash"], "bank client: at_hash present")
+	assert.Equal(t, "bank-nonce", claimsA["nonce"])
+
+	// Verify tenant B specifics
+	lifetimeB := int64(claimsB["exp"].(float64)) - int64(claimsB["iat"].(float64))
+	assert.Equal(t, int64(86400), lifetimeB, "blog client: 24 hour lifetime")
+	assert.Nil(t, claimsB["acr"], "blog client: no acr")
+	assert.Nil(t, claimsB["at_hash"], "blog client: no at_hash (no access token)")
+}
+
+// --- CreateAuthCode hook tests ---
+
+// fakeAuthStore implements storm.AuthStore for testing.
+type fakeAuthStore struct {
+	savedAuthCode string
+	savedAuthID   string
+}
+
+func (s *fakeAuthStore) CreateAuthRequest(_ context.Context, _ *protocol.AuthRequest, _ string) (storm.AuthRequest, error) {
+	return nil, nil
+}
+func (s *fakeAuthStore) AuthRequestByID(_ context.Context, _ string) (storm.AuthRequest, error) {
+	return nil, nil
+}
+func (s *fakeAuthStore) AuthRequestByCode(_ context.Context, _ string) (storm.AuthRequest, error) {
+	return nil, nil
+}
+func (s *fakeAuthStore) SaveAuthCode(_ context.Context, id, code string) error {
+	s.savedAuthID = id
+	s.savedAuthCode = code
+	return nil
+}
+func (s *fakeAuthStore) DeleteAuthRequest(_ context.Context, _ string) error { return nil }
+
+// fakeUniCrypto implements storm.UniCrypto for testing.
+type fakeUniCrypto struct{}
+
+func (c *fakeUniCrypto) Encrypt(_ context.Context, plaintext []byte) ([]byte, error) {
+	return []byte("encrypted-" + string(plaintext)), nil
+}
+func (c *fakeUniCrypto) Decrypt(_ context.Context, ciphertext []byte) ([]byte, error) {
+	s := string(ciphertext)
+	if strings.HasPrefix(s, "encrypted-") {
+		return []byte(strings.TrimPrefix(s, "encrypted-")), nil
+	}
+	return ciphertext, nil
+}
+func (c *fakeUniCrypto) Hash(_ context.Context, _ string, _ []byte) ([]byte, error) {
+	return nil, nil
+}
+func (c *fakeUniCrypto) Sign(_ context.Context, _ string, _ []byte) (string, error) {
+	return "", nil
+}
+func (c *fakeUniCrypto) AlgorithmSuite() string { return "ECDSA+SHA256+AES" }
+
+func TestCreateAuthRequestCode_DefaultImplementation(t *testing.T) {
+	store := &fakeAuthStore{}
+	enc := &fakeUniCrypto{}
+	authReq := &fakeAuthRequest{id: "auth-req-123"}
+
+	code, err := createAuthRequestCode(context.Background(), authReq, store, enc)
+	require.NoError(t, err)
+	assert.NotEmpty(t, code)
+	assert.Equal(t, "auth-req-123", store.savedAuthID)
+	assert.Equal(t, code, store.savedAuthCode)
+}
+
+func TestCreateAuthRequestCode_CustomHook(t *testing.T) {
+	// Verify that the Plugin uses the custom hook when set.
+	customCalled := false
+	customHook := func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error) {
+		customCalled = true
+		return "custom-code-xyz", nil
+	}
+
+	p := &Plugin{
+		createAuthCode: customHook,
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/authorize", nil)
+	authReq := &fakeAuthRequest{
+		id:          "auth-req-1",
+		clientID:    "client-1",
+		redirectURI: "https://example.com/callback",
+		state:       "test-state",
+	}
+
+	// authResponseCode will use the custom hook
+	p.authResponseCode(w, r, authReq)
+	assert.True(t, customCalled, "custom hook should have been called")
+}
+
+// --- default constant tests ---
+
+func TestDefaultIDTokenLifetime(t *testing.T) {
+	assert.Equal(t, 1*time.Hour, defaultIDTokenLifetime)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
 
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
@@ -55,11 +56,9 @@ func (p *Plugin) Register(r chi.Router) {
 }
 
 // Contribute returns the discovery fields for the backchannel logout endpoint.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"backchannel_logout_supported":         true,
-		"backchannel_logout_session_supported": true,
-	}
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.BackChannelLogoutSupported = true
+	cfg.BackChannelLogoutSessionSupported = true
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

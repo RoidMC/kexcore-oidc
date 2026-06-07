@@ -361,7 +361,7 @@ func createAuthRequestCode(ctx context.Context, authReq storm.AuthRequest, store
 	if err != nil {
 		return "", err
 	}
-	code := string(encrypted)
+	code := base64.RawURLEncoding.EncodeToString(encrypted)
 	if err := store.SaveAuthCode(ctx, authReq.GetID(), code); err != nil {
 		return "", err
 	}

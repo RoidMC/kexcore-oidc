@@ -50,10 +50,8 @@ func (p *Plugin) Register(r chi.Router) {
 }
 
 // Contribute returns the discovery fields for the registration endpoint.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"registration_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/register")),
-	}
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.RegistrationEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/register"))
 }
 
 func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {

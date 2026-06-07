@@ -55,10 +55,13 @@ func (p *Plugin) Register(r chi.Router) {
 }
 
 // Contribute returns the discovery fields for the device authorization endpoint.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"device_authorization_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/device_authorization")),
-	}
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.DeviceAuthorizationEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/device_authorization"))
+
+	// Device flow capabilities
+	cfg.GrantTypesSupported = append(cfg.GrantTypesSupported,
+		"urn:ietf:params:oauth:grant-type:device_code",
+	)
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

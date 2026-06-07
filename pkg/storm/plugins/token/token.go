@@ -13,6 +13,7 @@ package token
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -109,10 +110,18 @@ func (p *Plugin) Register(r chi.Router) {
 }
 
 // Contribute returns the discovery fields for the token endpoint.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"token_endpoint": shared.IssuerFromContext(ctx) + "/token",
-	}
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.TokenEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/token"))
+
+	// Token endpoint capabilities
+	cfg.GrantTypesSupported = append(cfg.GrantTypesSupported,
+		"client_credentials", "refresh_token",
+		"urn:ietf:params:oauth:grant-type:jwt-bearer",
+		"urn:ietf:params:oauth:grant-type:token-exchange",
+	)
+	cfg.TokenEndpointAuthMethodsSupported = append(cfg.TokenEndpointAuthMethodsSupported,
+		"client_secret_basic", "client_secret_post", "private_key_jwt",
+	)
 }
 
 // --- main handler ---
@@ -531,9 +540,9 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, request storm.TokenRequest, client storm.Client, createAccessToken bool) (*protocol.AccessTokenResponse, error) {
 	var accessToken string
 	var validity time.Duration
+	var err error
 
 	if createAccessToken {
-		var err error
 		accessToken, validity, err = p.createAccessToken(ctx, request, client)
 		if err != nil {
 			return nil, err
@@ -542,7 +551,10 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 
 	var idToken string
 	if p.keyStore != nil {
-		idToken, _ = p.createIDToken(ctx, request, client, accessToken, "")
+		idToken, err = p.createIDToken(ctx, request, client, accessToken, "")
+		if err != nil {
+			p.logger.Error("failed to create ID token", "error", err)
+		}
 	}
 
 	exp := uint64(validity.Seconds())
@@ -613,10 +625,10 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 			return "", err
 		}
 	} else {
-		// Use UniCrypto.Sign for all signing (RSA, ECDSA, EdDSA, SM2)
-		signed, err = p.crypto.Sign(ctx, signingKey.ID(), payload)
+		// Sign using the JWK via crypto.SignJWS
+		signed, err = crypto.SignJWS(payload, signingKey.Key())
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to sign ID token: %w", err)
 		}
 	}
 
@@ -712,7 +724,7 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 	}
 
 	validity := expiration.Sub(time.Now().UTC())
-	return string(encrypted), validity, nil
+	return base64.RawURLEncoding.EncodeToString(encrypted), validity, nil
 }
 
 func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenRequest storm.TokenRequest, client storm.Client) (*protocol.AccessTokenResponse, error) {

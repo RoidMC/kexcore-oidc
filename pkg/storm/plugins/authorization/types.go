@@ -1,6 +1,8 @@
 package authorization
 
 import (
+	"time"
+
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 )
@@ -86,4 +88,22 @@ type AuthorizeValidator interface {
 type AuthorizeValidatorClient interface {
 	storm.Client
 	AuthorizeValidator() AuthorizeValidator
+}
+
+// IDTokenClaimsExtender is optionally implemented by AuthRequest to provide
+// additional claims for the ID token (e.g. acr, amr, c_hash).
+//
+// When implemented, the returned claims are merged into the ID token's
+// payload. Standard claims (iss, sub, aud, iat, exp, nonce, at_hash)
+// set by the plugin take precedence and cannot be overridden.
+type IDTokenClaimsExtender interface {
+	ExtraIDTokenClaims() map[string]any
+}
+
+// IDTokenLifetimeProvider is optionally implemented by Client to control
+// the lifetime of issued ID tokens.
+//
+// When not implemented, the default lifetime (1 hour) is used.
+type IDTokenLifetimeProvider interface {
+	IDTokenLifetime() time.Duration
 }

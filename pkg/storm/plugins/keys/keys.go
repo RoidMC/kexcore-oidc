@@ -3,6 +3,9 @@ package keys
 
 import (
 	"context"
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 
@@ -50,10 +53,8 @@ func (p *Plugin) Register(r chi.Router) {
 }
 
 // Contribute returns the discovery fields for the JWKS endpoint.
-func (p *Plugin) Contribute(ctx context.Context) map[string]any {
-	return map[string]any{
-		"jwks_uri": shared.EndpointURL(ctx, protocol.NewEndpoint("/.well-known/jwks.json")),
-	}
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.JWKSURI = shared.EndpointURL(ctx, protocol.NewEndpoint("/.well-known/jwks.json"))
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +62,39 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		shared.WriteError(w, r, err, nil)
 		return
+	}
+
+	// injectCertFields injects x5c, x5t (SHA-1), x5t#S256 (SHA-256) into a raw JSON key.
+	// Returns the updated raw JSON.
+	injectCertFields := func(raw json.RawMessage, certs [][]byte) json.RawMessage {
+		if len(certs) == 0 {
+			return raw
+		}
+		// Build x5c array: base64-encoded DER certificates per RFC 7517 §4.7
+		x5c := make([]string, len(certs))
+		for i, c := range certs {
+			x5c[i] = base64.StdEncoding.EncodeToString(c)
+		}
+		x5cJSON, _ := json.Marshal(x5c)
+
+		// x5t: SHA-1 thumbprint per RFC 7517 §4.8
+		x5t := ""
+		if len(certs[0]) > 0 {
+			h := sha1.Sum(certs[0])
+			x5t = base64.RawURLEncoding.EncodeToString(h[:])
+		}
+		x5tJSON, _ := json.Marshal(x5t)
+
+		// x5t#S256: SHA-256 thumbprint per RFC 7517 §4.9
+		x5tS256 := ""
+		if len(certs[0]) > 0 {
+			h := sha256.Sum256(certs[0])
+			x5tS256 = base64.RawURLEncoding.EncodeToString(h[:])
+		}
+		x5tS256JSON, _ := json.Marshal(x5tS256)
+
+		// Inject into raw JSON by replacing the closing }
+		return append(raw[:len(raw)-1], []byte(`,"x5c":`+string(x5cJSON)+`,"x5t":`+string(x5tJSON)+`,"x5t#S256":`+string(x5tS256JSON)+`}`)...)
 	}
 
 	// Build the JWKS response, handling both standard and GM/T keys.
@@ -80,6 +114,12 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 				shared.WriteError(w, r, err, nil)
 				return
 			}
+			// Inject x5c, x5t, x5t#S256 if the key provides a certificate chain
+			if cp, ok := k.(protocol.CertificateProvider); ok {
+				if certs, err := cp.CertificateChain(); err == nil && len(certs) > 0 {
+					raw = injectCertFields(raw, certs)
+				}
+			}
 			resp.Keys = append(resp.Keys, raw)
 			continue
 		}
@@ -89,10 +129,22 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		if jwkKey == nil {
 			continue
 		}
-		raw, err := json.Marshal(jwkKey)
+		// Extract public key only — JWKS must never expose private key material.
+		pubKey, err := jwkKey.PublicKey()
 		if err != nil {
 			shared.WriteError(w, r, err, nil)
 			return
+		}
+		raw, err := json.Marshal(pubKey)
+		if err != nil {
+			shared.WriteError(w, r, err, nil)
+			return
+		}
+		// Inject x5c, x5t, x5t#S256 if the key provides a certificate chain
+		if cp, ok := k.(protocol.CertificateProvider); ok {
+			if certs, err := cp.CertificateChain(); err == nil && len(certs) > 0 {
+				raw = injectCertFields(raw, certs)
+			}
 		}
 		resp.Keys = append(resp.Keys, raw)
 	}
