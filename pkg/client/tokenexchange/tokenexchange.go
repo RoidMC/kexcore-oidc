@@ -8,8 +8,8 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 )
 
 type TokenExchanger interface {
@@ -106,14 +106,14 @@ func ExchangeToken(
 	ctx context.Context,
 	te TokenExchanger,
 	SubjectToken string,
-	SubjectTokenType oidc.TokenType,
+	SubjectTokenType protocol.TokenType,
 	ActorToken string,
-	ActorTokenType oidc.TokenType,
+	ActorTokenType protocol.TokenType,
 	Resource []string,
 	Audience []string,
 	Scopes []string,
-	RequestedTokenType oidc.TokenType,
-) (*oidc.TokenExchangeResponse, error) {
+	RequestedTokenType protocol.TokenType,
+) (*protocol.TokenExchangeResponse, error) {
 	ctx, span := client.Tracer.Start(ctx, "ExchangeToken")
 	defer span.End()
 
@@ -129,8 +129,8 @@ func ExchangeToken(
 		return nil, err
 	}
 
-	request := oidc.TokenExchangeRequest{
-		GrantType:          oidc.GrantTypeTokenExchange,
+	request := protocol.TokenExchangeRequest{
+		GrantType:          protocol.GrantTypeTokenExchange,
 		SubjectToken:       SubjectToken,
 		SubjectTokenType:   SubjectTokenType,
 		ActorToken:         ActorToken,

@@ -17,15 +17,15 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/internal/otel"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"golang.org/x/oauth2"
 
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/logctx"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
 )
 
 var (
-	Encoder = httphelper.Encoder(oidc.NewEncoder())
+	Encoder = httphelper.Encoder(protocol.NewEncoder())
 	Tracer  = otel.Tracer("github.com/zitadel/oidc/pkg/client")
 )
 
@@ -35,11 +35,11 @@ type ClientSecretBasicAuthRequest interface {
 
 // Discover calls the discovery endpoint of the provided issuer and returns its configuration
 // It accepts an optional argument "wellknownUrl" which can be used to override the discovery endpoint url
-func Discover(ctx context.Context, issuer string, httpClient *http.Client, wellKnownUrl ...string) (*oidc.DiscoveryConfiguration, error) {
+func Discover(ctx context.Context, issuer string, httpClient *http.Client, wellKnownUrl ...string) (*protocol.DiscoveryConfiguration, error) {
 	ctx, span := Tracer.Start(ctx, "Discover")
 	defer span.End()
 
-	wellKnown := strings.TrimSuffix(issuer, "/") + oidc.DiscoveryEndpoint
+	wellKnown := strings.TrimSuffix(issuer, "/") + protocol.DiscoveryEndpoint
 	if len(wellKnownUrl) == 1 && wellKnownUrl[0] != "" {
 		wellKnown = wellKnownUrl[0]
 	}
@@ -47,17 +47,17 @@ func Discover(ctx context.Context, issuer string, httpClient *http.Client, wellK
 	if err != nil {
 		return nil, err
 	}
-	discoveryConfig := new(oidc.DiscoveryConfiguration)
+	discoveryConfig := new(protocol.DiscoveryConfiguration)
 	err = httphelper.HttpRequest(httpClient, req, &discoveryConfig)
 	if err != nil {
-		return nil, errors.Join(oidc.ErrDiscoveryFailed, err)
+		return nil, errors.Join(protocol.ErrDiscoveryFailed, err)
 	}
 	if logger, ok := logctx.FromContext(ctx); ok {
 		logger.Debug("discover", "config", discoveryConfig)
 	}
 
 	if discoveryConfig.Issuer != issuer {
-		return nil, oidc.ErrIssuerInvalid
+		return nil, protocol.ErrIssuerInvalid
 	}
 	return discoveryConfig, nil
 }
@@ -84,7 +84,7 @@ func callTokenEndpoint(ctx context.Context, request any, authFn any, caller Toke
 		basicAuthRequest.Auth(req)
 	}
 
-	tokenRes := new(oidc.AccessTokenResponse)
+	tokenRes := new(protocol.AccessTokenResponse)
 	if err := httphelper.HttpRequest(caller.HttpClient(), req, &tokenRes); err != nil {
 		return nil, err
 	}
@@ -205,7 +205,7 @@ func CallRevokeEndpoint(ctx context.Context, request any, authFn any, caller Rev
 	return nil
 }
 
-func CallTokenExchangeEndpoint(ctx context.Context, request any, authFn any, caller TokenEndpointCaller) (resp *oidc.TokenExchangeResponse, err error) {
+func CallTokenExchangeEndpoint(ctx context.Context, request any, authFn any, caller TokenEndpointCaller) (resp *protocol.TokenExchangeResponse, err error) {
 	ctx, span := Tracer.Start(ctx, "CallTokenExchangeEndpoint")
 	defer span.End()
 
@@ -213,7 +213,7 @@ func CallTokenExchangeEndpoint(ctx context.Context, request any, authFn any, cal
 	if err != nil {
 		return nil, err
 	}
-	tokenRes := new(oidc.TokenExchangeResponse)
+	tokenRes := new(protocol.TokenExchangeResponse)
 	if err := httphelper.HttpRequest(caller.HttpClient(), req, &tokenRes); err != nil {
 		return nil, err
 	}
@@ -231,12 +231,12 @@ func NewSignerFromPrivateKeyByte(key []byte, keyID string) (*crypto.Signer, erro
 func SignedJWTProfileAssertion(clientID string, audience []string, expiration time.Duration, signer *crypto.Signer) (string, error) {
 	iat := time.Now()
 	exp := iat.Add(expiration)
-	return crypto.Sign(&oidc.JWTTokenRequest{
+	return crypto.Sign(&protocol.JWTTokenRequest{
 		Issuer:    clientID,
 		Subject:   clientID,
 		Audience:  audience,
-		ExpiresAt: oidc.FromTime(exp),
-		IssuedAt:  oidc.FromTime(iat),
+		ExpiresAt: protocol.FromTime(exp),
+		IssuedAt:  protocol.FromTime(iat),
 	}, signer)
 }
 
@@ -245,7 +245,7 @@ type DeviceAuthorizationCaller interface {
 	HttpClient() *http.Client
 }
 
-func CallDeviceAuthorizationEndpoint(ctx context.Context, request *oidc.ClientCredentialsRequest, caller DeviceAuthorizationCaller, authFn any) (*oidc.DeviceAuthorizationResponse, error) {
+func CallDeviceAuthorizationEndpoint(ctx context.Context, request *protocol.ClientCredentialsRequest, caller DeviceAuthorizationCaller, authFn any) (*protocol.DeviceAuthorizationResponse, error) {
 	ctx, span := Tracer.Start(ctx, "CallDeviceAuthorizationEndpoint")
 	defer span.End()
 
@@ -260,7 +260,7 @@ func CallDeviceAuthorizationEndpoint(ctx context.Context, request *oidc.ClientCr
 	}
 	request.Auth(req)
 
-	resp := new(oidc.DeviceAuthorizationResponse)
+	resp := new(protocol.DeviceAuthorizationResponse)
 	if err := httphelper.HttpRequest(caller.HttpClient(), req, &resp); err != nil {
 		return nil, err
 	}
@@ -268,8 +268,8 @@ func CallDeviceAuthorizationEndpoint(ctx context.Context, request *oidc.ClientCr
 }
 
 type DeviceAccessTokenRequest struct {
-	*oidc.ClientCredentialsRequest
-	oidc.DeviceAccessTokenRequest
+	*protocol.ClientCredentialsRequest
+	protocol.DeviceAccessTokenRequest
 }
 
 func (r *DeviceAccessTokenRequest) Auth(req *http.Request) {
@@ -278,7 +278,7 @@ func (r *DeviceAccessTokenRequest) Auth(req *http.Request) {
 	}
 }
 
-func CallDeviceAccessTokenEndpoint(ctx context.Context, request *DeviceAccessTokenRequest, caller TokenEndpointCaller) (*oidc.AccessTokenResponse, error) {
+func CallDeviceAccessTokenEndpoint(ctx context.Context, request *DeviceAccessTokenRequest, caller TokenEndpointCaller) (*protocol.AccessTokenResponse, error) {
 	ctx, span := Tracer.Start(ctx, "CallDeviceAccessTokenEndpoint")
 	defer span.End()
 
@@ -288,14 +288,14 @@ func CallDeviceAccessTokenEndpoint(ctx context.Context, request *DeviceAccessTok
 	}
 	request.Auth(req)
 
-	resp := new(oidc.AccessTokenResponse)
+	resp := new(protocol.AccessTokenResponse)
 	if err := httphelper.HttpRequest(caller.HttpClient(), req, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil
 }
 
-func PollDeviceAccessTokenEndpoint(ctx context.Context, interval time.Duration, request *DeviceAccessTokenRequest, caller TokenEndpointCaller) (*oidc.AccessTokenResponse, error) {
+func PollDeviceAccessTokenEndpoint(ctx context.Context, interval time.Duration, request *DeviceAccessTokenRequest, caller TokenEndpointCaller) (*protocol.AccessTokenResponse, error) {
 	ctx, span := Tracer.Start(ctx, "PollDeviceAccessTokenEndpoint")
 	defer span.End()
 
@@ -317,14 +317,14 @@ func PollDeviceAccessTokenEndpoint(ctx context.Context, interval time.Duration, 
 		if errors.Is(err, context.DeadlineExceeded) {
 			interval += 5 * time.Second
 		}
-		var target *oidc.Error
+		var target *protocol.Error
 		if !errors.As(err, &target) {
 			return nil, err
 		}
 		switch target.ErrorType {
-		case oidc.AuthorizationPending:
+		case protocol.AuthorizationPending:
 			continue
-		case oidc.SlowDown:
+		case protocol.SlowDown:
 			interval += 5 * time.Second
 			continue
 		default:

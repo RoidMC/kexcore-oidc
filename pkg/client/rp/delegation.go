@@ -1,13 +1,18 @@
 package rp
 
-import (
-	"github.com/roidmc/kexcore-oidc/pkg/oidc/grants/tokenexchange"
-)
+import "github.com/roidmc/kexcore-oidc/pkg/protocol"
 
-// DelegationTokenRequest is an implementation of TokenExchangeRequest
-// it exchanges an "urn:ietf:params:oauth:token-type:access_token" with an optional
-// "urn:ietf:params:oauth:token-type:access_token" actor token for an
-// "urn:ietf:params:oauth:token-type:access_token" delegation token
-func DelegationTokenRequest(subjectToken string, opts ...tokenexchange.TokenExchangeOption) *tokenexchange.TokenExchangeRequest {
-	return tokenexchange.NewTokenExchangeRequest(subjectToken, tokenexchange.AccessTokenType, opts...)
+// DelegationTokenRequest creates a Token Exchange request for delegation.
+// It exchanges an access token for another access token (delegation) for a given resource/audience.
+func DelegationTokenRequest(subjectToken string, opts ...func(*protocol.TokenExchangeRequest)) *protocol.TokenExchangeRequest {
+	req := &protocol.TokenExchangeRequest{
+		GrantType:          protocol.GrantTypeTokenExchange,
+		SubjectToken:       subjectToken,
+		SubjectTokenType:   protocol.AccessTokenType,
+		RequestedTokenType: protocol.AccessTokenType,
+	}
+	for _, opt := range opts {
+		opt(req)
+	}
+	return req
 }

@@ -15,7 +15,7 @@ import (
 	"golang.org/x/oauth2"
 
 	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 func Test_verifyTokenResponse(t *testing.T) {
@@ -28,24 +28,24 @@ func Test_verifyTokenResponse(t *testing.T) {
 		KeySet:            tu.KeySet{},
 		MaxAge:            2 * time.Minute,
 		ACR:               tu.ACRVerify,
-		AZP:               oidc.DefaultAZPVerifier(tu.ValidClientID),
+		AZP:               protocol.DefaultAZPVerifier(tu.ValidClientID),
 		Nonce:             func(context.Context) string { return tu.ValidNonce },
 	}
 	tests := []struct {
 		name       string
 		oauth2Only bool
-		tokens     func() (token *oauth2.Token, want *oidc.Tokens[*oidc.IDTokenClaims])
+		tokens     func() (token *oauth2.Token, want *protocol.Tokens[*protocol.IDTokenClaims])
 		wantErr    error
 	}{
 		{
 			name:       "success, oauth2 only",
 			oauth2Only: true,
-			tokens: func() (*oauth2.Token, *oidc.Tokens[*oidc.IDTokenClaims]) {
+			tokens: func() (*oauth2.Token, *protocol.Tokens[*protocol.IDTokenClaims]) {
 				accessToken, _ := tu.ValidAccessToken()
 				token := &oauth2.Token{
 					AccessToken: accessToken,
 				}
-				return token, &oidc.Tokens[*oidc.IDTokenClaims]{
+				return token, &protocol.Tokens[*protocol.IDTokenClaims]{
 					Token: token,
 				}
 			},
@@ -53,12 +53,12 @@ func Test_verifyTokenResponse(t *testing.T) {
 		{
 			name:       "id_token missing error",
 			oauth2Only: false,
-			tokens: func() (*oauth2.Token, *oidc.Tokens[*oidc.IDTokenClaims]) {
+			tokens: func() (*oauth2.Token, *protocol.Tokens[*protocol.IDTokenClaims]) {
 				accessToken, _ := tu.ValidAccessToken()
 				token := &oauth2.Token{
 					AccessToken: accessToken,
 				}
-				return token, &oidc.Tokens[*oidc.IDTokenClaims]{
+				return token, &protocol.Tokens[*protocol.IDTokenClaims]{
 					Token: token,
 				}
 			},
@@ -67,7 +67,7 @@ func Test_verifyTokenResponse(t *testing.T) {
 		{
 			name:       "verify tokens error",
 			oauth2Only: false,
-			tokens: func() (*oauth2.Token, *oidc.Tokens[*oidc.IDTokenClaims]) {
+			tokens: func() (*oauth2.Token, *protocol.Tokens[*protocol.IDTokenClaims]) {
 				accessToken, _ := tu.ValidAccessToken()
 				token := &oauth2.Token{
 					AccessToken: accessToken,
@@ -77,12 +77,12 @@ func Test_verifyTokenResponse(t *testing.T) {
 				})
 				return token, nil
 			},
-			wantErr: oidc.ErrParse,
+			wantErr: protocol.ErrParse,
 		},
 		{
 			name:       "success, with id_token",
 			oauth2Only: false,
-			tokens: func() (*oauth2.Token, *oidc.Tokens[*oidc.IDTokenClaims]) {
+			tokens: func() (*oauth2.Token, *protocol.Tokens[*protocol.IDTokenClaims]) {
 				accessToken, _ := tu.ValidAccessToken()
 				token := &oauth2.Token{
 					AccessToken: accessToken,
@@ -91,7 +91,7 @@ func Test_verifyTokenResponse(t *testing.T) {
 				token = token.WithExtra(map[string]any{
 					"id_token": idToken,
 				})
-				return token, &oidc.Tokens[*oidc.IDTokenClaims]{
+				return token, &protocol.Tokens[*protocol.IDTokenClaims]{
 					Token:         token,
 					IDTokenClaims: claims,
 					IDToken:       idToken,
@@ -106,7 +106,7 @@ func Test_verifyTokenResponse(t *testing.T) {
 				idTokenVerifier: verifier,
 			}
 			token, want := tt.tokens()
-			got, err := verifyTokenResponse[*oidc.IDTokenClaims](context.Background(), token, rp)
+			got, err := verifyTokenResponse[*protocol.IDTokenClaims](context.Background(), token, rp)
 			require.ErrorIs(t, err, tt.wantErr)
 			assert.Equal(t, want, got)
 		})
@@ -132,7 +132,7 @@ func Test_PKCEFromDiscovery(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if r.URL.Path != oidc.DiscoveryEndpoint {
+					if r.URL.Path != protocol.DiscoveryEndpoint {
 						w.WriteHeader(http.StatusNotFound)
 						return
 					}

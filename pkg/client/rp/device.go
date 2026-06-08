@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
-func newDeviceClientCredentialsRequest(scopes []string, rp RelyingParty) (*oidc.ClientCredentialsRequest, error) {
+func newDeviceClientCredentialsRequest(scopes []string, rp RelyingParty) (*protocol.ClientCredentialsRequest, error) {
 	config := rp.OAuthConfig()
-	req := &oidc.ClientCredentialsRequest{
+	req := &protocol.ClientCredentialsRequest{
 		Scope:        scopes,
 		ClientID:     config.ClientID,
 		ClientSecret: config.ClientSecret,
@@ -23,7 +23,7 @@ func newDeviceClientCredentialsRequest(scopes []string, rp RelyingParty) (*oidc.
 			return nil, fmt.Errorf("failed to build assertion: %w", err)
 		}
 		req.ClientAssertion = assertion
-		req.ClientAssertionType = oidc.ClientAssertionTypeJWTAssertion
+		req.ClientAssertionType = protocol.ClientAssertionTypeJWTAssertion
 	}
 
 	return req, nil
@@ -32,7 +32,7 @@ func newDeviceClientCredentialsRequest(scopes []string, rp RelyingParty) (*oidc.
 // DeviceAuthorization starts a new Device Authorization flow as defined
 // in RFC 8628, section 3.1 and 3.2:
 // https://www.rfc-editor.org/rfc/rfc8628#section-3.1
-func DeviceAuthorization(ctx context.Context, scopes []string, rp RelyingParty, authFn any) (*oidc.DeviceAuthorizationResponse, error) {
+func DeviceAuthorization(ctx context.Context, scopes []string, rp RelyingParty, authFn any) (*protocol.DeviceAuthorizationResponse, error) {
 	ctx, span := client.Tracer.Start(ctx, "DeviceAuthorization")
 	defer span.End()
 
@@ -48,14 +48,14 @@ func DeviceAuthorization(ctx context.Context, scopes []string, rp RelyingParty, 
 // DeviceAccessToken attempts to obtain tokens from a Device Authorization,
 // by means of polling as defined in RFC, section 3.3 and 3.4:
 // https://www.rfc-editor.org/rfc/rfc8628#section-3.4
-func DeviceAccessToken(ctx context.Context, deviceCode string, interval time.Duration, rp RelyingParty) (resp *oidc.AccessTokenResponse, err error) {
+func DeviceAccessToken(ctx context.Context, deviceCode string, interval time.Duration, rp RelyingParty) (resp *protocol.AccessTokenResponse, err error) {
 	ctx, span := client.Tracer.Start(ctx, "DeviceAccessToken")
 	defer span.End()
 
 	ctx = logCtxWithRPData(ctx, rp, "function", "DeviceAccessToken")
 	req := &client.DeviceAccessTokenRequest{
-		DeviceAccessTokenRequest: oidc.DeviceAccessTokenRequest{
-			GrantType:  oidc.GrantTypeDeviceCode,
+		DeviceAccessTokenRequest: protocol.DeviceAccessTokenRequest{
+			GrantType:  protocol.GrantTypeDeviceCode,
 			DeviceCode: deviceCode,
 		},
 	}

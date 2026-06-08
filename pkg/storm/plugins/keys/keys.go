@@ -1,0 +1,153 @@
+// Package keys implements the JWKS (JSON Web Key Set) endpoint plugin.
+package keys
+
+import (
+	"context"
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+)
+
+// Plugin serves the JWKS endpoint.
+type Plugin struct {
+	store storm.KeyStore
+}
+
+// New creates a new Keys plugin from a PluginContext.
+func New(ctx *storm.PluginContext) *Plugin {
+	return &Plugin{store: ctx.Storage.(storm.KeyStore)}
+}
+
+// NewWithStore creates a new Keys plugin with an explicit KeyStore.
+func NewWithStore(store storm.KeyStore) *Plugin {
+	return &Plugin{store: store}
+}
+
+// init self-registers the keys plugin in the global registry.
+func init() {
+	storm.RegisterPlugin("keys", storm.PriorityKeys, func(ctx *storm.PluginContext) storm.Plugin {
+		return New(ctx)
+	})
+}
+
+// Category returns CategoryCore — JWKS is a required OIDC endpoint.
+func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryCore }
+
+// Requires returns the storage dependencies.
+func (p *Plugin) Requires() []string { return []string{"KeyStore"} }
+
+// Name returns the plugin name.
+func (p *Plugin) Name() string { return "keys" }
+
+// Register installs the JWKS route.
+func (p *Plugin) Register(r chi.Router) {
+	r.Get("/.well-known/jwks.json", p.handle)
+}
+
+// Contribute returns the discovery fields for the JWKS endpoint.
+func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.JWKSURI = shared.EndpointURL(ctx, protocol.NewEndpoint("/.well-known/jwks.json"))
+}
+
+func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
+	keys, err := p.store.KeySet(r.Context())
+	if err != nil {
+		shared.WriteError(w, r, err, nil)
+		return
+	}
+
+	// injectCertFields injects x5c, x5t (SHA-1), x5t#S256 (SHA-256) into a raw JSON key.
+	// Returns the updated raw JSON.
+	injectCertFields := func(raw json.RawMessage, certs [][]byte) json.RawMessage {
+		if len(certs) == 0 {
+			return raw
+		}
+		// Build x5c array: base64-encoded DER certificates per RFC 7517 §4.7
+		x5c := make([]string, len(certs))
+		for i, c := range certs {
+			x5c[i] = base64.StdEncoding.EncodeToString(c)
+		}
+		x5cJSON, _ := json.Marshal(x5c)
+
+		// x5t: SHA-1 thumbprint per RFC 7517 §4.8
+		x5t := ""
+		if len(certs[0]) > 0 {
+			h := sha1.Sum(certs[0])
+			x5t = base64.RawURLEncoding.EncodeToString(h[:])
+		}
+		x5tJSON, _ := json.Marshal(x5t)
+
+		// x5t#S256: SHA-256 thumbprint per RFC 7517 §4.9
+		x5tS256 := ""
+		if len(certs[0]) > 0 {
+			h := sha256.Sum256(certs[0])
+			x5tS256 = base64.RawURLEncoding.EncodeToString(h[:])
+		}
+		x5tS256JSON, _ := json.Marshal(x5tS256)
+
+		// Inject into raw JSON by replacing the closing }
+		return append(raw[:len(raw)-1], []byte(`,"x5c":`+string(x5cJSON)+`,"x5t":`+string(x5tJSON)+`,"x5t#S256":`+string(x5tS256JSON)+`}`)...)
+	}
+
+	// Build the JWKS response, handling both standard and GM/T keys.
+	// Standard keys use jwk.Set; GM/T keys are serialized via GMJWK.
+	type jwksResponse struct {
+		Keys []json.RawMessage `json:"keys"`
+	}
+
+	resp := jwksResponse{Keys: make([]json.RawMessage, 0, len(keys))}
+
+	for _, k := range keys {
+		// Prefer GM/T JWK representation for national cryptography keys.
+		// GM/T keys satisfy protocol.GMJWKProvider optionally.
+		if gm, ok := k.(protocol.GMJWKProvider); ok && gm.GMJWK() != nil {
+			raw, err := gm.GMJWK().MarshalJSON()
+			if err != nil {
+				shared.WriteError(w, r, err, nil)
+				return
+			}
+			// Inject x5c, x5t, x5t#S256 if the key provides a certificate chain
+			if cp, ok := k.(protocol.CertificateProvider); ok {
+				if certs, err := cp.CertificateChain(); err == nil && len(certs) > 0 {
+					raw = injectCertFields(raw, certs)
+				}
+			}
+			resp.Keys = append(resp.Keys, raw)
+			continue
+		}
+
+		// Standard key (RSA, ECDSA, EdDSA)
+		jwkKey := k.Key()
+		if jwkKey == nil {
+			continue
+		}
+		// Extract public key only — JWKS must never expose private key material.
+		pubKey, err := jwkKey.PublicKey()
+		if err != nil {
+			shared.WriteError(w, r, err, nil)
+			return
+		}
+		raw, err := json.Marshal(pubKey)
+		if err != nil {
+			shared.WriteError(w, r, err, nil)
+			return
+		}
+		// Inject x5c, x5t, x5t#S256 if the key provides a certificate chain
+		if cp, ok := k.(protocol.CertificateProvider); ok {
+			if certs, err := cp.CertificateChain(); err == nil && len(certs) > 0 {
+				raw = injectCertFields(raw, certs)
+			}
+		}
+		resp.Keys = append(resp.Keys, raw)
+	}
+
+	shared.JSONResponse(w, resp, http.StatusOK)
+}

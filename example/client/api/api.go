@@ -14,7 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rs"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 const (
@@ -48,7 +48,7 @@ func main() {
 		if !ok {
 			return
 		}
-		resp, err := rs.Introspect[*oidc.IntrospectionResponse](r.Context(), provider, token)
+		resp, err := rs.Introspect[*protocol.IntrospectionResponse](r.Context(), provider, token)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
@@ -69,7 +69,7 @@ func main() {
 		if !ok {
 			return
 		}
-		resp, err := rs.Introspect[*oidc.IntrospectionResponse](r.Context(), provider, token)
+		resp, err := rs.Introspect[*protocol.IntrospectionResponse](r.Context(), provider, token)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
@@ -96,9 +96,9 @@ func checkToken(w http.ResponseWriter, r *http.Request) (bool, string) {
 		http.Error(w, "auth header missing", http.StatusUnauthorized)
 		return false, ""
 	}
-	if !strings.HasPrefix(auth, oidc.PrefixBearer) {
+	if !strings.HasPrefix(auth, protocol.PrefixBearer) {
 		http.Error(w, "invalid header", http.StatusUnauthorized)
 		return false, ""
 	}
-	return true, strings.TrimPrefix(auth, oidc.PrefixBearer)
+	return true, strings.TrimPrefix(auth, protocol.PrefixBearer)
 }

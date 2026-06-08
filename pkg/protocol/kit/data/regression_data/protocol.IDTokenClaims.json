@@ -1,0 +1,51 @@
+{
+	"iss": "kexcore",
+	"aud": [
+		"foo",
+		"bar"
+	],
+	"jti": "900",
+	"azp": "bob@example.com",
+	"nonce": "6969",
+	"at_hash": "acthashhash",
+	"c_hash": "hashhash",
+	"acr": "something",
+	"amr": [
+		"some",
+		"methods"
+	],
+	"sid": "666",
+	"client_id": "777",
+	"exp": 12345,
+	"iat": 12000,
+	"nbf": 12000,
+	"auth_time": 12000,
+	"address": {
+		"country": "Moon",
+		"formatted": "Sesame street 666\n666-666, Smallvile\nMoon",
+		"locality": "Smallvile",
+		"postal_code": "666-666",
+		"region": "Outer space",
+		"street_address": "Sesame street 666"
+	},
+	"birthdate": "1st of April",
+	"email": "user@kexcore.example.com",
+	"email_verified": true,
+	"family_name": "User",
+	"foo": "bar",
+	"gender": "male",
+	"given_name": "Test",
+	"locale": "nl",
+	"middle_name": "Middle",
+	"name": "Test User",
+	"nickname": "testuser",
+	"phone_number": "+1234567890",
+	"phone_number_verified": true,
+	"picture": "https://avatars.githubusercontent.com/u/10137?v=4",
+	"preferred_username": "testuser",
+	"profile": "https://github.com/roidmc",
+	"sub": "kexcore@example.com",
+	"updated_at": 1,
+	"website": "https://kexcore.example.com",
+	"zoneinfo": "Asia/Shanghai"
+}

@@ -1,0 +1,30 @@
+{
+	"address": {
+		"country": "Moon",
+		"formatted": "Sesame street 666\n666-666, Smallvile\nMoon",
+		"locality": "Smallvile",
+		"postal_code": "666-666",
+		"region": "Outer space",
+		"street_address": "Sesame street 666"
+	},
+	"birthdate": "1st of April",
+	"email": "user@kexcore.example.com",
+	"email_verified": true,
+	"family_name": "User",
+	"foo": "bar",
+	"gender": "male",
+	"given_name": "Test",
+	"locale": "nl",
+	"middle_name": "Middle",
+	"name": "Test User",
+	"nickname": "testuser",
+	"phone_number": "+1234567890",
+	"phone_number_verified": true,
+	"picture": "https://avatars.githubusercontent.com/u/10137?v=4",
+	"preferred_username": "testuser",
+	"profile": "https://github.com/roidmc",
+	"sub": "kexcore@example.com",
+	"updated_at": 1,
+	"website": "https://kexcore.example.com",
+	"zoneinfo": "Asia/Shanghai"
+}

@@ -5,16 +5,26 @@
 package crypto
 
 import (
+	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ecdsa"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/sha512"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"strings"
 
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
+
+	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
 )
 
 var (
@@ -58,13 +68,13 @@ type jweHeader struct {
 //	base64url(protected_header) . base64url(encrypted_key) . base64url(iv) . base64url(ciphertext) . base64url(tag)
 func SM2EncryptJWE(publicKey *ecdsa.PublicKey, plaintext []byte) (string, error) {
 	// 1. Generate random CEK (128 bits for SM4)
-	cek := make([]byte, SM4BlockSize)
+	cek := make([]byte, gm.SM4BlockSize)
 	if _, err := rand.Read(cek); err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to generate CEK: %w", err)
 	}
 
 	// 2. Generate random IV (96 bits for GCM)
-	iv := make([]byte, SM4GCMNonceSize)
+	iv := make([]byte, gm.SM4GCMNonceSize)
 	if _, err := rand.Read(iv); err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to generate IV: %w", err)
 	}
@@ -81,7 +91,7 @@ func SM2EncryptJWE(publicKey *ecdsa.PublicKey, plaintext []byte) (string, error)
 	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
 
 	// 4. Wrap CEK with SM2 public key (SGD_SM2_3, ASN.1 encoding per GB/T 35276)
-	encryptedKey, err := SM2EncryptASN1(publicKey, cek)
+	encryptedKey, err := gm.SM2EncryptASN1(publicKey, cek)
 	if err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to wrap CEK with SM2: %w", err)
 	}
@@ -89,7 +99,7 @@ func SM2EncryptJWE(publicKey *ecdsa.PublicKey, plaintext []byte) (string, error)
 
 	// 5. Encrypt plaintext with SM4-GCM using AAD = headerB64
 	aad := []byte(headerB64)
-	sealed, err := SM4EncryptGCMWithNonce(cek, iv, plaintext, aad)
+	sealed, err := gm.SM4EncryptGCMWithNonce(cek, iv, plaintext, aad)
 	if err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to encrypt with SM4-GCM: %w", err)
 	}
@@ -120,7 +130,7 @@ func SM2EncryptJWE(publicKey *ecdsa.PublicKey, plaintext []byte) (string, error)
 //  4. Decrypt the ciphertext using SM4-GCM with the recovered CEK, using the
 //     base64url-encoded protected header as AAD.
 func SM2DecryptJWE(privateKey *sm2.PrivateKey, compact string) ([]byte, error) {
-	parts, header, err := parseJWECompact(compact)
+	parts, header, err := ParseJWECompact(compact)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +146,7 @@ func SM2DecryptJWE(privateKey *sm2.PrivateKey, compact string) ([]byte, error) {
 	}
 
 	// Unwrap CEK with SM2 private key
-	cek, err := SM2Decrypt(privateKey, encryptedKey)
+	cek, err := gm.SM2Decrypt(privateKey, encryptedKey)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrJWEKeyDecrypt, err)
 	}
@@ -156,7 +166,7 @@ func SM9EncryptJWE(masterPubKey *sm9.EncryptMasterPublicKey, uid []byte, enc str
 	// 1. Wrap a new CEK with SM9 (SGD_SM9_3)
 	// SM9 WrapKey generates a random key of kLen bytes and encrypts it.
 	// The returned wrappedKey is the CEK to use for content encryption.
-	cek, cipherDER, err := SM9WrapKey(masterPubKey, uid, SM4BlockSize)
+	cek, cipherDER, err := gm.SM9WrapKey(masterPubKey, uid, gm.SM4BlockSize)
 	if err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to wrap CEK with SM9: %w", err)
 	}
@@ -183,22 +193,22 @@ func SM9EncryptJWE(masterPubKey *sm9.EncryptMasterPublicKey, uid []byte, enc str
 
 	switch enc {
 	case SGD_SM4_GCM:
-		iv = make([]byte, SM4GCMNonceSize)
+		iv = make([]byte, gm.SM4GCMNonceSize)
 		if _, err := rand.Read(iv); err != nil {
 			return "", fmt.Errorf("kexcore/crypto: failed to generate IV: %w", err)
 		}
 		aad := []byte(headerB64)
-		sealed, err = SM4EncryptGCMWithNonce(cek, iv, plaintext, aad)
+		sealed, err = gm.SM4EncryptGCMWithNonce(cek, iv, plaintext, aad)
 		if err != nil {
 			return "", fmt.Errorf("kexcore/crypto: failed to encrypt with SM4-GCM: %w", err)
 		}
 	case SGD_SM4_CCM:
-		iv = make([]byte, SM4CCMNonceSize)
+		iv = make([]byte, gm.SM4CCMNonceSize)
 		if _, err := rand.Read(iv); err != nil {
 			return "", fmt.Errorf("kexcore/crypto: failed to generate IV: %w", err)
 		}
 		aad := []byte(headerB64)
-		sealed, err = SM4EncryptCCMWithNonce(cek, iv, plaintext, aad)
+		sealed, err = gm.SM4EncryptCCMWithNonce(cek, iv, plaintext, aad)
 		if err != nil {
 			return "", fmt.Errorf("kexcore/crypto: failed to encrypt with SM4-CCM: %w", err)
 		}
@@ -225,7 +235,7 @@ func SM9EncryptJWE(masterPubKey *sm9.EncryptMasterPublicKey, uid []byte, enc str
 // SM9DecryptJWE decrypts a GM/T 0125.3 JWE compact serialization
 // with SM9 key wrapping (SGD_SM9_3) and SM4 content encryption.
 func SM9DecryptJWE(userKey *sm9.EncryptPrivateKey, uid []byte, compact string) ([]byte, error) {
-	parts, header, err := parseJWECompact(compact)
+	parts, header, err := ParseJWECompact(compact)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +251,7 @@ func SM9DecryptJWE(userKey *sm9.EncryptPrivateKey, uid []byte, compact string) (
 	}
 
 	// Unwrap CEK with SM9 private key
-	cek, err := SM9UnwrapKey(userKey, uid, cipherDER, SM4BlockSize)
+	cek, err := gm.SM9UnwrapKey(userKey, uid, cipherDER, gm.SM4BlockSize)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrJWEKeyDecrypt, err)
 	}
@@ -251,8 +261,8 @@ func SM9DecryptJWE(userKey *sm9.EncryptPrivateKey, uid []byte, compact string) (
 
 // --- Internal helpers ---
 
-// parseJWECompact parses and validates a JWE compact serialization.
-func parseJWECompact(compact string) ([]string, *jweHeader, error) {
+// ParseJWECompact parses and validates a JWE compact serialization.
+func ParseJWECompact(compact string) ([]string, *jweHeader, error) {
 	parts := strings.Split(compact, ".")
 	if len(parts) != 5 {
 		return nil, nil, ErrInvalidJWEParts
@@ -311,13 +321,13 @@ func decryptJWEContent(cek []byte, enc string, parts []string) ([]byte, error) {
 
 	switch enc {
 	case SGD_SM4_GCM:
-		plaintext, err := SM4DecryptGCMWithNonce(cek, iv, sealed, aad)
+		plaintext, err := gm.SM4DecryptGCMWithNonce(cek, iv, sealed, aad)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrJWEContentDecrypt, err)
 		}
 		return plaintext, nil
 	case SGD_SM4_CCM:
-		plaintext, err := SM4DecryptCCMWithNonce(cek, iv, sealed, aad)
+		plaintext, err := gm.SM4DecryptCCMWithNonce(cek, iv, sealed, aad)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrJWEContentDecrypt, err)
 		}
@@ -337,4 +347,246 @@ func sm4TagSize(enc string) int {
 	default:
 		return SM4GCMTagSize
 	}
+}
+
+// --- AES-CBC-HS helpers (RFC 7518 §5.2) ---
+
+// aesCBCParameters defines the key/tag sizes for each AES-CBC-HS algorithm.
+type aesCBCParameters struct {
+	encKeySize int // AES-CBC key size in bytes
+	tagSize    int // Authentication tag size in bytes
+	macKeySize int // HMAC key size in bytes
+}
+
+var cbcParams = map[string]aesCBCParameters{
+	"A128CBC-HS256": {16, 16, 16},
+	"A192CBC-HS384": {24, 24, 24},
+	"A256CBC-HS512": {32, 32, 32},
+}
+
+// newHMACHash returns the appropriate HMAC hash function for the given enc algorithm.
+func newHMACHash(enc string) hash.Hash {
+	switch enc {
+	case "A192CBC-HS384":
+		return hmac.New(sha512.New384, nil)
+	case "A256CBC-HS512":
+		return hmac.New(sha512.New, nil)
+	default: // A128CBC-HS256
+		return hmac.New(sha256.New, nil)
+	}
+}
+
+// AESCBCEncrypt encrypts plaintext using AES-CBC with PKCS7 padding, then computes
+// an HMAC-SHA authentication tag per RFC 7518 §5.2.
+// Returns ciphertext||tag (combined output).
+// enc identifies the algorithm: "A128CBC-HS256", "A192CBC-HS384", or "A256CBC-HS512".
+func AESCBCEncrypt(enc string, key, iv, plaintext, aad []byte) ([]byte, error) {
+	params, ok := cbcParams[enc]
+	if !ok {
+		return nil, fmt.Errorf("kexcore/crypto: unsupported CBC enc: %s", enc)
+	}
+	if len(key) != params.encKeySize+params.macKeySize {
+		return nil, fmt.Errorf("kexcore/crypto: invalid key length for %s: got %d, want %d", enc, len(key), params.encKeySize+params.macKeySize)
+	}
+	if len(iv) != aes.BlockSize {
+		return nil, fmt.Errorf("kexcore/crypto: invalid IV length for CBC: got %d, want %d", len(iv), aes.BlockSize)
+	}
+
+	encKey := key[params.macKeySize:]
+
+	block, err := aes.NewCipher(encKey)
+	if err != nil {
+		return nil, fmt.Errorf("kexcore/crypto: AES-CBC encrypt: %w", err)
+	}
+
+	// PKCS7 padding
+	padLen := aes.BlockSize - (len(plaintext) % aes.BlockSize)
+	padded := make([]byte, len(plaintext)+padLen)
+	copy(padded, plaintext)
+	for i := len(plaintext); i < len(padded); i++ {
+		padded[i] = byte(padLen)
+	}
+
+	ciphertext := make([]byte, len(padded))
+	cbc := cipher.NewCBCEncrypter(block, iv)
+	cbc.CryptBlocks(ciphertext, padded)
+
+	// Compute HMAC-SHA per RFC 7518 §5.2.2.1: HMAC(AAD || IV || ciphertext || AL)
+	al := make([]byte, 8)
+	l := len(aad) * 8
+	al[0] = byte(l >> 56)
+	al[1] = byte(l >> 48)
+	al[2] = byte(l >> 40)
+	al[3] = byte(l >> 32)
+	al[4] = byte(l >> 24)
+	al[5] = byte(l >> 16)
+	al[6] = byte(l >> 8)
+	al[7] = byte(l)
+
+	hmacHash := newHMACHash(enc)
+	hmacHash.Write(aad)
+	hmacHash.Write(iv)
+	hmacHash.Write(ciphertext)
+	hmacHash.Write(al)
+	fullMAC := hmacHash.Sum(nil)
+	tag := fullMAC[:params.tagSize]
+
+	result := make([]byte, len(ciphertext)+len(tag))
+	copy(result, ciphertext)
+	copy(result[len(ciphertext):], tag)
+	return result, nil
+}
+
+// AESCBCDecrypt verifies the HMAC tag and decrypts AES-CBC ciphertext with PKCS7 unpadding.
+// Input sealed is ciphertext||tag (combined output).
+// enc identifies the algorithm: "A128CBC-HS256", "A192CBC-HS384", or "A256CBC-HS512".
+func AESCBCDecrypt(enc string, key, iv, sealed, aad []byte) ([]byte, error) {
+	params, ok := cbcParams[enc]
+	if !ok {
+		return nil, fmt.Errorf("kexcore/crypto: unsupported CBC enc: %s", enc)
+	}
+	if len(key) != params.encKeySize+params.macKeySize {
+		return nil, fmt.Errorf("kexcore/crypto: invalid key length for %s: got %d, want %d", enc, len(key), params.encKeySize+params.macKeySize)
+	}
+	if len(iv) != aes.BlockSize {
+		return nil, fmt.Errorf("kexcore/crypto: invalid IV length for CBC: got %d, want %d", len(iv), aes.BlockSize)
+	}
+	if len(sealed) < params.tagSize {
+		return nil, errors.New("kexcore/crypto: CBC sealed data too short")
+	}
+
+	encKey := key[params.macKeySize:]
+
+	tagOffset := len(sealed) - params.tagSize
+	ciphertext := sealed[:tagOffset]
+	receivedTag := sealed[tagOffset:]
+
+	// Verify HMAC
+	al := make([]byte, 8)
+	l := len(aad) * 8
+	al[0] = byte(l >> 56)
+	al[1] = byte(l >> 48)
+	al[2] = byte(l >> 40)
+	al[3] = byte(l >> 32)
+	al[4] = byte(l >> 24)
+	al[5] = byte(l >> 16)
+	al[6] = byte(l >> 8)
+	al[7] = byte(l)
+
+	hmacHash := newHMACHash(enc)
+	hmacHash.Write(aad)
+	hmacHash.Write(iv)
+	hmacHash.Write(ciphertext)
+	hmacHash.Write(al)
+	fullMAC := hmacHash.Sum(nil)
+	expectedTag := fullMAC[:params.tagSize]
+
+	if subtle.ConstantTimeCompare(receivedTag, expectedTag) != 1 {
+		return nil, errors.New("kexcore/crypto: CBC authentication tag mismatch")
+	}
+
+	block, err := aes.NewCipher(encKey)
+	if err != nil {
+		return nil, fmt.Errorf("kexcore/crypto: AES-CBC decrypt: %w", err)
+	}
+
+	if len(ciphertext)%aes.BlockSize != 0 {
+		return nil, errors.New("kexcore/crypto: CBC ciphertext not a multiple of block size")
+	}
+
+	plaintext := make([]byte, len(ciphertext))
+	cbc := cipher.NewCBCDecrypter(block, iv)
+	cbc.CryptBlocks(plaintext, ciphertext)
+
+	// Remove PKCS7 padding
+	if len(plaintext) == 0 {
+		return plaintext, nil
+	}
+	padLen := int(plaintext[len(plaintext)-1])
+	if padLen == 0 || padLen > aes.BlockSize || padLen > len(plaintext) {
+		return nil, errors.New("kexcore/crypto: invalid PKCS7 padding")
+	}
+	for i := len(plaintext) - padLen; i < len(plaintext); i++ {
+		if plaintext[i] != byte(padLen) {
+			return nil, errors.New("kexcore/crypto: invalid PKCS7 padding")
+		}
+	}
+	return plaintext[:len(plaintext)-padLen], nil
+}
+
+// --- AES-GCM helpers (standard crypto, used by OIDC verifier for JWE) ---
+
+// AESGCMEncrypt encrypts plaintext using AES-GCM with the given key, nonce, and additional data.
+// The key length determines the AES variant (16 bytes = AES-128, 32 bytes = AES-256).
+// Returns ciphertext||tag (combined output).
+func AESGCMEncrypt(key, nonce, plaintext, additionalData []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("kexcore/crypto: AES-GCM encrypt: %w", err)
+	}
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("kexcore/crypto: AES-GCM encrypt: %w", err)
+	}
+	return aesgcm.Seal(nil, nonce, plaintext, additionalData), nil
+}
+
+// AESGCMDecrypt decrypts ciphertext (ciphertext||tag) using AES-GCM with the given key, nonce, and additional data.
+// The key length determines the AES variant (16 bytes = AES-128, 32 bytes = AES-256).
+func AESGCMDecrypt(key, nonce, ciphertext, additionalData []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("kexcore/crypto: AES-GCM decrypt: %w", err)
+	}
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("kexcore/crypto: AES-GCM decrypt: %w", err)
+	}
+	return aesgcm.Open(nil, nonce, ciphertext, additionalData)
+}
+
+// --- Dispatch functions: unified entry points that route through ProviderRegistry ---
+
+// DispatchEncryptJWE encrypts plaintext using the specified JWE key wrapping algorithm.
+// It checks the ProviderRegistry first; if a provider is registered, it is used.
+// Otherwise falls back to the built-in gmsm implementation.
+//
+// This is the recommended entry point for JWE encryption. Raw functions (SM2EncryptJWE, etc.)
+// bypass the registry and should only be called by provider implementations.
+func DispatchEncryptJWE(plaintext []byte, key interface{}, alg string) (string, error) {
+	if provider, ok := DefaultRegistry.GetJWEEncryptor(alg); ok {
+		return provider.Encrypt(context.Background(), plaintext, key)
+	}
+	return "", fmt.Errorf("no JWE encrypt provider registered for algorithm: %s", alg)
+}
+
+// DispatchDecryptJWE decrypts a JWE compact serialization using the specified key wrapping algorithm.
+// It checks the ProviderRegistry first; if a provider is registered, it is used.
+// Otherwise falls back to the built-in gmsm implementation.
+//
+// This is the recommended entry point for JWE decryption. Raw functions (SM2DecryptJWE, etc.)
+// bypass the registry and should only be called by provider implementations.
+func DispatchDecryptJWE(compact string, key interface{}, alg string) ([]byte, error) {
+	if provider, ok := DefaultRegistry.GetJWEDecryptor(alg); ok {
+		return provider.Decrypt(context.Background(), compact, key)
+	}
+	return nil, fmt.Errorf("no JWE decrypt provider registered for algorithm: %s", alg)
+}
+
+// DispatchContentEncrypt encrypts plaintext using a registered ContentEncryptProvider.
+// Falls back to the built-in gmsm AES-GCM/SM4-GCM implementation if no provider is registered.
+func DispatchContentEncrypt(enc string, key, iv, plaintext, aad []byte) ([]byte, error) {
+	if provider, ok := DefaultRegistry.GetContentEncryptor(enc); ok {
+		return provider.Encrypt(context.Background(), key, iv, plaintext, aad)
+	}
+	return nil, fmt.Errorf("no content encrypt provider registered for: %s", enc)
+}
+
+// DispatchContentDecrypt decrypts ciphertext using a registered ContentDecryptProvider.
+// Falls back to the built-in gmsm AES-GCM/SM4-GCM implementation if no provider is registered.
+func DispatchContentDecrypt(enc string, key, iv, sealed, aad []byte) ([]byte, error) {
+	if provider, ok := DefaultRegistry.GetContentDecryptor(enc); ok {
+		return provider.Decrypt(context.Background(), key, iv, sealed, aad)
+	}
+	return nil, fmt.Errorf("no content decrypt provider registered for: %s", enc)
 }

@@ -1,0 +1,10 @@
+<!doctype html>
+<html>
+<head><meta charset="UTF-8" /></head>
+<body onload="javascript:document.forms[0].submit()">
+<form method="post" action="{{ .RedirectURI }}">
+{{range $name, $values := .Params}}<input type="hidden" name="{{ $name }}" value="{{ index $values 0 }}"/>
+{{end}}
+</form>
+</body>
+</html>

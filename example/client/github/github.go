@@ -12,8 +12,8 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp/cli"
-	"github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 var (
@@ -44,7 +44,7 @@ func main() {
 	state := func() string {
 		return uuid.New().String()
 	}
-	token := cli.CodeFlow[*oidc.IDTokenClaims](ctx, relyingParty, callbackPath, port, state)
+	token := cli.CodeFlow[*protocol.IDTokenClaims](ctx, relyingParty, callbackPath, port, state)
 
 	client := github.NewClient(relyingParty.OAuthConfig().Client(ctx, token.Token))
 

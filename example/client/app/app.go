@@ -21,9 +21,9 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/http"
-	"github.com/roidmc/kexcore-oidc/pkg/logctx"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
 )
 
 var (
@@ -106,7 +106,7 @@ func main() {
 	}
 
 	if responseMode != "" {
-		urlOptions = append(urlOptions, rp.WithResponseModeURLParam(oidc.ResponseMode(responseMode)))
+		urlOptions = append(urlOptions, rp.WithResponseModeURLParam(protocol.ResponseMode(responseMode)))
 	}
 
 	// register the AuthURLHandler at your preferred path.
@@ -121,7 +121,7 @@ func main() {
 	))
 
 	// for demonstration purposes the returned userinfo response is written as JSON object onto response
-	marshalUserinfo := func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *oidc.UserInfo) {
+	marshalUserinfo := func(w http.ResponseWriter, r *http.Request, tokens *protocol.Tokens[*protocol.IDTokenClaims], state string, rp rp.RelyingParty, info *protocol.UserInfo) {
 		fmt.Println("access token", tokens.AccessToken)
 		fmt.Println("refresh token", tokens.RefreshToken)
 		fmt.Println("id token", tokens.IDToken)
@@ -150,10 +150,10 @@ func main() {
 	//
 	// requestTokenExchange := func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens, state string, rp rp.RelyingParty, info oidc.UserInfo) {
 	// 	data := make(url.Values)
-	// 	data.Set("grant_type", string(oidc.GrantTypeTokenExchange))
-	// 	data.Set("requested_token_type", string(oidc.IDTokenType))
+	// 	data.Set("grant_type", string(protocol.GrantTypeTokenExchange))
+	// 	data.Set("requested_token_type", string(protocol.IDTokenType))
 	// 	data.Set("subject_token", tokens.RefreshToken)
-	// 	data.Set("subject_token_type", string(oidc.RefreshTokenType))
+	// 	data.Set("subject_token_type", string(protocol.RefreshTokenType))
 	// 	data.Add("scope", "profile custom_scope:impersonate:id2")
 
 	// 	client := &http.Client{}

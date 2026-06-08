@@ -1,0 +1,118 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2026 RoidMC Studios
+
+package storage
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/google/uuid"
+
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/pkg/storm"
+)
+
+// =================================================================
+// storm.AuthStore
+// =================================================================
+
+func (s *Storage) CreateAuthRequest(_ context.Context, req *protocol.AuthRequest, userID string) (storm.AuthRequest, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	user := s.userStore.GetUserByID(userID)
+	ar := authRequestToInternal(req, userID, user)
+	ar.ID = uuid.NewString()
+	s.authRequests[ar.ID] = ar
+	return ar, nil
+}
+
+func (s *Storage) AuthRequestByID(_ context.Context, id string) (storm.AuthRequest, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	ar, ok := s.authRequests[id]
+	if !ok {
+		return nil, fmt.Errorf("auth request not found: %s", id)
+	}
+	return ar, nil
+}
+
+func (s *Storage) AuthRequestByCode(_ context.Context, code string) (storm.AuthRequest, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	authReqID, ok := s.codeToAuthReq[code]
+	if !ok {
+		return nil, fmt.Errorf("code not found")
+	}
+	ar, ok := s.authRequests[authReqID]
+	if !ok {
+		return nil, fmt.Errorf("auth request not found: %s", authReqID)
+	}
+	return ar, nil
+}
+
+func (s *Storage) SaveAuthCode(_ context.Context, id, code string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if _, ok := s.authRequests[id]; !ok {
+		return fmt.Errorf("auth request not found: %s", id)
+	}
+	s.authCodes[id] = code
+	s.codeToAuthReq[code] = id
+	return nil
+}
+
+func (s *Storage) DeleteAuthRequest(_ context.Context, id string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	delete(s.authRequests, id)
+	if code, ok := s.authCodes[id]; ok {
+		// Move to usedCodes for code reuse detection
+		s.usedCodes[code] = id
+		delete(s.codeToAuthReq, code)
+		delete(s.authCodes, id)
+	}
+	return nil
+}
+
+// TrackTokenForAuthRequest records that a token was issued for an auth request.
+// This is used to revoke tokens when an authorization code is reused.
+func (s *Storage) TrackTokenForAuthRequest(authRequestID, tokenID string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.codeTokens[authRequestID] = append(s.codeTokens[authRequestID], tokenID)
+}
+
+// RevokeTokensForUsedCode revokes all tokens that were issued for a used code.
+// Returns the auth request ID if the code was found, or empty string if not.
+func (s *Storage) RevokeTokensForUsedCode(code string) string {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	authRequestID, ok := s.usedCodes[code]
+	if !ok {
+		return ""
+	}
+
+	// Revoke all tokens issued for this auth request
+	if tokenIDs, ok := s.codeTokens[authRequestID]; ok {
+		for _, tokenID := range tokenIDs {
+			delete(s.tokens, tokenID)
+			// Also revoke any refresh tokens linked to this access token
+			for rtID, rt := range s.refreshTokens {
+				if rt.AccessToken == tokenID {
+					delete(s.refreshTokens, rtID)
+				}
+			}
+		}
+		delete(s.codeTokens, authRequestID)
+	}
+
+	return authRequestID
+}

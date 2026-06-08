@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright Zitadel
-// Modifications Copyright 2026 RoidMC Studios
+// Copyright 2026 RoidMC Studios
 
 package crypto
 
@@ -11,17 +10,22 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"io"
 )
 
-var ErrCipherTextBlockSize = errors.New("ciphertext block size is too short")
+var (
+	ErrCipherTextTooShort = errors.New("kexcore/crypto: ciphertext too short")
+	ErrInvalidAESKeySize  = errors.New("kexcore/crypto: aes invalid key size, must be 16, 24, or 32 bytes")
+)
+
+const (
+	AESGCMNonceSize = 12
+)
 
 func EncryptAES(data string, key string) (string, error) {
 	encrypted, err := EncryptBytesAES([]byte(data), key)
 	if err != nil {
 		return "", err
 	}
-
 	return base64.RawURLEncoding.EncodeToString(encrypted), nil
 }
 
@@ -31,16 +35,23 @@ func EncryptBytesAES(plainText []byte, key string) ([]byte, error) {
 		return nil, err
 	}
 
-	cipherText := make([]byte, aes.BlockSize+len(plainText))
-	iv := cipherText[:aes.BlockSize]
-	if _, err = io.ReadFull(rand.Reader, iv); err != nil {
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
 		return nil, err
 	}
 
-	stream := cipher.NewCTR(block, iv)
-	stream.XORKeyStream(cipherText[aes.BlockSize:], plainText)
+	nonce := make([]byte, AESGCMNonceSize)
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
 
-	return cipherText, nil
+	ciphertext := aesgcm.Seal(nil, nonce, plainText, nil)
+
+	result := make([]byte, AESGCMNonceSize+len(ciphertext))
+	copy(result[:AESGCMNonceSize], nonce)
+	copy(result[AESGCMNonceSize:], ciphertext)
+
+	return result, nil
 }
 
 func DecryptAES(data string, key string) (string, error) {
@@ -61,16 +72,19 @@ func DecryptBytesAES(cipherText []byte, key string) ([]byte, error) {
 		return nil, err
 	}
 
-	if len(cipherText) < aes.BlockSize {
-		return nil, ErrCipherTextBlockSize
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
 	}
-	iv := cipherText[:aes.BlockSize]
-	cipherText = cipherText[aes.BlockSize:]
 
-	stream := cipher.NewCTR(block, iv)
-	stream.XORKeyStream(cipherText, cipherText)
+	if len(cipherText) < AESGCMNonceSize {
+		return nil, ErrCipherTextTooShort
+	}
 
-	return cipherText, err
+	nonce := cipherText[:AESGCMNonceSize]
+	cipherText = cipherText[AESGCMNonceSize:]
+
+	return aesgcm.Open(nil, nonce, cipherText, nil)
 }
 
 func EncryptSM4(data string, key string) (string, error) {
@@ -78,12 +92,23 @@ func EncryptSM4(data string, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	return base64.RawURLEncoding.EncodeToString(encrypted), nil
 }
 
 func EncryptBytesSM4(plainText []byte, key string) ([]byte, error) {
-	return SM4EncryptGCM([]byte(key), plainText, nil)
+	symKey := []byte(key)
+	iv := make([]byte, AESGCMNonceSize)
+	if _, err := rand.Read(iv); err != nil {
+		return nil, err
+	}
+	sealed, err := DispatchContentEncrypt(SGD_SM4_GCM, symKey, iv, plainText, nil)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]byte, AESGCMNonceSize+len(sealed))
+	copy(result[:AESGCMNonceSize], iv)
+	copy(result[AESGCMNonceSize:], sealed)
+	return result, nil
 }
 
 func DecryptSM4(data string, key string) (string, error) {
@@ -99,5 +124,11 @@ func DecryptSM4(data string, key string) (string, error) {
 }
 
 func DecryptBytesSM4(cipherText []byte, key string) ([]byte, error) {
-	return SM4DecryptGCM([]byte(key), cipherText, nil)
+	symKey := []byte(key)
+	if len(cipherText) < AESGCMNonceSize {
+		return nil, ErrCipherTextTooShort
+	}
+	iv := cipherText[:AESGCMNonceSize]
+	sealed := cipherText[AESGCMNonceSize:]
+	return DispatchContentDecrypt(SGD_SM4_GCM, symKey, iv, sealed, nil)
 }

@@ -5,26 +5,26 @@ import (
 	"fmt"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rs"
-	"github.com/roidmc/kexcore-oidc/pkg/oidc"
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
 type IntrospectionResponse struct {
 	Active     bool                     `json:"active"`
-	Scope      oidc.SpaceDelimitedArray `json:"scope,omitempty"`
+	Scope      protocol.SpaceDelimitedArray `json:"scope,omitempty"`
 	ClientID   string                   `json:"client_id,omitempty"`
 	TokenType  string                   `json:"token_type,omitempty"`
-	Expiration oidc.Time                `json:"exp,omitempty"`
-	IssuedAt   oidc.Time                `json:"iat,omitempty"`
-	NotBefore  oidc.Time                `json:"nbf,omitempty"`
+	Expiration protocol.Time                `json:"exp,omitempty"`
+	IssuedAt   protocol.Time                `json:"iat,omitempty"`
+	NotBefore  protocol.Time                `json:"nbf,omitempty"`
 	Subject    string                   `json:"sub,omitempty"`
-	Audience   oidc.Audience            `json:"aud,omitempty"`
+	Audience   protocol.Audience            `json:"aud,omitempty"`
 	Issuer     string                   `json:"iss,omitempty"`
 	JWTID      string                   `json:"jti,omitempty"`
 	Username   string                   `json:"username,omitempty"`
-	oidc.UserInfoProfile
-	oidc.UserInfoEmail
-	oidc.UserInfoPhone
-	Address *oidc.UserInfoAddress `json:"address,omitempty"`
+	protocol.UserInfoProfile
+	protocol.UserInfoEmail
+	protocol.UserInfoPhone
+	Address *protocol.UserInfoAddress `json:"address,omitempty"`
 
 	// Foo and Bar are custom claims
 	Foo string `json:"foo,omitempty"`

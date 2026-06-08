@@ -35,11 +35,86 @@
 
 ### 待完成
 - [ ] SM2/SM9 JWK 的 x5c / x5t 证书链支持
-- [ ] JWE 加密集成到 OIDC token 流程（id_token / userinfo 响应加密）
-  - SM2 JWE（`SGD_SM2_3` + `SGD_SM4_GCM`）作为 id_token 加密方式
-  - SM9 JWE（`SGD_SM9_3` + `SGD_SM4_GCM/CCM`）作为 id_token 加密方式
-  - Discovery 文档声明 `id_token_encryption_alg_values_supported` 和 `id_token_encryption_enc_values_supported`
-  - RP 客户端支持解密 SM2/SM9 JWE 加密的 id_token
+- [x] JWE 加密集成到 OIDC token 流程（id_token / userinfo 响应加密）
+  - [x] `dir` 模式对称加密（`SGD_SM4_GCM` / `A256GCM` / `A128GCM`）— 通过 `EncryptToken` / `EncryptTokenA256GCM` / `EncryptTokenA128GCM`
+  - [x] OP 端 `encryptIDToken()` 根据客户端声明的 `enc` 自动选择加密算法
+  - [x] RP 端 `DecryptToken` / `DecryptTokenWithKey` 解密 JWE 加密的 ID Token
+  - [x] `TokenEncryptionKeyProvider` 接口 — Crypto 实现类暴露对称密钥
+  - [x] `IDTokenEncryptionClient` 接口 — 客户端声明加密偏好（alg + enc）
+  - [x] JWE 常量定义（`JWEAlgDir`/`JWEAlgA256GCMKW`/`JWEEncSM4GCM`/`JWEEncA256GCM`/`JWEEncA128GCM`）
+  - [x] 修复 `decryptDirMode` 密钥长度推断 BUG — 改为基于 JWE header `enc` 字段分发
+  - [x] SM2 JWE（`SGD_SM2_3` + `SGD_SM4_GCM`）作为 id_token 加密方式
+    - `EncryptTokenSM2(signedToken, publicKey)` — OP 端使用 RP 的 SM2 公钥加密
+    - `SM2TokenEncryptionPublicKeyProvider` 接口 — Crypto 实现类暴露 SM2 公钥
+    - `encryptIDToken()` 自动根据 `alg=SGD_SM2_3` 分发到 `EncryptTokenSM2`
+    - RP 端解密通过 `crypto.SM2DecryptJWE(privateKey, compact)`（`pkg/crypto/jwe.go`）
+  - [x] SM9 JWE（`SGD_SM9_3` + `SGD_SM4_GCM/CCM`）作为 id_token 加密方式
+    - `EncryptTokenSM9(signedToken, masterPubKey, uid)` — OP 端使用 RP 的 SM9 主公钥加密
+    - `SM9TokenEncryptionPublicKeyProvider` 接口 — Crypto 实现类暴露 SM9 主公钥和 UID
+    - `encryptIDToken()` 自动根据 `alg=SGD_SM9_3` 分发到 `EncryptTokenSM9`
+    - RP 端解密通过 `crypto.SM9DecryptJWE(userKey, uid, compact)`（`pkg/crypto/jwe.go`）
+  - [x] 重构：AES-GCM/SM4-GCM 加解密函数从 `oidc/verifier.go` 抽取到 `pkg/crypto/jwe.go`
+    - `crypto.AESGCMEncrypt` / `crypto.AESGCMDecrypt` — AES-GCM 通用加解密
+    - `crypto.ParseJWECompact` — JWE compact 解析（原 `parseJWECompact` 导出）
+    - `verifier.go` 移除本地 `aesGCMEncrypt`/`aesGCMDecrypt`/`sm4GCMEncrypt`/`sm4GCMDecrypt`/`sm4NewCipher`，改用 `crypto` 包函数
+  - [x] Discovery 文档声明 `id_token_encryption_alg_values_supported` 和 `id_token_encryption_enc_values_supported`
+
+### ⚠️ 已知限制（TODO 待解决）
+- [x] **SM9 签名在 OIDC JWS flow 中集成**
+  - `crypto.Signer` 已扩展支持 SM9（`sm9Priv` 字段 + `signSM9` 方法），JWS header 中携带 `uid` 参数
+  - `op.SM9SigningKey` 接口 + `op.SignerFromKey` 自动通过类型断言设置 `uid`
+  - `example/server/storage` 的 `signingKey` 已实现 `SM9SigningKey` 接口
+  - `op.SM9JWTProfileKeyStorage` 接口 + `verifier_jwt_profile.go` 中 SM9 验证路径已实现
+  - `example/server/storage` 已实现 `SM9JWTProfileKeyStorage` 接口（`GetSM9MasterPublicKeyByIDAndClientID`）
+- [x] **JWE 加密（SGD_SM2_3 / SGD_SM9_3）在 OIDC token flow 中已集成**
+  - `pkg/op/token.go` 的 `EncryptToken` 已支持 SM2/SM9 加密（通过 `TokenEncryptionKeyProvider` / `SM2TokenEncryptionPublicKeyProvider` / `SM9TokenEncryptionPublicKeyProvider` 接口）
+  - example server 的 `myCrypto` 已实现 `SM2TokenEncryptionPublicKeyProvider` 和 `SM9TokenEncryptionPublicKeyProvider` 接口
+  - `Client` 已实现 `IDTokenEncryptionClient` 接口（`IDTokenEncryptionAlg` / `IDTokenEncryptionEnc`）
+  - 已注册 3 个 JWE 加密演示客户端：`web-dir-sm4`（dir+SM4）、`web-sm2`（SGD_SM2_3+SM4）、`web-sm9`（SGD_SM9_3+SM4）
+
+---
+
+## 🔙 Back-Channel Logout（OpenID Connect Back-Channel Logout 1.0）
+
+### 已完成
+- [x] `pkg/op/client.go` — `BackChannelLogoutClient` 接口（`BackChannelLogoutURI()`）
+- [x] `pkg/op/op.go` — `Endpoints.BackChannelLogout` 端点定义
+- [x] `pkg/op/backchannel_logout.go` — OP 端 BCL 端点处理器（请求解析、会话终止、Logout Token 生成与推送）
+- [x] `pkg/op/backchannel_logout.go` — `BackChannelLogoutStorage` 接口（`ClientsForSession` 查询会话关联客户端）
+- [x] `pkg/op/server_http.go` — 条件注册 `/backchannel_logout` 端点（仅当 server 实现 `BackChannelLogoutHandler`）
+- [x] `pkg/oidc/token.go` — `LogoutTokenClaims` 结构体（实现 `Claims` 接口，含 `GetIssuer`/`GetSubject`/`GetAudience` 等方法）
+- [x] `pkg/oidc/token.go` — `BackChannelLogoutEventKey` 常量
+- [x] `pkg/client/rp/backchannel_logout.go` — RP 端 `BackChannelLogoutHandler`、`LogoutTokenVerifier`、`VerifyLogoutToken`
+- [x] `pkg/op/test/backchannel_logout_test.go` — 11 个测试用例（JWE 加解密、Logout Token 生成、BCL 推送、Crypto 密钥暴露）
+
+### 待完成
+- [x] Logout Token `typ` header 设为 `logout+jwt`（OIDC 规范 RECOMMENDED，当前 Signer 不支持自定义 JWT header）
+- [x] 并行推送 Logout Token 到多个 RP（OIDC 规范 encouraged，当前串行）
+- [x] Logout Token 加密支持（OIDC 规范 MAY，当前仅签名）
+- [x] **Example server 集成 Back-Channel Logout 演示**
+  - `example/server/storage` 实现 `op.BackChannelLogoutStorage` 接口（`ClientsForSession` 方法）
+  - `example/server/exampleop/op.go` 在 `Config` 中启用 `BackChannelLogoutSupported: true`
+  - `example/server/main.go` 注册支持 `backchannel_logout_uri` 的客户端
+  - 确认 `/backchannel_logout` 端点默认启用逻辑：仅当 server 实现 `BackChannelLogoutHandler` 时注册（当前 `server_http.go` 已支持），但 Discovery 字段 `backchannel_logout_supported` 默认 `false`，需显式开启
+
+---
+
+## 📤 Pushed Authorization Requests (PAR, RFC 9126)
+
+### 已完成
+- [x] `pkg/oidc/authorization.go` — `PushedAuthRequest`、`PushedAuthResponse` 数据结构定义，`AuthRequest` 增加 `RequestURI` 字段
+- [x] `pkg/op/par.go` — `PushedAuthRequestStorage` 接口定义（`StorePushedAuthRequest`、`PushedAuthRequestByURI`）
+- [x] `pkg/op/par.go` — PAR 端点处理器（`PushedAuthRequestHandler`、`PushedAuthRequest`、`parseAndValidatePushedAuthRequest`、`authenticatePARClient`）
+- [x] `pkg/op/par.go` — RFC 9126 合规性：公共客户端使用 `code` 响应类型时强制要求 PKCE（`code_challenge`）
+- [x] `pkg/op/config.go` — `Configuration` 接口增加 `PushedAuthRequestSupported()`、`PushedAuthRequestEndpoint()`
+- [x] `pkg/op/op.go` — `Config` 增加 `PushedAuthRequestSupported` 字段，`Endpoints` 增加 `PushedAuthorizationRequest` 端点，`CreateRouter` 条件注册路由（仅 POST 方法）
+- [x] `pkg/op/auth_request.go` — `Authorize` 函数支持 `request_uri` 参数解析（`resolvePushedAuthRequest`），`request` 和 `request_uri` 互斥检查
+- [x] `pkg/op/discovery.go` — Discovery 文档声明 `pushed_authorization_request_endpoint` 和 `request_uri_parameter_supported`
+- [x] `pkg/oidc/discovery.go` — `DiscoveryConfiguration` 增加 `PushedAuthorizationRequestEndpoint` 和 `RequestURIParameterSupported` 字段
+- [x] `pkg/op/mock/configuration.mock.go` — 手动添加 `PushedAuthRequestSupported` 和 `PushedAuthRequestEndpoint` 的 mock 方法
+- [x] `example/server/exampleop/op.go` — Config 启用 `PushedAuthRequestSupported: true`
+- [x] `example/server/storage/storage.go` — 实现 `PushedAuthRequestStorage` 接口（`StorePushedAuthRequest`、`PushedAuthRequestByURI`），使用 `urn:ietf:params:oauth:request_uri:` 前缀
+- [x] `pkg/op/test/par_test.go` — 10 个测试用例（端点、Discovery、PAR 请求验证、`request_uri` 解析、公共客户端 PKCE 强制等）
 
 ---
 
@@ -56,7 +131,13 @@
 - [ ] 添加 `tls_client_auth` 授权方法
 - [ ] 在 Discovery 文档中声明 `mtls_endpoint_aliases`
 
-### 3. 密钥管理
+### 3. SM9 JWT Profile 验证（`verifier_jwt_profile.go`）
+- [x] **`SM9JWTProfileKeyStorage` 接口已新增，SM9 JWT Profile 验证路径已实现**
+  - 新增 `SM9JWTProfileKeyStorage` 接口（`GetSM9MasterPublicKeyByIDAndClientID`），通过接口断言与原 `JWTProfileKeyStorage` 兼容
+  - `verifier_jwt_profile.go` 中 SM9 签名验证：从 header 提取 `uid`，调用 `crypto.VerifySM9JWSSignature`
+  - `example/server/storage` 已实现 `SM9JWTProfileKeyStorage` 接口
+
+### 4. 密钥管理
 - [ ] 提供密钥轮换回调接口
 - [ ] 支持 KMS 密钥加载抽象（如 AWS KMS、Azure Key Vault）
 
