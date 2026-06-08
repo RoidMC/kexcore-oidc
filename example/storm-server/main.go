@@ -41,7 +41,7 @@ func main() {
 		issuer = fmt.Sprintf("http://localhost:%s/", cfg.Port)
 	}
 
-	storage.RegisterClients(
+	clients := []*storage.Client{
 		storage.NativeClient("native", cfg.RedirectURI...),
 		storage.WebClient("web", "secret", cfg.RedirectURI...),
 		storage.WebClient("api", "secret", cfg.RedirectURI...),
@@ -65,7 +65,7 @@ func main() {
 		storage.BackChannelLogoutWebClient("web-bcl", "secret", "http://localhost:9999/backchannel_logout",
 			cfg.RedirectURI...,
 		),
-	)
+	}
 
 	var userStore storage.UserStore
 	if cfg.UsersFile != "" {
@@ -85,6 +85,7 @@ func main() {
 		CryptoMethod:      cfg.CryptoMethod,
 		Logger:            logger,
 		UserStore:         userStore,
+		Clients:           clients,
 	})
 
 	server := &http.Server{

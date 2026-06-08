@@ -101,6 +101,7 @@ type TenantConfig struct {
 	Logger            *slog.Logger
 	Discovery         storm.DiscoveryConfig
 	UserStore         storage.UserStore // optional, defaults to in-memory
+	Clients           []*storage.Client // clients to register
 }
 
 // SetupTenant creates a complete OIDC tenant with all core plugins registered.
@@ -134,6 +135,12 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 		userStore = storage.NewUserStore(cfg.Issuer)
 	}
 	stor := storage.NewStorage(userStore, cfg.SigningAlgorithms)
+
+	// Register clients after storage creation
+	if len(cfg.Clients) > 0 {
+		stor.RegisterClients(cfg.Clients...)
+	}
+
 	tokenCrypto := storage.NewTokenCrypto(sha256.Sum256([]byte("test")), cfg.CryptoMethod)
 
 	decoder := protocol.NewDecoder()

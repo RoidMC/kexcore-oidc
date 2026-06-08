@@ -15,7 +15,6 @@ var (
 	defaultLoginURL = func(id string) string {
 		return "/login/username?authRequestID=" + id
 	}
-	clients = map[string]*Client{}
 )
 
 // Client represents an OAuth/OIDC client.
@@ -57,9 +56,11 @@ func (c *Client) IDTokenEncryptionEnc() string           { return c.idTokenEncry
 func (c *Client) BackChannelLogoutURI() string           { return c.backChannelLogoutURI }
 func (c *Client) ClientEncryptionKey() interface{}       { return c.clientEncryptionKey }
 
-func RegisterClients(registerClients ...*Client) {
+func (s *Storage) RegisterClients(registerClients ...*Client) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	for _, c := range registerClients {
-		clients[c.id] = c
+		s.clients[c.id] = c
 	}
 }
 

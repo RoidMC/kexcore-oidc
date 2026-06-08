@@ -42,6 +42,7 @@ import (
 type Storage struct {
 	lock sync.Mutex
 
+	clients       map[string]*Client // registered clients (clientID -> *Client)
 	authRequests  map[string]*AuthRequest
 	authCodes     map[string]string
 	codeToAuthReq map[string]string
@@ -61,6 +62,12 @@ type Storage struct {
 	// A real implementation would use cookies or a distributed session store.
 	sessions map[string]time.Time
 
+	// registrationTokens maps registration_access_token -> clientID.
+	registrationTokens map[string]string
+
+	// registrations stores the full registration data (clientID -> *storm.ClientRegistration).
+	registrations map[string]*storm.ClientRegistration
+
 	userStore UserStore
 
 	signingKeys []signingKey
@@ -69,12 +76,6 @@ type Storage struct {
 	refreshTTL time.Duration
 	issuer     string
 }
-
-// registrationTokens maps registration_access_token -> clientID.
-var registrationTokens = make(map[string]string)
-
-// registrations stores the full registration data (clientID -> *storm.ClientRegistration).
-var registrations = make(map[string]*storm.ClientRegistration)
 
 type signingKey struct {
 	id           string
@@ -268,18 +269,21 @@ func NewStorage(userStore UserStore, algorithms []string) *Storage {
 	}
 
 	return &Storage{
-		authRequests:  make(map[string]*AuthRequest),
-		authCodes:     make(map[string]string),
-		codeToAuthReq: make(map[string]string),
-		codeTokens:    make(map[string][]string),
-		usedCodes:     make(map[string]string),
-		tokens:        make(map[string]*Token),
-		refreshTokens: make(map[string]*RefreshToken),
-		sessions:      make(map[string]time.Time),
-		userStore:     userStore,
-		signingKeys:   signingKeys,
-		tokenTTL:      1 * time.Hour,
-		refreshTTL:    24 * time.Hour,
+		clients:            make(map[string]*Client),
+		authRequests:       make(map[string]*AuthRequest),
+		authCodes:          make(map[string]string),
+		codeToAuthReq:      make(map[string]string),
+		codeTokens:         make(map[string][]string),
+		usedCodes:          make(map[string]string),
+		tokens:             make(map[string]*Token),
+		refreshTokens:      make(map[string]*RefreshToken),
+		sessions:           make(map[string]time.Time),
+		registrationTokens: make(map[string]string),
+		registrations:      make(map[string]*storm.ClientRegistration),
+		userStore:          userStore,
+		signingKeys:        signingKeys,
+		tokenTTL:           1 * time.Hour,
+		refreshTTL:         24 * time.Hour,
 	}
 }
 
@@ -306,7 +310,7 @@ func (s *Storage) GetClientByClientID(_ context.Context, clientID string) (storm
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	client, ok := clients[clientID]
+	client, ok := s.clients[clientID]
 	if !ok {
 		return nil, fmt.Errorf("client not found: %s", clientID)
 	}
@@ -317,7 +321,7 @@ func (s *Storage) AuthorizeClientIDSecret(_ context.Context, clientID, clientSec
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	client, ok := clients[clientID]
+	client, ok := s.clients[clientID]
 	if !ok {
 		return fmt.Errorf("client not found: %s", clientID)
 	}
@@ -1134,7 +1138,7 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 		responseTypes: []protocol.ResponseType{protocol.ResponseTypeCode},
 		grantTypes:    []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken},
 	}
-	clients[clientID] = client
+	s.clients[clientID] = client
 
 	reg := &storm.ClientRegistration{
 		ClientID:                clientID,
@@ -1155,8 +1159,8 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 	}
 
 	// Store registration data for later lookup
-	registrationTokens[accessToken] = clientID
-	registrations[clientID] = reg
+	s.registrationTokens[accessToken] = clientID
+	s.registrations[clientID] = reg
 
 	return reg, nil
 }
@@ -1165,7 +1169,7 @@ func (s *Storage) GetClientRegistration(_ context.Context, clientID string) (*st
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	reg, ok := registrations[clientID]
+	reg, ok := s.registrations[clientID]
 	if !ok {
 		return nil, fmt.Errorf("client not found: %s", clientID)
 	}
@@ -1177,12 +1181,12 @@ func (s *Storage) GetClientRegistrationByToken(_ context.Context, token string) 
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	clientID, ok := registrationTokens[token]
+	clientID, ok := s.registrationTokens[token]
 	if !ok {
 		return nil, fmt.Errorf("no client found for token")
 	}
 
-	reg, ok := registrations[clientID]
+	reg, ok := s.registrations[clientID]
 	if !ok {
 		return nil, fmt.Errorf("no client found for token")
 	}
@@ -1194,12 +1198,12 @@ func (s *Storage) UpdateClientRegistration(_ context.Context, clientID string, u
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	client, ok := clients[clientID]
+	client, ok := s.clients[clientID]
 	if !ok {
 		return nil, fmt.Errorf("client not found: %s", clientID)
 	}
 
-	reg, ok := registrations[clientID]
+	reg, ok := s.registrations[clientID]
 	if !ok {
 		return nil, fmt.Errorf("client not found: %s", clientID)
 	}
@@ -1217,12 +1221,12 @@ func (s *Storage) DeleteClientRegistration(_ context.Context, clientID string) e
 	defer s.lock.Unlock()
 
 	// Remove the registration token
-	reg, ok := registrations[clientID]
+	reg, ok := s.registrations[clientID]
 	if ok && reg.RegistrationAccessToken != "" {
-		delete(registrationTokens, reg.RegistrationAccessToken)
+		delete(s.registrationTokens, reg.RegistrationAccessToken)
 	}
 
-	delete(registrations, clientID)
-	delete(clients, clientID)
+	delete(s.registrations, clientID)
+	delete(s.clients, clientID)
 	return nil
 }
