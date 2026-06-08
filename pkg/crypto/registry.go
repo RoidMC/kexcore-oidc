@@ -368,6 +368,20 @@ func (aesGCMContentProvider) Decrypt(ctx context.Context, key, iv, sealed, aad [
 	return AESGCMDecrypt(key, iv, sealed, aad)
 }
 
+type aesCBCContentProvider struct {
+	alg string
+}
+
+func (p aesCBCContentProvider) Algorithm() string { return p.alg }
+
+func (p aesCBCContentProvider) Encrypt(ctx context.Context, key, iv, plaintext, aad []byte) ([]byte, error) {
+	return AESCBCEncrypt(p.alg, key, iv, plaintext, aad)
+}
+
+func (p aesCBCContentProvider) Decrypt(ctx context.Context, key, iv, sealed, aad []byte) ([]byte, error) {
+	return AESCBCDecrypt(p.alg, key, iv, sealed, aad)
+}
+
 func init() {
 	DefaultRegistry.RegisterSigner(SGD_SM3_SM2, sm2SignProvider{})
 	DefaultRegistry.RegisterSigner(SGD_SM3_SM9, sm9SignProvider{})
@@ -379,8 +393,16 @@ func init() {
 	DefaultRegistry.RegisterJWEDecryptor(SGD_SM9_3, sm9JWEProvider{})
 	DefaultRegistry.RegisterContentEncryptor(SGD_SM4_GCM, sm4GCMContentProvider{})
 	DefaultRegistry.RegisterContentDecryptor(SGD_SM4_GCM, sm4GCMContentProvider{})
-	DefaultRegistry.RegisterContentEncryptor("A256GCM", aesGCMContentProvider{alg: "A256GCM"})
-	DefaultRegistry.RegisterContentDecryptor("A256GCM", aesGCMContentProvider{alg: "A256GCM"})
 	DefaultRegistry.RegisterContentEncryptor("A128GCM", aesGCMContentProvider{alg: "A128GCM"})
 	DefaultRegistry.RegisterContentDecryptor("A128GCM", aesGCMContentProvider{alg: "A128GCM"})
+	DefaultRegistry.RegisterContentEncryptor("A192GCM", aesGCMContentProvider{alg: "A192GCM"})
+	DefaultRegistry.RegisterContentDecryptor("A192GCM", aesGCMContentProvider{alg: "A192GCM"})
+	DefaultRegistry.RegisterContentEncryptor("A256GCM", aesGCMContentProvider{alg: "A256GCM"})
+	DefaultRegistry.RegisterContentDecryptor("A256GCM", aesGCMContentProvider{alg: "A256GCM"})
+	DefaultRegistry.RegisterContentEncryptor("A128CBC-HS256", aesCBCContentProvider{alg: "A128CBC-HS256"})
+	DefaultRegistry.RegisterContentDecryptor("A128CBC-HS256", aesCBCContentProvider{alg: "A128CBC-HS256"})
+	DefaultRegistry.RegisterContentEncryptor("A192CBC-HS384", aesCBCContentProvider{alg: "A192CBC-HS384"})
+	DefaultRegistry.RegisterContentDecryptor("A192CBC-HS384", aesCBCContentProvider{alg: "A192CBC-HS384"})
+	DefaultRegistry.RegisterContentEncryptor("A256CBC-HS512", aesCBCContentProvider{alg: "A256CBC-HS512"})
+	DefaultRegistry.RegisterContentDecryptor("A256CBC-HS512", aesCBCContentProvider{alg: "A256CBC-HS512"})
 }

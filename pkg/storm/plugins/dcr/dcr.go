@@ -18,6 +18,15 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
+func init() {
+	storm.RegisterPlugin("dcr", storm.PriorityDCR, func(ctx *storm.PluginContext) storm.Plugin {
+		if dcrStore, ok := ctx.Storage.(storm.DCRStore); ok {
+			return New(Config{Store: dcrStore})
+		}
+		return nil
+	})
+}
+
 // Plugin implements the Dynamic Client Registration endpoint.
 type Plugin struct {
 	store storm.DCRStore

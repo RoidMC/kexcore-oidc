@@ -227,7 +227,7 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Create token response using authReq as TokenRequest
-	resp, tokenID, err := p.createTokenResponseFromTokenRequest(r.Context(), authReq, client, true)
+	resp, tokenID, err := p.createTokenResponseFromTokenRequest(r.Context(), authReq, client, true, tokenReq.Code)
 	if err != nil {
 		tokenError(w, r, err)
 		return
@@ -291,7 +291,7 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), refreshReq, client, true)
+	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), refreshReq, client, true, "")
 	if err != nil {
 		tokenError(w, r, err)
 		return
@@ -551,7 +551,8 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 
 // createTokenResponseFromTokenRequest creates a token response from any TokenRequest implementation.
 // Returns the response and the internal tokenID (UUID) for code reuse tracking.
-func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, request storm.TokenRequest, client storm.Client, createAccessToken bool) (*protocol.AccessTokenResponse, string, error) {
+// code is the original authorization code (for c_hash computation); empty for non-code grants.
+func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, request storm.TokenRequest, client storm.Client, createAccessToken bool, code string) (*protocol.AccessTokenResponse, string, error) {
 	var accessToken string
 	var tokenID string
 	var refreshToken string
@@ -567,7 +568,7 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 
 	var idToken string
 	if p.keyStore != nil {
-		idToken, err = p.createIDToken(ctx, request, client, accessToken, "")
+		idToken, err = p.createIDToken(ctx, request, client, accessToken, code)
 		if err != nil {
 			p.logger.Error("failed to create ID token", "error", err)
 		}
@@ -663,7 +664,7 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 	if encClient, ok := client.(idTokenEncryptionClient); ok {
 		alg, enc := encClient.IDTokenEncryptionAlg(), encClient.IDTokenEncryptionEnc()
 		if alg != "" && enc != "" {
-			encrypted, err := encryptIDToken(signed, p.crypto, alg, enc)
+			encrypted, err := encryptIDToken(signed, client, p.crypto, alg, enc)
 			if err != nil {
 				return "", fmt.Errorf("failed to encrypt ID token: %w", err)
 			}
@@ -695,7 +696,7 @@ type sm9EncryptionKeyProvider interface {
 	SM9TokenEncryptionKey() *crypto.SM9MasterPublicKey
 }
 
-func encryptIDToken(signedToken string, cr storm.UniCrypto, alg, enc string) (string, error) {
+func encryptIDToken(signedToken string, client storm.Client, cr storm.UniCrypto, alg, enc string) (string, error) {
 	switch alg {
 	case protocol.JWEAlgDir:
 		kp, ok := cr.(tokenEncryptionKeyProvider)
@@ -715,6 +716,19 @@ func encryptIDToken(signedToken string, cr storm.UniCrypto, alg, enc string) (st
 			return "", fmt.Errorf("SM9 encryption requested but Crypto does not implement SM9TokenEncryptionKeyProvider")
 		}
 		return protocol.EncryptTokenSM9(signedToken, pk.SM9TokenEncryptionKey())
+	case protocol.JWEAlgRSAOAEP, protocol.JWEAlgRSAOAEP256, protocol.JWEAlgRSAOAEP384, protocol.JWEAlgRSAOAEP512,
+		protocol.JWEAlgECDHES, protocol.JWEAlgECDHESA128KW, protocol.JWEAlgECDHESA192KW, protocol.JWEAlgECDHESA256KW,
+		protocol.JWEAlgA128KW, protocol.JWEAlgA192KW, protocol.JWEAlgA256KW,
+		protocol.JWEAlgA128GCMKW, protocol.JWEAlgA192GCMKW, protocol.JWEAlgA256GCMKW:
+		// Standard algorithms: get key from client
+		if ckp, ok := client.(storm.ClientKeyProvider); ok {
+			key := ckp.ClientEncryptionKey()
+			if key == nil {
+				return "", fmt.Errorf("%s encryption requested but client has no encryption key", alg)
+			}
+			return protocol.EncryptTokenJWE(signedToken, key, alg, enc)
+		}
+		return "", fmt.Errorf("%s encryption requested but client does not implement ClientKeyProvider", alg)
 	default:
 		return "", fmt.Errorf("unsupported JWE key management algorithm: %s", alg)
 	}

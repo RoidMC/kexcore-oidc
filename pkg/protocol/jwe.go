@@ -6,7 +6,9 @@ package protocol
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -60,8 +62,17 @@ func EncryptTokenJWE(signedToken string, key interface{}, alg, enc string) (stri
 	case JWEAlgDir:
 		return encryptTokenDir(signedToken, key, enc)
 
-	case JWEAlgA256GCMKW:
-		return encryptA256GCMKW(signedToken, key)
+	case JWEAlgA128GCMKW, JWEAlgA192GCMKW, JWEAlgA256GCMKW:
+		return encryptGCMKW(signedToken, key, alg, enc)
+
+	case JWEAlgA128KW, JWEAlgA192KW, JWEAlgA256KW:
+		return encryptKW(signedToken, key, alg, enc)
+
+	case JWEAlgRSAOAEP, JWEAlgRSAOAEP256, JWEAlgRSAOAEP384, JWEAlgRSAOAEP512:
+		return encryptRSAOAEP(signedToken, key, alg, enc)
+
+	case JWEAlgECDHES, JWEAlgECDHESA128KW, JWEAlgECDHESA192KW, JWEAlgECDHESA256KW:
+		return encryptECDHES(signedToken, key, alg, enc)
 
 	default:
 		return "", fmt.Errorf("unsupported JWE key wrapping algorithm: %s", alg)
@@ -102,12 +113,25 @@ func DecryptTokenJWE(compact string, key interface{}) ([]byte, error) {
 		}
 		return decryptDirMode(compact, symKey, hdr.Enc)
 
-	case JWEAlgA256GCMKW:
+	case JWEAlgA128GCMKW, JWEAlgA192GCMKW, JWEAlgA256GCMKW:
 		symKey, ok := key.([]byte)
 		if !ok {
-			return nil, fmt.Errorf("A256GCMKW mode requires []byte key, got %T", key)
+			return nil, fmt.Errorf("%s mode requires []byte key, got %T", hdr.Alg, key)
 		}
-		return decryptAESGCMKW(compact, symKey)
+		return decryptGCMKW(compact, symKey)
+
+	case JWEAlgA128KW, JWEAlgA192KW, JWEAlgA256KW:
+		symKey, ok := key.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("%s mode requires []byte key, got %T", hdr.Alg, key)
+		}
+		return decryptKW(compact, symKey)
+
+	case JWEAlgRSAOAEP, JWEAlgRSAOAEP256, JWEAlgRSAOAEP384, JWEAlgRSAOAEP512:
+		return decryptRSAOAEP(compact, key)
+
+	case JWEAlgECDHES, JWEAlgECDHESA128KW, JWEAlgECDHESA192KW, JWEAlgECDHESA256KW:
+		return decryptECDHES(compact, key)
 
 	default:
 		return nil, fmt.Errorf("unsupported JWE algorithm: %s", hdr.Alg)
@@ -183,8 +207,8 @@ func decryptDirMode(compact string, key []byte, enc string) ([]byte, error) {
 	return provider.Decrypt(context.Background(), key, iv, sealed, aad)
 }
 
-// decryptAESGCMKW decrypts a JWE using A256GCMKW key wrapping.
-func decryptAESGCMKW(compact string, key []byte) ([]byte, error) {
+// decryptGCMKW decrypts a JWE using AES-GCM key wrapping (A128GCMKW, A192GCMKW, A256GCMKW).
+func decryptGCMKW(compact string, key []byte) ([]byte, error) {
 	jk, err := jwk.Import[jwk.SymmetricKey](key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create key: %w", err)
@@ -196,19 +220,171 @@ func decryptAESGCMKW(compact string, key []byte) ([]byte, error) {
 	return decrypted, nil
 }
 
-// encryptA256GCMKW encrypts using A256GCMKW key wrapping.
-func encryptA256GCMKW(signedToken string, key interface{}) (string, error) {
+// encryptGCMKW encrypts using AES-GCM key wrapping.
+func encryptGCMKW(signedToken string, key interface{}, alg, enc string) (string, error) {
 	symKey, ok := key.([]byte)
 	if !ok {
-		return "", fmt.Errorf("A256GCMKW mode requires []byte key, got %T", key)
+		return "", fmt.Errorf("%s mode requires []byte key, got %T", alg, key)
 	}
 	jk, err := jwk.Import[jwk.SymmetricKey](symKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to create key: %w", err)
 	}
-	encrypted, err := jwe.Encrypt([]byte(signedToken), jwe.WithKey(jwa.A256GCMKW(), jk), jwe.WithContentEncryption(jwa.A256GCM()))
+	encAlg := jwa.A256GCMKW()
+	switch alg {
+	case JWEAlgA128GCMKW:
+		encAlg = jwa.A128GCMKW()
+	case JWEAlgA192GCMKW:
+		encAlg = jwa.A192GCMKW()
+	}
+	encrypted, err := jwe.Encrypt([]byte(signedToken), jwe.WithKey(encAlg, jk), jwe.WithContentEncryption(lookupContentEnc(enc)))
 	if err != nil {
-		return "", fmt.Errorf("A256GCMKW encryption failed: %w", err)
+		return "", fmt.Errorf("%s encryption failed: %w", alg, err)
 	}
 	return string(encrypted), nil
+}
+
+// decryptKW decrypts a JWE using AES Key Wrap (A128KW, A192KW, A256KW).
+func decryptKW(compact string, key []byte) ([]byte, error) {
+	jk, err := jwk.Import[jwk.SymmetricKey](key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create key: %w", err)
+	}
+	decrypted, err := jwe.Decrypt([]byte(compact), jwe.WithKey(jwa.A256KW(), jk))
+	if err != nil {
+		return nil, err
+	}
+	return decrypted, nil
+}
+
+// encryptKW encrypts using AES Key Wrap.
+func encryptKW(signedToken string, key interface{}, alg, enc string) (string, error) {
+	symKey, ok := key.([]byte)
+	if !ok {
+		return "", fmt.Errorf("%s mode requires []byte key, got %T", alg, key)
+	}
+	jk, err := jwk.Import[jwk.SymmetricKey](symKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to create key: %w", err)
+	}
+	kwAlg := jwa.A256KW()
+	switch alg {
+	case JWEAlgA128KW:
+		kwAlg = jwa.A128KW()
+	case JWEAlgA192KW:
+		kwAlg = jwa.A192KW()
+	}
+	encrypted, err := jwe.Encrypt([]byte(signedToken), jwe.WithKey(kwAlg, jk), jwe.WithContentEncryption(lookupContentEnc(enc)))
+	if err != nil {
+		return "", fmt.Errorf("%s encryption failed: %w", alg, err)
+	}
+	return string(encrypted), nil
+}
+
+// decryptRSAOAEP decrypts a JWE using RSA-OAEP key wrapping.
+func decryptRSAOAEP(compact string, key interface{}) ([]byte, error) {
+	privKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("RSA-OAEP mode requires *rsa.PrivateKey, got %T", key)
+	}
+	decrypted, err := jwe.Decrypt([]byte(compact), jwe.WithKey(jwa.RSA_OAEP(), privKey))
+	if err != nil {
+		return nil, err
+	}
+	return decrypted, nil
+}
+
+// encryptRSAOAEP encrypts using RSA-OAEP key wrapping.
+// key can be *rsa.PublicKey or jwk.Key (preferred, includes kid in JWE header).
+func encryptRSAOAEP(signedToken string, key interface{}, alg, enc string) (string, error) {
+	rsaAlg := jwa.RSA_OAEP()
+	switch alg {
+	case JWEAlgRSAOAEP256:
+		rsaAlg = jwa.RSA_OAEP_256()
+	case JWEAlgRSAOAEP384:
+		rsaAlg = jwa.RSA_OAEP_384()
+	case JWEAlgRSAOAEP512:
+		rsaAlg = jwa.RSA_OAEP_512()
+	}
+	// Support both jwk.Key (with kid) and raw *rsa.PublicKey
+	if jk, ok := key.(jwk.Key); ok {
+		encrypted, err := jwe.Encrypt([]byte(signedToken), jwe.WithKey(rsaAlg, jk), jwe.WithContentEncryption(lookupContentEnc(enc)))
+		if err != nil {
+			return "", fmt.Errorf("%s encryption failed: %w", alg, err)
+		}
+		return string(encrypted), nil
+	}
+	pubKey, ok := key.(*rsa.PublicKey)
+	if !ok {
+		return "", fmt.Errorf("RSA-OAEP mode requires *rsa.PublicKey or jwk.Key, got %T", key)
+	}
+	encrypted, err := jwe.Encrypt([]byte(signedToken), jwe.WithKey(rsaAlg, pubKey), jwe.WithContentEncryption(lookupContentEnc(enc)))
+	if err != nil {
+		return "", fmt.Errorf("%s encryption failed: %w", alg, err)
+	}
+	return string(encrypted), nil
+}
+
+// decryptECDHES decrypts a JWE using ECDH-ES key agreement.
+func decryptECDHES(compact string, key interface{}) ([]byte, error) {
+	privKey, ok := key.(*ecdh.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("ECDH-ES mode requires *ecdh.PrivateKey, got %T", key)
+	}
+	decrypted, err := jwe.Decrypt([]byte(compact), jwe.WithKey(jwa.ECDH_ES(), privKey))
+	if err != nil {
+		return nil, err
+	}
+	return decrypted, nil
+}
+
+// encryptECDHES encrypts using ECDH-ES key agreement.
+// key can be *ecdh.PublicKey or jwk.Key (preferred, includes kid in JWE header).
+func encryptECDHES(signedToken string, key interface{}, alg, enc string) (string, error) {
+	ecdhesAlg := jwa.ECDH_ES()
+	switch alg {
+	case JWEAlgECDHESA128KW:
+		ecdhesAlg = jwa.ECDH_ES_A128KW()
+	case JWEAlgECDHESA192KW:
+		ecdhesAlg = jwa.ECDH_ES_A192KW()
+	case JWEAlgECDHESA256KW:
+		ecdhesAlg = jwa.ECDH_ES_A256KW()
+	}
+	// Support both jwk.Key (with kid) and raw *ecdh.PublicKey
+	if jk, ok := key.(jwk.Key); ok {
+		encrypted, err := jwe.Encrypt([]byte(signedToken), jwe.WithKey(ecdhesAlg, jk), jwe.WithContentEncryption(lookupContentEnc(enc)))
+		if err != nil {
+			return "", fmt.Errorf("%s encryption failed: %w", alg, err)
+		}
+		return string(encrypted), nil
+	}
+	pubKey, ok := key.(*ecdh.PublicKey)
+	if !ok {
+		return "", fmt.Errorf("ECDH-ES mode requires *ecdh.PublicKey or jwk.Key, got %T", key)
+	}
+	encrypted, err := jwe.Encrypt([]byte(signedToken), jwe.WithKey(ecdhesAlg, pubKey), jwe.WithContentEncryption(lookupContentEnc(enc)))
+	if err != nil {
+		return "", fmt.Errorf("%s encryption failed: %w", alg, err)
+	}
+	return string(encrypted), nil
+}
+
+// lookupContentEnc maps enc string to jwa.ContentEncryptionAlgorithm.
+func lookupContentEnc(enc string) jwa.ContentEncryptionAlgorithm {
+	switch enc {
+	case JWEEncA128GCM:
+		return jwa.A128GCM()
+	case JWEEncA192GCM:
+		return jwa.A192GCM()
+	case JWEEncA256GCM:
+		return jwa.A256GCM()
+	case JWEEncA128CBC_HS256:
+		return jwa.A128CBC_HS256()
+	case JWEEncA192CBC_HS384:
+		return jwa.A192CBC_HS384()
+	case JWEEncA256CBC_HS512:
+		return jwa.A256CBC_HS512()
+	default:
+		return jwa.A256GCM()
+	}
 }

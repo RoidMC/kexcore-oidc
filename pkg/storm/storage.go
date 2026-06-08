@@ -2,6 +2,7 @@ package storm
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
@@ -167,6 +168,25 @@ type TokenRequest interface {
 	GetScopes() []string
 }
 
+// ClientKeyProvider is optionally implemented by Client to provide
+// the client's public key for ID token encryption (JWE).
+//
+// When implemented, the Token plugin uses the returned key to encrypt
+// the ID token using the algorithm specified by IDTokenEncryptionAlg/Enc.
+//
+// Returning a jwk.Key ensures the JWE header includes the correct "kid".
+// Raw key types (*rsa.PublicKey, *ecdh.PublicKey, []byte) are also accepted
+// but will not produce a "kid" in the JWE header.
+//
+// When not implemented, ID token encryption is only available for
+// algorithms that use the server's UniCrypto (dir, SM2, SM9).
+type ClientKeyProvider interface {
+	// ClientEncryptionKey returns the key used to encrypt ID tokens.
+	// Preferred type: jwk.Key (includes kid for JWE header).
+	// Also accepted: *rsa.PublicKey, *ecdh.PublicKey, []byte.
+	ClientEncryptionKey() interface{}
+}
+
 // RefreshTokenRequest extends TokenRequest for refresh token operations.
 type RefreshTokenRequest interface {
 	TokenRequest
@@ -254,48 +274,48 @@ type DCRStore interface {
 
 // RegistrationRequest represents a dynamic client registration request.
 type RegistrationRequest struct {
-	ApplicationType         string
-	ClientName              string
-	ClientURI               string
-	LogoURI                 string
-	RedirectURIs            []string
-	ResponseTypes           []string
-	GrantTypes              []string
-	TokenEndpointAuthMethod string
-	Scope                   string
-	Contacts                []string
-	JWKSURI                 string
-	JWKS                    []byte
-	PolicyURI               string
-	TOSURI                  string
-	SoftwareID              string
-	SoftwareVersion         string
+	ApplicationType         string          `json:"application_type"`
+	ClientName              string          `json:"client_name"`
+	ClientURI               string          `json:"client_uri"`
+	LogoURI                 string          `json:"logo_uri"`
+	RedirectURIs            []string        `json:"redirect_uris"`
+	ResponseTypes           []string        `json:"response_types"`
+	GrantTypes              []string        `json:"grant_types"`
+	TokenEndpointAuthMethod string          `json:"token_endpoint_auth_method"`
+	Scope                   string          `json:"scope"`
+	Contacts                []string        `json:"contacts"`
+	JWKSURI                 string          `json:"jwks_uri"`
+	JWKS                    json.RawMessage `json:"jwks"`
+	PolicyURI               string          `json:"policy_uri"`
+	TOSURI                  string          `json:"tos_uri"`
+	SoftwareID              string          `json:"software_id"`
+	SoftwareVersion         string          `json:"software_version"`
 }
 
 // ClientRegistration represents a registered client.
 type ClientRegistration struct {
-	ClientID                string
-	ClientSecret            string
-	RegistrationAccessToken string
-	RegistrationClientURI   string
-	ClientIDIssuedAt        int64
-	ClientSecretExpiresAt   int64
-	ApplicationType         string
-	ClientName              string
-	ClientURI               string
-	LogoURI                 string
-	RedirectURIs            []string
-	ResponseTypes           []string
-	GrantTypes              []string
-	TokenEndpointAuthMethod string
-	Scope                   string
-	Contacts                []string
-	JWKSURI                 string
-	JWKS                    []byte
-	PolicyURI               string
-	TOSURI                  string
-	SoftwareID              string
-	SoftwareVersion         string
+	ClientID                string          `json:"client_id"`
+	ClientSecret            string          `json:"client_secret,omitempty"`
+	RegistrationAccessToken string          `json:"registration_access_token,omitempty"`
+	RegistrationClientURI   string          `json:"registration_client_uri,omitempty"`
+	ClientIDIssuedAt        int64           `json:"client_id_issued_at"`
+	ClientSecretExpiresAt   int64           `json:"client_secret_expires_at"`
+	ApplicationType         string          `json:"application_type,omitempty"`
+	ClientName              string          `json:"client_name,omitempty"`
+	ClientURI               string          `json:"client_uri,omitempty"`
+	LogoURI                 string          `json:"logo_uri,omitempty"`
+	RedirectURIs            []string        `json:"redirect_uris"`
+	ResponseTypes           []string        `json:"response_types,omitempty"`
+	GrantTypes              []string        `json:"grant_types,omitempty"`
+	TokenEndpointAuthMethod string          `json:"token_endpoint_auth_method,omitempty"`
+	Scope                   string          `json:"scope,omitempty"`
+	Contacts                []string        `json:"contacts,omitempty"`
+	JWKSURI                 string          `json:"jwks_uri,omitempty"`
+	JWKS                    json.RawMessage `json:"jwks,omitempty"`
+	PolicyURI               string          `json:"policy_uri,omitempty"`
+	TOSURI                  string          `json:"tos_uri,omitempty"`
+	SoftwareID              string          `json:"software_id,omitempty"`
+	SoftwareVersion         string          `json:"software_version,omitempty"`
 }
 
 // BackChannelStore is required by the Back Channel Logout plugin.

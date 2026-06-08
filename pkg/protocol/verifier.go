@@ -17,17 +17,34 @@ import (
 
 // JWE key wrapping algorithms supported by this package.
 const (
-	JWEAlgDir       = "dir"       // Direct use of a shared symmetric key (RFC 7518 §4.5)
-	JWEAlgA256GCMKW = "A256GCMKW" // AES-256-GCM key wrapping (RFC 7518 §4.7)
-	JWEAlgSM23      = "SGD_SM2_3" // SM2 key wrapping per GM/T 0125.3
-	JWEAlgSM93      = "SGD_SM9_3" // SM9 identity-based key wrapping per GM/T 0125.3
+	JWEAlgDir          = "dir"            // Direct use of a shared symmetric key (RFC 7518 §4.5)
+	JWEAlgRSAOAEP      = "RSA-OAEP"       // RSAES OAEP using default parameters (RFC 7518 §4.3)
+	JWEAlgRSAOAEP256   = "RSA-OAEP-256"   // RSAES OAEP using SHA-256 (RFC 7518 §4.3)
+	JWEAlgRSAOAEP384   = "RSA-OAEP-384"   // RSAES OAEP using SHA-384
+	JWEAlgRSAOAEP512   = "RSA-OAEP-512"   // RSAES OAEP using SHA-512
+	JWEAlgECDHES       = "ECDH-ES"        // ECDH-ES (RFC 7518 §4.6)
+	JWEAlgECDHESA128KW = "ECDH-ES+A128KW" // ECDH-ES + A128KW (RFC 7518 §4.6)
+	JWEAlgECDHESA192KW = "ECDH-ES+A192KW" // ECDH-ES + A192KW (RFC 7518 §4.6)
+	JWEAlgECDHESA256KW = "ECDH-ES+A256KW" // ECDH-ES + A256KW (RFC 7518 §4.6)
+	JWEAlgA128KW       = "A128KW"         // AES-128 Key Wrap (RFC 7518 §4.4)
+	JWEAlgA192KW       = "A192KW"         // AES-192 Key Wrap (RFC 7518 §4.4)
+	JWEAlgA256KW       = "A256KW"         // AES-256 Key Wrap (RFC 7518 §4.4)
+	JWEAlgA128GCMKW    = "A128GCMKW"      // AES-128-GCM key wrapping (RFC 7518 §4.7)
+	JWEAlgA192GCMKW    = "A192GCMKW"      // AES-192-GCM key wrapping (RFC 7518 §4.7)
+	JWEAlgA256GCMKW    = "A256GCMKW"      // AES-256-GCM key wrapping (RFC 7518 §4.7)
+	JWEAlgSM23         = "SGD_SM2_3"      // SM2 key wrapping per GM/T 0125.3
+	JWEAlgSM93         = "SGD_SM9_3"      // SM9 identity-based key wrapping per GM/T 0125.3
 )
 
 // JWE content encryption algorithms supported by this package.
 const (
-	JWEEncSM4GCM  = "SGD_SM4_GCM" // SM4-GCM content encryption per GM/T 0125.3
-	JWEEncA256GCM = "A256GCM"     // AES-256-GCM content encryption (RFC 7518 §5.3)
-	JWEEncA128GCM = "A128GCM"     // AES-128-GCM content encryption (RFC 7518 §5.3)
+	JWEEncA128CBC_HS256 = "A128CBC-HS256" // AES-128-CBC + HMAC-SHA256 (RFC 7518 §5.2.3)
+	JWEEncA192CBC_HS384 = "A192CBC-HS384" // AES-192-CBC + HMAC-SHA384 (RFC 7518 §5.2.4)
+	JWEEncA256CBC_HS512 = "A256CBC-HS512" // AES-256-CBC + HMAC-SHA512 (RFC 7518 §5.2.5)
+	JWEEncA128GCM       = "A128GCM"       // AES-128-GCM content encryption (RFC 7518 §5.3)
+	JWEEncA192GCM       = "A192GCM"       // AES-192-GCM content encryption (RFC 7518 §5.3)
+	JWEEncA256GCM       = "A256GCM"       // AES-256-GCM content encryption (RFC 7518 §5.3)
+	JWEEncSM4GCM        = "SGD_SM4_GCM"   // SM4-GCM content encryption per GM/T 0125.3
 )
 
 // Verifier caries configuration for the various token verification

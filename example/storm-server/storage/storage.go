@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -68,6 +69,12 @@ type Storage struct {
 	refreshTTL time.Duration
 	issuer     string
 }
+
+// registrationTokens maps registration_access_token -> clientID.
+var registrationTokens = make(map[string]string)
+
+// registrations stores the full registration data (clientID -> *storm.ClientRegistration).
+var registrations = make(map[string]*storm.ClientRegistration)
 
 type signingKey struct {
 	id           string
@@ -347,11 +354,36 @@ func (s *Storage) SignatureAlgorithms(_ context.Context) ([]string, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	algs := make([]string, len(s.signingKeys))
-	for i, k := range s.signingKeys {
-		algs[i] = k.algorithm
+	seen := make(map[string]bool, len(s.signingKeys))
+	var algs []string
+	for _, k := range s.signingKeys {
+		if !seen[k.algorithm] {
+			algs = append(algs, k.algorithm)
+			seen[k.algorithm] = true
+		}
+		// RSA keys support both PKCS1-v1_5 (RS*) and PSS (PS*) signing.
+		if ps, ok := rsToPS(k.algorithm); ok && !seen[ps] {
+			algs = append(algs, ps)
+			seen[ps] = true
+		}
 	}
+	slices.Sort(algs)
 	return algs, nil
+}
+
+// rsToPS maps RS algorithms to their PS equivalents.
+// Returns ("", false) if the algorithm is not an RS variant.
+func rsToPS(alg string) (string, bool) {
+	switch alg {
+	case "RS256":
+		return "PS256", true
+	case "RS384":
+		return "PS384", true
+	case "RS512":
+		return "PS512", true
+	default:
+		return "", false
+	}
 }
 
 func (s *Storage) SigningKey(_ context.Context) (storm.SigningKey, error) {
@@ -1076,4 +1108,121 @@ var (
 	_ storm.SessionStore           = (*Storage)(nil)
 	_ storm.ClientCredentialsStore = (*Storage)(nil)
 	_ storm.JWTProfileStore        = (*Storage)(nil)
+	_ storm.DCRStore               = (*Storage)(nil)
 )
+
+// =================================================================
+// DCRStore (Dynamic Client Registration)
+// =================================================================
+
+type clientRegistration struct {
+	*storm.ClientRegistration
+	clients map[string]*Client // registered clients keyed by clientID
+}
+
+func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest, clientID, clientSecret, accessToken, uri string) (*storm.ClientRegistration, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// Store the registered client
+	client := &Client{
+		id:            clientID,
+		secret:        clientSecret,
+		redirectURIs:  req.RedirectURIs,
+		authMethod:    protocol.AuthMethodBasic,
+		loginURLFn:    defaultLoginURL,
+		responseTypes: []protocol.ResponseType{protocol.ResponseTypeCode},
+		grantTypes:    []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken},
+	}
+	clients[clientID] = client
+
+	reg := &storm.ClientRegistration{
+		ClientID:                clientID,
+		ClientSecret:            clientSecret,
+		RegistrationAccessToken: accessToken,
+		RegistrationClientURI:   uri,
+		ClientIDIssuedAt:        time.Now().Unix(),
+		ClientSecretExpiresAt:   0,
+		ApplicationType:         req.ApplicationType,
+		ClientName:              req.ClientName,
+		RedirectURIs:            req.RedirectURIs,
+		ResponseTypes:           req.ResponseTypes,
+		GrantTypes:              req.GrantTypes,
+		TokenEndpointAuthMethod: req.TokenEndpointAuthMethod,
+		Scope:                   req.Scope,
+		JWKSURI:                 req.JWKSURI,
+		JWKS:                    req.JWKS,
+	}
+
+	// Store registration data for later lookup
+	registrationTokens[accessToken] = clientID
+	registrations[clientID] = reg
+
+	return reg, nil
+}
+
+func (s *Storage) GetClientRegistration(_ context.Context, clientID string) (*storm.ClientRegistration, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	reg, ok := registrations[clientID]
+	if !ok {
+		return nil, fmt.Errorf("client not found: %s", clientID)
+	}
+
+	return reg, nil
+}
+
+func (s *Storage) GetClientRegistrationByToken(_ context.Context, token string) (*storm.ClientRegistration, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	clientID, ok := registrationTokens[token]
+	if !ok {
+		return nil, fmt.Errorf("no client found for token")
+	}
+
+	reg, ok := registrations[clientID]
+	if !ok {
+		return nil, fmt.Errorf("no client found for token")
+	}
+
+	return reg, nil
+}
+
+func (s *Storage) UpdateClientRegistration(_ context.Context, clientID string, update *storm.RegistrationRequest) (*storm.ClientRegistration, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	client, ok := clients[clientID]
+	if !ok {
+		return nil, fmt.Errorf("client not found: %s", clientID)
+	}
+
+	reg, ok := registrations[clientID]
+	if !ok {
+		return nil, fmt.Errorf("client not found: %s", clientID)
+	}
+
+	if len(update.RedirectURIs) > 0 {
+		client.redirectURIs = update.RedirectURIs
+		reg.RedirectURIs = update.RedirectURIs
+	}
+
+	return reg, nil
+}
+
+func (s *Storage) DeleteClientRegistration(_ context.Context, clientID string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// Remove the registration token
+	reg, ok := registrations[clientID]
+	if ok && reg.RegistrationAccessToken != "" {
+		delete(registrationTokens, reg.RegistrationAccessToken)
+	}
+
+	delete(registrations, clientID)
+	delete(clients, clientID)
+	return nil
+}

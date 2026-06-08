@@ -379,6 +379,22 @@ func decodeError(t *testing.T, w *httptest.ResponseRecorder) map[string]string {
 	return errResp
 }
 
+// parseIDTokenClaims parses the payload of a JWS compact serialization
+// without verifying the signature.
+func parseIDTokenClaims(t *testing.T, token string) map[string]any {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	require.Len(t, parts, 3, "expected JWS compact format with 3 parts")
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+
+	var claims map[string]any
+	err = json.Unmarshal(payload, &claims)
+	require.NoError(t, err)
+	return claims
+}
+
 // --- grant_type routing tests ---
 
 func TestHandleToken_MissingGrantType(t *testing.T) {
@@ -440,6 +456,43 @@ func TestHandleAuthorizationCode_Success(t *testing.T) {
 	assert.NotEmpty(t, resp.AccessToken)
 	assert.Equal(t, protocol.BearerToken, resp.TokenType)
 	assert.NotEmpty(t, resp.IDToken)
+}
+
+func TestHandleAuthorizationCode_CHashPresent(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"client1": {id: "client1", authMethod: protocol.AuthMethodBasic, grantTypes: []protocol.GrantType{protocol.GrantTypeCode}},
+		},
+	}
+	as := newFakeAuthStore()
+	as.byCode["test-code"] = &fakeAuthRequest{
+		id:           "auth-req-1",
+		clientID:     "client1",
+		subject:      "user1",
+		redirectURI:  "https://example.com/callback",
+		scopes:       []string{"openid"},
+		responseType: protocol.ResponseTypeCode,
+	}
+	ts := newFakeTokenStore()
+
+	p := newTestPlugin(t, cs, as, ts)
+
+	form := newTokenForm("authorization_code", url.Values{
+		"code":         {"test-code"},
+		"redirect_uri": {"https://example.com/callback"},
+	})
+	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
+	w := httptest.NewRecorder()
+
+	p.handleAuthorizationCode(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	resp := decodeTokenResponse(t, w)
+	assert.NotEmpty(t, resp.IDToken)
+
+	// Parse ID token claims and verify c_hash is present
+	claims := parseIDTokenClaims(t, resp.IDToken)
+	assert.NotEmpty(t, claims["c_hash"], "c_hash must be present in ID token when authorization code is exchanged")
 }
 
 func TestHandleAuthorizationCode_MissingCode(t *testing.T) {

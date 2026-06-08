@@ -13,6 +13,7 @@ package discovery
 
 import (
 	"context"
+	"slices"
 
 	"github.com/go-chi/chi/v5"
 
@@ -62,20 +63,30 @@ func (p *Plugin) Register(r chi.Router) {}
 // Capability declarations (grant_types, scopes, auth_methods, etc.) are
 // NOT set here — each endpoint plugin contributes its own capabilities.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
-	// Signing algorithms from KeyStore, with RS256 fallback
+	// Signing algorithms from KeyStore (for token/response signing)
 	signingAlgs := []string{"RS256"}
-	authSigningAlgs := []string{"RS256", "ES256"}
 	if p.keyStore != nil {
 		if algs, err := p.keyStore.SignatureAlgorithms(ctx); err == nil && len(algs) > 0 {
 			signingAlgs = algs
-			authSigningAlgs = algs
 		}
 	}
 
-	// Algorithm fields (from KeyStore + fallback)
+	// Auth signing algorithms = KeyStore algorithms + HS variants (for client_secret_jwt)
+	authSigningAlgs := make([]string, 0, len(signingAlgs)+3)
+	authSigningAlgs = append(authSigningAlgs, signingAlgs...)
+	for _, hs := range []string{"HS256", "HS384", "HS512"} {
+		if !slices.Contains(authSigningAlgs, hs) {
+			authSigningAlgs = append(authSigningAlgs, hs)
+		}
+	}
+	slices.Sort(authSigningAlgs)
+
+	// Token/response signing: non-asymmetric only (from KeyStore)
 	cfg.IDTokenSigningAlgValuesSupported = signingAlgs
 	cfg.UserinfoSigningAlgValuesSupported = signingAlgs
 	cfg.RequestObjectSigningAlgValuesSupported = signingAlgs
+
+	// Client authentication: asymmetric + HS (for client_secret_jwt)
 	cfg.TokenEndpointAuthSigningAlgValuesSupported = authSigningAlgs
 	cfg.IntrospectionEndpointAuthSigningAlgValuesSupported = authSigningAlgs
 	cfg.RevocationEndpointAuthSigningAlgValuesSupported = authSigningAlgs

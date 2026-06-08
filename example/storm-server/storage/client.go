@@ -37,6 +37,7 @@ type Client struct {
 	idTokenEncryptionAlg           string
 	idTokenEncryptionEnc           string
 	backChannelLogoutURI           string
+	clientEncryptionKey            interface{} // public key for ID token encryption (RSA, ECDH, or symmetric)
 }
 
 func (c *Client) GetID() string                          { return c.id }
@@ -54,6 +55,7 @@ func (c *Client) IsScopeAllowed(scope string) bool       { return scope == Custo
 func (c *Client) IDTokenEncryptionAlg() string           { return c.idTokenEncryptionAlg }
 func (c *Client) IDTokenEncryptionEnc() string           { return c.idTokenEncryptionEnc }
 func (c *Client) BackChannelLogoutURI() string           { return c.backChannelLogoutURI }
+func (c *Client) ClientEncryptionKey() interface{}       { return c.clientEncryptionKey }
 
 func RegisterClients(registerClients ...*Client) {
 	for _, c := range registerClients {
@@ -113,6 +115,17 @@ func OIDFBackChannelLogoutTestClient(id, secret, backChannelLogoutURI string, re
 	return c
 }
 
+// OIDFBackChannelLogoutEncryptedTestClient creates an OIDF test client with
+// back-channel logout and ID token encryption support.
+func OIDFBackChannelLogoutEncryptedTestClient(id, secret, backChannelLogoutURI, alg, enc string, key interface{}, redirectURIs ...string) *Client {
+	c := OIDFTestClient(id, secret, redirectURIs...)
+	c.backChannelLogoutURI = backChannelLogoutURI
+	c.idTokenEncryptionAlg = alg
+	c.idTokenEncryptionEnc = enc
+	c.clientEncryptionKey = key
+	return c
+}
+
 func DeviceClient(id, secret string) *Client {
 	return &Client{
 		id:            id,
@@ -128,6 +141,16 @@ func EncryptedWebClient(id, secret string, alg, enc string, redirectURIs ...stri
 	c := WebClient(id, secret, redirectURIs...)
 	c.idTokenEncryptionAlg = alg
 	c.idTokenEncryptionEnc = enc
+	return c
+}
+
+// EncryptedWebClientWithKey creates a web client with ID token encryption
+// using the provided public key (RSA, ECDH, or symmetric key).
+func EncryptedWebClientWithKey(id, secret string, alg, enc string, key interface{}, redirectURIs ...string) *Client {
+	c := WebClient(id, secret, redirectURIs...)
+	c.idTokenEncryptionAlg = alg
+	c.idTokenEncryptionEnc = enc
+	c.clientEncryptionKey = key
 	return c
 }
 

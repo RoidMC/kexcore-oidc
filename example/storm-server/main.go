@@ -13,6 +13,18 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/example/storm-server/config"
 	"github.com/roidmc/kexcore-oidc/example/storm-server/storage"
+
+	// Import plugins for registration
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/authorization"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/dcr"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/device"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/discovery"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/endsession"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/introspection"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/keys"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/revocation"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/token"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/userinfo"
 )
 
 func main() {
