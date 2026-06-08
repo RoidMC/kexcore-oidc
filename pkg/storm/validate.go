@@ -70,6 +70,9 @@ func (e *Engine) storageImplements(ifaceName string) bool {
 	case "DeviceAuthStore":
 		_, ok := e.storage.(DeviceAuthStore)
 		return ok
+	case "BackChannelStore":
+		_, ok := e.storage.(BackChannelStore)
+		return ok
 	case "ClientStore", "KeyStore":
 		return true // always satisfied by Storage interface
 	default:

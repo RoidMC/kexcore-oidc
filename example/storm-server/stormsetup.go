@@ -26,6 +26,7 @@ import (
 	// Each plugin registers itself in the global registry.
 
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/authorization"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/backchannel"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/discovery"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/endsession"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/introspection"
@@ -155,6 +156,7 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 		storm.WithDiscoveryConfig(discovery),
 		storm.WithCrypto(tokenCrypto),
 		storm.WithDecoder(decoder),
+		storm.WithImplicit(),
 	)
 
 	engineHandler := engine.Build()

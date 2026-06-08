@@ -37,6 +37,7 @@ type Engine struct {
 	factories         []PluginFactory   // plugins registered via WithPlugin()
 	crypto            UniCrypto         // optional, for token encryption/signing
 	decoder           *protocol.Decoder // optional, for form parsing
+	enableImplicit    bool              // enable implicit/hybrid flows
 }
 
 // DiscoveryConfig holds extra fields injected into the discovery document.
@@ -47,9 +48,10 @@ type DiscoveryConfig struct {
 // PluginContext provides dependencies to plugin factories.
 // It wraps Storage with additional engine-level services.
 type PluginContext struct {
-	Storage Storage
-	Crypto  UniCrypto // may be nil if not configured
-	Decoder *protocol.Decoder
+	Storage        Storage
+	Crypto         UniCrypto // may be nil if not configured
+	Decoder        *protocol.Decoder
+	EnableImplicit bool // enable implicit/hybrid flows (disabled by default per OAuth 2.1)
 }
 
 // PluginFactory creates a plugin from a PluginContext.
@@ -75,6 +77,7 @@ const (
 	PriorityIntrospection = 600
 	PriorityRevocation    = 700
 	PriorityEndSession    = 800
+	PriorityBackChannel   = 850
 	PriorityDevice        = 900
 	PriorityPAR           = 950
 	PriorityDCR           = 1000
@@ -175,6 +178,14 @@ func WithDiscoveryConfig(cfg DiscoveryConfig) EngineOption {
 	}
 }
 
+// WithImplicit enables the Implicit and Hybrid flows.
+// Disabled by default per OAuth 2.1.
+func WithImplicit() EngineOption {
+	return func(e *Engine) {
+		e.enableImplicit = true
+	}
+}
+
 // New creates a new Engine with the given storage and issuer function.
 //
 // The issuerFn is used to inject the issuer into the request context
@@ -207,9 +218,10 @@ func New(storage Storage, issuerFn shared.IssuerFromRequest, opts ...EngineOptio
 func (e *Engine) autoRegisterPlugins() {
 	// Build plugin context with all dependencies
 	pctx := &PluginContext{
-		Storage: e.storage,
-		Crypto:  e.crypto,
-		Decoder: e.decoder,
+		Storage:        e.storage,
+		Crypto:         e.crypto,
+		Decoder:        e.decoder,
+		EnableImplicit: e.enableImplicit,
 	}
 	if pctx.Decoder == nil {
 		pctx.Decoder = protocol.NewDecoder()

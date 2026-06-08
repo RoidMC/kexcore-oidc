@@ -84,15 +84,22 @@ func WebClient(id, secret string, redirectURIs ...string) *Client {
 		redirectURIs = []string{"http://localhost:9999/auth/callback"}
 	}
 	return &Client{
-		id:            id,
-		secret:        secret,
-		redirectURIs:  redirectURIs,
-		appType:       0,
-		authMethod:    protocol.AuthMethodBasic,
-		loginURLFn:    defaultLoginURL,
-		responseTypes: []protocol.ResponseType{protocol.ResponseTypeCode, protocol.ResponseTypeIDTokenOnly, protocol.ResponseTypeIDToken},
-		grantTypes:    []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken, protocol.GrantTypeClientCredentials, protocol.GrantTypeTokenExchange},
-		devMode:       true,
+		id:           id,
+		secret:       secret,
+		redirectURIs: redirectURIs,
+		appType:      0,
+		authMethod:   protocol.AuthMethodBasic,
+		loginURLFn:   defaultLoginURL,
+		responseTypes: []protocol.ResponseType{
+			protocol.ResponseTypeCode,
+			protocol.ResponseTypeIDTokenOnly,
+			protocol.ResponseTypeIDToken,
+			protocol.ResponseTypeCodeIDToken,
+			protocol.ResponseTypeCodeToken,
+			protocol.ResponseTypeCodeIDTokenToken,
+		},
+		grantTypes: []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken, protocol.GrantTypeClientCredentials, protocol.GrantTypeTokenExchange},
+		devMode:    true,
 	}
 }
 

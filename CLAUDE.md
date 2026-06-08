@@ -54,7 +54,7 @@ func (p *Plugin) Contribute(engine *Engine) error
 | PAR | RFC 9101 |
 | mTLS | RFC 8705 |
 | DPoP | RFC 9449 |
-| Back-Channel Logout | OIDC Back-Channel §2.5 (placeholder) |
+| Back-Channel Logout | OIDC Back-Channel §2.5 (implemented, PushLogoutTokens) |
 | Pairwise Subject | OIDC Core §8.1 |
 
 ### Authorization Plugin Extension Points
@@ -137,6 +137,20 @@ Two modes, both supported by the same SDK:
 | Unregistered redirect_uri redirected errors to attacker URI | Fixed — redirect_uri validated before other params; unregistered → HTTP 400 direct |
 | Token endpoint Cache-Control headers missing | Fixed — `shared.JSONResponse` sets `Cache-Control: no-store` + `Pragma: no-cache` |
 | Refresh token not issued for authorization_code grant | Fixed — `createAccessToken` returns `refreshToken` from `CreateAccessAndRefreshTokens` |
+| `c_hash` missing in ID token (token endpoint) | Fixed — `createTokenResponseFromTokenRequest` passes `code` to `createIDToken` |
+| JWE algorithms incomplete (RSA-OAEP, ECDH-ES, KW, CBC-HS) | Fixed — all RFC 7518 alg/enc algorithms implemented |
+| DCR endpoint not registered | Fixed — `dcr.init()` auto-registration + JSON tags + json.RawMessage JWKS |
+| ID Token encryption only supported SM2/SM9/dir | Fixed — `encryptIDToken` supports RSA-OAEP, ECDH-ES, A256GCMKW etc. |
+| Default signing algorithm was ES256 instead of RS256 | Fixed — RS256 moved to front of DefaultSigningAlgorithms |
+| End Session state not returned in redirect | Fixed — state appended to post_logout_redirect_uri |
+| End Session invalid redirect_uri redirects to `/` (404) | Fixed — shows error page for invalid, logout page for no redirect_uri |
+| Hybrid flow (`code id_token token`) returns unauthorized_client | Fixed — hybrid flow constants, `WithImplicit()`, `authResponseHybrid()` |
+| DCR client hardcoded `responseTypes: [code]` | Fixed — uses requested response_types and grant_types |
+| DCR client missing post_logout_redirect_uris | Fixed — saved from registration request |
+| Session not deleted on logout (prompt=none still succeeds) | Fixed — `TerminateSession` deletes session + clientSessions |
+| `prompt=none` not returning error when user not logged in | **Open** — SessionProvider implemented but conformance test still fails |
+| Token TTL (tokenTTL/refreshTTL) fields unused | **Open** — fields exist in Storage but not used in token creation |
+| Client EncryptionKey not stored from DCR JWKS | **Open** — DCR stores JWKS in registration but doesn't propagate to client |
 
 ## TODO
 
@@ -144,6 +158,8 @@ Two modes, both supported by the same SDK:
 - **Client Builder** — Move client helpers to `storm/client` package
 - **CORS middleware** in `engine.go`
 - **Test coverage**: authorization 30+ tests, token 35 tests done
+- **prompt=none enforcement** — Debug why conformance test still fails despite SessionProvider
+- **DCR JWKS → ClientKeyProvider** — Propagate JWKS from DCR registration to client encryption key
 
 ## Security Audit (2026-06-04)
 

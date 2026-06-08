@@ -108,11 +108,12 @@ type Config struct {
 // Authorization Requests are enabled.
 func New(ctx *storm.PluginContext) *Plugin {
 	p := &Plugin{
-		authStore:   ctx.Storage.(storm.AuthStore),
-		clientStore: ctx.Storage.(storm.ClientStore),
-		crypto:      ctx.Crypto,
-		keyStore:    ctx.Storage.(storm.KeyStore),
-		decoder:     ctx.Decoder,
+		authStore:      ctx.Storage.(storm.AuthStore),
+		clientStore:    ctx.Storage.(storm.ClientStore),
+		crypto:         ctx.Crypto,
+		keyStore:       ctx.Storage.(storm.KeyStore),
+		decoder:        ctx.Decoder,
+		enableImplicit: ctx.EnableImplicit,
 	}
 	// Register custom parser for OIDC §5.5 claims parameter (JSON object).
 	ctx.Decoder.RegisterParser(
@@ -220,6 +221,10 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve effective response mode: explicit > implicit default from response_type.
+	// Per OAuth 2.0 Multiple Response Types §2.1, hybrid/implicit flows default to fragment.
+	resolvedMode := resolveResponseMode(authReq.ResponseMode, authReq.ResponseType)
+
 	// RFC 9101 §5.2.1: request and request_uri MUST NOT be used together.
 	// Note: Before the client is resolved, we cannot validate redirect_uri
 	// against registered URIs. Per OIDC Core §3.1.2.6, we must not redirect
@@ -279,7 +284,7 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// Now that redirect_uri is validated, remaining errors can be
 	// safely redirected to the registered URI.
 	if err := validateAuthRequestParamsExceptRedirectURI(client, authReq); err != nil {
-		writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode, err)
+		writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode, err)
 		return
 	}
 
@@ -287,7 +292,7 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	if authReq.IDTokenHint != "" {
 		_, _, err := p.validateIDTokenHint(r.Context(), authReq.IDTokenHint)
 		if err != nil {
-			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.ErrInvalidRequest().WithDescription("invalid id_token_hint").WithParent(err))
 			return
 		}
@@ -297,17 +302,17 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		// the identified user does not match, the OP SHOULD return an error.
 	}
 
-	// Implicit flow guard: disabled by default per OAuth 2.1
-	if !p.enableImplicit && isImplicitResponseType(authReq.ResponseType) {
-		writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
-			protocol.ErrInvalidRequest().WithDescription("implicit flow is disabled"))
+	// Implicit/hybrid flow guard: disabled by default per OAuth 2.1
+	if !p.enableImplicit && (isImplicitResponseType(authReq.ResponseType) || isHybridResponseType(authReq.ResponseType)) {
+		writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
+			protocol.ErrInvalidRequest().WithDescription("implicit/hybrid flow is disabled"))
 		return
 	}
 
 	// Invoke AuthorizeValidator extension point if client implements it.
 	if avc, ok := client.(AuthorizeValidatorClient); ok {
 		if err := avc.AuthorizeValidator().ValidateAuthRequest(client, authReq); err != nil {
-			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode, err)
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode, err)
 			return
 		}
 	}
@@ -318,13 +323,13 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// original auth_time and skip the login UI entirely.
 	if slices.Contains(authReq.Prompt, protocol.PromptNone) {
 		if p.sessionProvider == nil {
-			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.ErrLoginRequired().WithDescription("prompt=none but no session provider configured"))
 			return
 		}
 		subject, authTime, ok := p.sessionProvider.GetSession(r.Context(), r, authReq.ClientID)
 		if !ok {
-			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.ErrLoginRequired().WithDescription("user is not logged in"))
 			return
 		}
@@ -334,24 +339,24 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		// response — no login UI redirect.
 		completer, ok := p.authStore.(storm.AutoCompleteAuthRequest)
 		if !ok {
-			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.ErrServerError().WithDescription("prompt=none requires AutoCompleteAuthRequest support"))
 			return
 		}
 		req, err := p.authStore.CreateAuthRequest(r.Context(), authReq, subject)
 		if err != nil {
-			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.DefaultToServerError(err, "unable to save auth request"))
 			return
 		}
 		if err := completer.CompleteAuthRequest(r.Context(), req.GetID(), subject, authTime); err != nil {
-			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.DefaultToServerError(err, "unable to complete auth request"))
 			return
 		}
 		completed, err := p.authStore.AuthRequestByID(r.Context(), req.GetID())
 		if err != nil {
-			writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.DefaultToServerError(err, "unable to fetch completed auth request"))
 			return
 		}
@@ -370,24 +375,24 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 			if elapsed <= time.Duration(*authReq.MaxAge)*time.Second {
 				completer, ok := p.authStore.(storm.AutoCompleteAuthRequest)
 				if !ok {
-					writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+					writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 						protocol.ErrServerError().WithDescription("max_age auto-complete requires AutoCompleteAuthRequest support"))
 					return
 				}
 				req, err := p.authStore.CreateAuthRequest(r.Context(), authReq, subject)
 				if err != nil {
-					writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+					writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 						protocol.DefaultToServerError(err, "unable to save auth request"))
 					return
 				}
 				if err := completer.CompleteAuthRequest(r.Context(), req.GetID(), subject, authTime); err != nil {
-					writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+					writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 						protocol.DefaultToServerError(err, "unable to complete auth request"))
 					return
 				}
 				completed, err := p.authStore.AuthRequestByID(r.Context(), req.GetID())
 				if err != nil {
-					writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+					writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 						protocol.DefaultToServerError(err, "unable to fetch completed auth request"))
 					return
 				}
@@ -401,7 +406,7 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	req, err := p.authStore.CreateAuthRequest(r.Context(), authReq, "")
 	if err != nil {
-		writeAuthError(w, r, authReq.RedirectURI, authReq.State, authReq.ResponseMode,
+		writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 			protocol.DefaultToServerError(err, "unable to save auth request"))
 		return
 	}
@@ -431,7 +436,8 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !authReq.Done() {
-		writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(), authReq.GetResponseMode(),
+		writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(),
+			resolveResponseMode(authReq.GetResponseMode(), authReq.GetResponseType()),
 			protocol.ErrInteractionRequired().WithDescription("user may not be logged in"))
 		return
 	}
@@ -451,7 +457,13 @@ func (p *Plugin) authResponse(w http.ResponseWriter, r *http.Request, authReq st
 		return
 	}
 
-	writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(), authReq.GetResponseMode(),
+	if p.enableImplicit && isHybridResponseType(authReq.GetResponseType()) {
+		p.authResponseHybrid(w, r, authReq)
+		return
+	}
+
+	writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(),
+		resolveResponseMode(authReq.GetResponseMode(), authReq.GetResponseType()),
 		protocol.ErrServerError().WithDescription("unsupported response_type"))
 }
 
@@ -463,13 +475,14 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 	}
 	code, err := createCode(r.Context(), authReq, p.authStore, p.crypto)
 	if err != nil {
-		writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(), authReq.GetResponseMode(),
+		writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(),
+			resolveResponseMode(authReq.GetResponseMode(), authReq.GetResponseType()),
 			protocol.DefaultToServerError(err, "failed to create auth code"))
 		return
 	}
 
 	redirectURI := authReq.GetRedirectURI()
-	responseMode := authReq.GetResponseMode()
+	responseMode := resolveResponseMode(authReq.GetResponseMode(), authReq.GetResponseType())
 
 	// Build response payload.
 	resp := &codeResponse{
@@ -485,7 +498,7 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 	// Form Post response mode (OIDC Core §3.1.2.5 / §3.3.2.5)
 	if responseMode == protocol.ResponseModeFormPost {
 		if err := writeFormPostResponse(w, redirectURI, resp); err != nil {
-			writeAuthError(w, r, redirectURI, authReq.GetState(), authReq.GetResponseMode(), err)
+			writeAuthError(w, r, redirectURI, authReq.GetState(), responseMode, err)
 		}
 		return
 	}
@@ -735,6 +748,77 @@ func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRe
 		return "", fmt.Errorf("JWS signing failed: %w", err)
 	}
 	return string(signed), nil
+}
+
+// --- hybrid flow ---
+
+// authResponseHybrid handles the Hybrid Flow response (OIDC Core §3.3).
+//
+// Hybrid flow returns both an authorization code and tokens in the fragment:
+//   - response_type=code id_token: code + id_token
+//   - response_type=code token: code + access_token
+//   - response_type=code id_token token: code + access_token + id_token
+//
+// All parameters are returned in the fragment per OAuth 2.0 Multiple Response Types §2.1.
+func (p *Plugin) authResponseHybrid(w http.ResponseWriter, r *http.Request, authReq storm.AuthRequest) {
+	if _, err := url.Parse(authReq.GetRedirectURI()); err != nil {
+		shared.WriteError(w, r, protocol.ErrServerError().WithParent(err), nil)
+		return
+	}
+
+	fragment := url.Values{}
+	fragment.Set("state", authReq.GetState())
+
+	// Create authorization code (always present in hybrid flows).
+	createCode := createAuthRequestCode
+	if p.createAuthCode != nil {
+		createCode = p.createAuthCode
+	}
+	code, err := createCode(r.Context(), authReq, p.authStore, p.crypto)
+	if err != nil {
+		writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(),
+			resolveResponseMode(authReq.GetResponseMode(), authReq.GetResponseType()),
+			protocol.DefaultToServerError(err, "failed to create auth code"))
+		return
+	}
+	fragment.Set("code", code)
+
+	// Create access_token if response_type includes "token".
+	var accessToken string
+	rt := authReq.GetResponseType()
+	if rt == protocol.ResponseTypeCodeToken || rt == protocol.ResponseTypeCodeIDTokenToken {
+		token, expiresIn, err := p.createImplicitAccessToken(r.Context(), authReq)
+		if err == nil && token != "" {
+			accessToken = token
+			fragment.Set("access_token", accessToken)
+			fragment.Set("token_type", protocol.BearerToken)
+			if expiresIn > 0 {
+				fragment.Set("expires_in", fmt.Sprintf("%d", expiresIn))
+			}
+		}
+	}
+
+	// Create id_token if response_type includes "id_token".
+	if rt == protocol.ResponseTypeCodeIDToken || rt == protocol.ResponseTypeCodeIDTokenToken {
+		var client storm.Client
+		if c, err := p.clientStore.GetClientByClientID(r.Context(), authReq.GetClientID()); err == nil {
+			client = c
+		}
+		idToken, err := p.createImplicitIDToken(r.Context(), authReq, accessToken, client)
+		if err == nil && idToken != "" {
+			fragment.Set("id_token", idToken)
+		}
+	}
+
+	// Build fragment URL.
+	redirectURL := authReq.GetRedirectURI()
+	if idx := strings.Index(redirectURL, "#"); idx >= 0 {
+		redirectURL = redirectURL[:idx]
+	}
+	redirectURL += "#" + fragment.Encode()
+
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 // --- request object / PAR helpers ---

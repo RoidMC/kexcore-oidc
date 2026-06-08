@@ -44,6 +44,12 @@ const (
 	// ResponseTypeIDTokenOnly for the Implicit Flow returning only id token.
 	// OIDC Core 1.0 §3.2.2.5
 	ResponseTypeIDTokenOnly ResponseType = "id_token"
+
+	// Hybrid Flow response types (OIDC Core §3.3).
+	// These return both an authorization code and tokens in the fragment.
+	ResponseTypeCodeIDToken      ResponseType = "code id_token"
+	ResponseTypeCodeToken        ResponseType = "code token"
+	ResponseTypeCodeIDTokenToken ResponseType = "code id_token token"
 )
 
 // OAuth 2.0 Multiple Response Type Encoding Practice §2.1

@@ -290,6 +290,8 @@ type RegistrationRequest struct {
 	TOSURI                  string          `json:"tos_uri"`
 	SoftwareID              string          `json:"software_id"`
 	SoftwareVersion         string          `json:"software_version"`
+	PostLogoutRedirectURIs  []string        `json:"post_logout_redirect_uris"`
+	BackChannelLogoutURI    string          `json:"backchannel_logout_uri"`
 }
 
 // ClientRegistration represents a registered client.
@@ -316,6 +318,8 @@ type ClientRegistration struct {
 	TOSURI                  string          `json:"tos_uri,omitempty"`
 	SoftwareID              string          `json:"software_id,omitempty"`
 	SoftwareVersion         string          `json:"software_version,omitempty"`
+	PostLogoutRedirectURIs  []string        `json:"post_logout_redirect_uris,omitempty"`
+	BackChannelLogoutURI    string          `json:"backchannel_logout_uri,omitempty"`
 }
 
 // BackChannelStore is required by the Back Channel Logout plugin.
@@ -380,10 +384,12 @@ type Signer interface {
 
 // EndSessionRequest represents a parsed RP-initiated logout request.
 type EndSessionRequest struct {
-	UserID            string
-	ClientID          string
-	IDTokenHintClaims *protocol.IDTokenClaims
-	RedirectURI       string
-	LogoutHint        string
-	UILocales         []language.Tag
+	UserID             string
+	ClientID           string
+	IDTokenHintClaims  *protocol.IDTokenClaims
+	RedirectURI        string
+	State              string
+	LogoutHint         string
+	UILocales          []language.Tag
+	InvalidRedirectURI bool // true when post_logout_redirect_uri was provided but not registered
 }

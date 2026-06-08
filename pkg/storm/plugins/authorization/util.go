@@ -459,11 +459,41 @@ func writeFormPostError(w http.ResponseWriter, redirectURI string, params url.Va
 
 // --- implicit flow helpers ---
 
-// isImplicitResponseType returns true if the response type includes
-// id_token (Implicit or Hybrid flow per OIDC Core §3.2).
+// isImplicitResponseType returns true if the response type is an implicit flow
+// (id_token only or id_token token). Does NOT include hybrid flows.
 func isImplicitResponseType(rt protocol.ResponseType) bool {
 	return rt == protocol.ResponseTypeIDTokenOnly ||
 		rt == protocol.ResponseTypeIDToken
+}
+
+// isHybridResponseType returns true if the response type is a hybrid flow
+// (code id_token, code token, or code id_token token).
+func isHybridResponseType(rt protocol.ResponseType) bool {
+	return rt == protocol.ResponseTypeCodeIDToken ||
+		rt == protocol.ResponseTypeCodeToken ||
+		rt == protocol.ResponseTypeCodeIDTokenToken
+}
+
+// usesFragmentDefault returns true if the response type defaults to fragment
+// response mode per OAuth 2.0 Multiple Response Types §2.1.
+// Pure code flow uses query; all others (implicit + hybrid) use fragment.
+func usesFragmentDefault(rt protocol.ResponseType) bool {
+	return rt != protocol.ResponseTypeCode
+}
+
+// resolveResponseMode returns the effective response mode.
+// If the explicit response mode is set, it is returned as-is.
+// Otherwise, the default is determined by the response type:
+//   - code flow → query
+//   - implicit/hybrid flows → fragment
+func resolveResponseMode(explicit protocol.ResponseMode, rt protocol.ResponseType) protocol.ResponseMode {
+	if explicit != "" {
+		return explicit
+	}
+	if usesFragmentDefault(rt) {
+		return protocol.ResponseModeFragment
+	}
+	return protocol.ResponseModeQuery
 }
 
 // --- request object helpers ---

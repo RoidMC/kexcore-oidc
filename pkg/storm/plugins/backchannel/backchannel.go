@@ -6,16 +6,10 @@ package backchannel
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/lestrrat-go/jwx/v4/jwa"
-	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
@@ -25,24 +19,30 @@ import (
 // Plugin implements the OIDC Back-Channel Logout endpoint.
 type Plugin struct {
 	store    storm.BackChannelStore
-	crypto   storm.UniCrypto
 	keyStore storm.KeyStore
 }
 
-// Config holds the dependencies for the BackChannel plugin.
-type Config struct {
-	Store    storm.BackChannelStore
-	Crypto   storm.UniCrypto
-	KeyStore storm.KeyStore
+// New creates a new BackChannel plugin from a PluginContext.
+func New(ctx *storm.PluginContext) *Plugin {
+	return &Plugin{
+		store:    ctx.Storage.(storm.BackChannelStore),
+		keyStore: ctx.Storage.(storm.KeyStore),
+	}
 }
 
-// New creates a new BackChannel plugin.
-func New(cfg Config) *Plugin {
-	return &Plugin{
-		store:    cfg.Store,
-		crypto:   cfg.Crypto,
-		keyStore: cfg.KeyStore,
-	}
+// init self-registers the backchannel plugin in the global registry.
+func init() {
+	storm.RegisterPlugin("backchannel", storm.PriorityBackChannel, func(ctx *storm.PluginContext) storm.Plugin {
+		return New(ctx)
+	})
+}
+
+// Category returns CategoryStandard — backchannel is optional but enabled by default.
+func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
+
+// Requires returns the storage dependencies.
+func (p *Plugin) Requires() []string {
+	return []string{"BackChannelStore", "KeyStore"}
 }
 
 // Name returns the plugin name.
@@ -57,29 +57,24 @@ func (p *Plugin) Register(r chi.Router) {
 
 // Contribute returns the discovery fields for the backchannel logout endpoint.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
+	cfg.BackChannelLogoutEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/backchannel_logout"))
 	cfg.BackChannelLogoutSupported = true
 	cfg.BackChannelLogoutSessionSupported = true
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
-	// Back-channel logout is typically initiated by the OP, not by external clients.
-	// This endpoint receives logout notifications and pushes logout tokens to RPs.
-	//
-	// The actual logout token creation and delivery is handled internally
-	// when a session is terminated (e.g., via endsession plugin).
+	// Per OIDC Back-Channel Logout §2.8, the endpoint responds with 200 OK.
+	// The actual back-channel logout is OP-initiated (push model).
+	// This endpoint is for receiving logout tokens from other OPs or internal triggers.
 
-	// For now, this is a placeholder that acknowledges the request.
-	// The real back-channel logout logic involves:
-	// 1. Receiving a logout token from another OP or internal trigger
-	// 2. Validating the logout token
-	// 3. Finding affected RPs via ClientsForSession
-	// 4. Pushing logout tokens to each RP's backchannel_logout_uri
-
-	shared.JSONResponse(w, map[string]string{"status": "ok"}, http.StatusOK)
+	shared.JSONResponse(w, nil, http.StatusOK)
 }
 
 // PushLogoutTokens sends logout tokens to all RPs that have sessions
 // for the given subject and session ID (OIDC Back-Channel Logout §2.5).
+//
+// This is the main entry point for triggering back-channel logout.
+// Call this when a session is terminated (e.g., from endsession plugin).
 func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer string, signingKey storm.SigningKey, subject, sid string, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
@@ -91,10 +86,7 @@ func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer 
 	}
 
 	for _, client := range clients {
-		type backchannelURIProvider interface {
-			BackChannelLogoutURI() string
-		}
-		bc, ok := client.(backchannelURIProvider)
+		bc, ok := client.(BackChannelLogoutClient)
 		if !ok {
 			continue
 		}
@@ -118,80 +110,4 @@ func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer 
 	}
 
 	return nil
-}
-
-// createLogoutToken creates a logout token JWT (OIDC Back-Channel Logout §2.4).
-func createLogoutToken(issuer, subject, audience, sid string, signingKey storm.SigningKey) (string, error) {
-	if signingKey == nil {
-		return "", fmt.Errorf("no signing key available")
-	}
-
-	now := time.Now().UTC()
-	claims := map[string]any{
-		"iss": issuer,
-		"sub": subject,
-		"aud": audience,
-		"iat": now.Unix(),
-		"exp": now.Add(5 * time.Minute).Unix(),
-		"jti": fmt.Sprintf("lt_%d", now.UnixNano()),
-		"events": map[string]any{
-			"http://schemas.openid.net/event/backchannel-logout": map[string]any{},
-		},
-	}
-	if sid != "" {
-		claims["sid"] = sid
-	}
-
-	payload, err := json.Marshal(claims)
-	if err != nil {
-		return "", err
-	}
-
-	alg, err := algorithmToJWA(signingKey.Algorithm())
-	if err != nil {
-		return "", fmt.Errorf("unsupported signing algorithm %q: %w", signingKey.Algorithm(), err)
-	}
-	headers := jws.NewHeaders()
-	_ = headers.Set(jws.AlgorithmKey, alg)
-	if signingKey.ID() != "" {
-		_ = headers.Set(jws.KeyIDKey, signingKey.ID())
-	}
-	signed, err := jws.Sign(payload, jws.WithKey(alg, signingKey.Key(), jws.WithProtectedHeaders(headers)))
-	if err != nil {
-		return "", fmt.Errorf("JWS signing failed: %w", err)
-	}
-	return string(signed), nil
-}
-
-// sendLogoutToken sends a logout token to a client's backchannel_logout_uri.
-func sendLogoutToken(uri, logoutToken string, logger *slog.Logger) {
-	form := url.Values{}
-	form.Set("logout_token", logoutToken)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.PostForm(uri, form)
-	if err != nil {
-		logger.Error("failed to send logout token to client",
-			slog.String("uri", uri),
-			slog.Any("error", err),
-		)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		logger.Warn("client returned error for logout token",
-			slog.String("uri", uri),
-			slog.Int("status_code", resp.StatusCode),
-		)
-	}
-}
-
-// algorithmToJWA converts a string algorithm name to jwa.SignatureAlgorithm.
-func algorithmToJWA(alg string) (jwa.SignatureAlgorithm, error) {
-	if jwaAlg, ok := jwa.LookupSignatureAlgorithm(alg); ok {
-		return jwaAlg, nil
-	}
-	unknown, _ := jwa.LookupSignatureAlgorithm(alg)
-	return unknown, fmt.Errorf("unknown algorithm: %s", alg)
 }

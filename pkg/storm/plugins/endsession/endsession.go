@@ -6,9 +6,8 @@ package endsession
 
 import (
 	"context"
-	"errors"
 	"net/http"
-	"time"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 
@@ -16,61 +15,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
-
-// Plugin implements the OIDC End Session endpoint.
-type Plugin struct {
-	store            storm.SessionStore
-	clientStore      storm.ClientStore
-	keyStore         protocol.KeyStore
-	defaultLogoutURI string
-	offset           time.Duration
-	maxAgeIAT        time.Duration
-	maxAge           time.Duration
-	decoder          *protocol.Decoder
-}
-
-// Config holds the dependencies for the EndSession plugin.
-type Config struct {
-	Store            storm.SessionStore
-	ClientStore      storm.ClientStore
-	KeyStore         protocol.KeyStore
-	DefaultLogoutURI string
-	// Offset is the clock skew tolerance for token validation (default: 0).
-	Offset time.Duration
-	// MaxAgeIAT is the maximum allowed age of the id_token_hint's iat claim.
-	// Per OIDC Session Management §5, expired tokens can still be trusted for logout.
-	// Set to 0 to disable iat_max_age checking.
-	MaxAgeIAT time.Duration
-	// MaxAge is the maximum allowed time since auth_time.
-	// Set to 0 to disable auth_time max_age checking.
-	MaxAge  time.Duration
-	Decoder *protocol.Decoder
-}
-
-// New creates a new EndSession plugin from a PluginContext.
-func New(ctx *storm.PluginContext) *Plugin {
-	return &Plugin{
-		store:            ctx.Storage.(storm.SessionStore),
-		clientStore:      ctx.Storage.(storm.ClientStore),
-		keyStore:         ctx.Storage.(storm.KeyStore),
-		defaultLogoutURI: "/",
-		decoder:          ctx.Decoder,
-	}
-}
-
-// NewWithConfig creates a new EndSession plugin with explicit config.
-func NewWithConfig(cfg Config) *Plugin {
-	return &Plugin{
-		store:            cfg.Store,
-		clientStore:      cfg.ClientStore,
-		keyStore:         cfg.KeyStore,
-		defaultLogoutURI: cfg.DefaultLogoutURI,
-		offset:           cfg.Offset,
-		maxAgeIAT:        cfg.MaxAgeIAT,
-		maxAge:           cfg.MaxAge,
-		decoder:          cfg.Decoder,
-	}
-}
 
 // init self-registers the endsession plugin in the global registry.
 func init() {
@@ -121,103 +65,47 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per OIDC RP-Initiated Logout 1.0 §2: if post_logout_redirect_uri was
+	// provided but not registered, the OP MUST NOT redirect to it.
+	// Show an error page instead of performing the logout.
+	if session.InvalidRedirectURI {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = logoutTmpl.Execute(w, map[string]string{
+			"Title":   "Logout Error",
+			"Heading": "Invalid post_logout_redirect_uri",
+			"Message": "The provided post_logout_redirect_uri is not registered with this client.",
+		})
+		return
+	}
+
 	// Terminate the session
 	if err := p.store.TerminateSession(r.Context(), session.UserID, session.ClientID); err != nil {
 		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error terminating session"), nil)
 		return
 	}
 
-	// Redirect to the post-logout URI or default
-	redirectURI := session.RedirectURI
-	if redirectURI == "" {
-		redirectURI = p.defaultLogoutURI
-	}
-
-	http.Redirect(w, r, redirectURI, http.StatusFound)
-}
-
-func parseEndSessionRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.EndSessionRequest, error) {
-	req := new(protocol.EndSessionRequest)
-	if err := decoder.Decode(req, form); err != nil {
-		return nil, err
-	}
-	return req, nil
-}
-
-func validateEndSessionRequest(ctx context.Context, req *protocol.EndSessionRequest, p *Plugin) (*storm.EndSessionRequest, error) {
-	session := &storm.EndSessionRequest{}
-
-	// Validate id_token_hint per OIDC Session Management §5.
-	// If present, extract the subject and validate client binding.
-	// Expired tokens are treated as non-fatal - the claims can still
-	// be trusted for logout purposes if signature validation passes.
-	if req.IdTokenHint != "" {
-		if p.keyStore == nil {
-			return nil, protocol.ErrInvalidRequest().WithDescription("id_token_hint provided but IdTokenHintVerifier not configured")
-		}
-
-		v := &protocol.IDTokenHintVerifier{
-			Issuer:    shared.IssuerFromContext(ctx),
-			KeyStore:  p.keyStore,
-			Offset:    p.offset,
-			MaxAgeIAT: p.maxAgeIAT,
-			MaxAge:    p.maxAge,
-		}
-		claims, err := protocol.VerifyIDTokenHint(ctx, req.IdTokenHint, v)
-		if err != nil {
-			var expired *protocol.IDTokenHintExpiredError
-			if !errors.As(err, &expired) {
-				return nil, protocol.ErrInvalidRequest().WithDescription("invalid id_token_hint").WithParent(err)
+	// Redirect to the post-logout URI or show a logout confirmation page
+	if session.RedirectURI != "" {
+		redirectURI := session.RedirectURI
+		// Append state to the redirect URI per OIDC Session Management §5.
+		if session.State != "" {
+			u, err := url.Parse(redirectURI)
+			if err == nil {
+				q := u.Query()
+				q.Set("state", session.State)
+				u.RawQuery = q.Encode()
+				redirectURI = u.String()
 			}
 		}
-
-		if claims != nil {
-			session.UserID = claims.Subject
-			session.ClientID = claims.ClientID
-			session.IDTokenHintClaims = claims
-		}
+		http.Redirect(w, r, redirectURI, http.StatusFound)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_ = logoutTmpl.Execute(w, map[string]string{
+			"Title":   "Logged Out",
+			"Heading": "You have been logged out",
+			"Message": "",
+		})
 	}
-
-	// Validate requested client_id binding.
-	if req.ClientID != "" {
-		if session.ClientID != "" && req.ClientID != session.ClientID {
-			return nil, protocol.ErrInvalidRequest().WithDescription("client_id does not match id_token_hint aud")
-		}
-		session.ClientID = req.ClientID
-	}
-
-	// Validate post_logout_redirect_uri against client configuration.
-	if req.PostLogoutRedirectURI != "" && session.ClientID != "" {
-		if p.clientStore != nil {
-			client, err := p.clientStore.GetClientByClientID(ctx, session.ClientID)
-			if err != nil {
-				return nil, protocol.ErrInvalidRequest().WithDescription("invalid client_id").WithParent(err)
-			}
-			session.RedirectURI = validatePostLogoutRedirectURI(client, req.PostLogoutRedirectURI)
-		} else {
-			session.RedirectURI = req.PostLogoutRedirectURI
-		}
-	}
-
-	if req.State != "" {
-		// State will be included in the redirect
-	}
-
-	return session, nil
-}
-
-// validatePostLogoutRedirectURI checks if the given URI is valid for the client.
-// Returns the validated URI or empty string if validation fails.
-func validatePostLogoutRedirectURI(client storm.Client, uri string) string {
-	type postLogoutRedirectURIsProvider interface {
-		PostLogoutRedirectURIs() []string
-	}
-	if p, ok := client.(postLogoutRedirectURIsProvider); ok {
-		for _, u := range p.PostLogoutRedirectURIs() {
-			if u == uri {
-				return uri
-			}
-		}
-	}
-	return ""
 }
