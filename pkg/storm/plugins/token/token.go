@@ -626,6 +626,9 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 		if amr := authReq.GetAMR(); len(amr) > 0 {
 			claims["amr"] = amr
 		}
+		if sid := authReq.GetSID(); sid != "" {
+			claims["sid"] = sid
+		}
 	}
 	// Merge extra claims from auth request (e.g. claims.id_token requested values).
 	// Standard claims set above take precedence and cannot be overridden.

@@ -71,7 +71,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	if session.InvalidRedirectURI {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
-		_ = logoutTmpl.Execute(w, map[string]string{
+		_ = p.logoutTmpl.Execute(w, map[string]string{
 			"Title":   "Logout Error",
 			"Heading": "Invalid post_logout_redirect_uri",
 			"Message": "The provided post_logout_redirect_uri is not registered with this client.",
@@ -83,6 +83,15 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	if err := p.store.TerminateSession(r.Context(), session.UserID, session.ClientID); err != nil {
 		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error terminating session"), nil)
 		return
+	}
+
+	// Trigger post-logout hook (e.g., back-channel logout, audit logging).
+	if p.logoutHook != nil {
+		sid := ""
+		if session.IDTokenHintClaims != nil {
+			sid = session.IDTokenHintClaims.SessionID
+		}
+		p.logoutHook.PostLogout(r.Context(), session.UserID, session.ClientID, sid)
 	}
 
 	// Redirect to the post-logout URI or show a logout confirmation page
@@ -102,7 +111,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_ = logoutTmpl.Execute(w, map[string]string{
+		_ = p.logoutTmpl.Execute(w, map[string]string{
 			"Title":   "Logged Out",
 			"Heading": "You have been logged out",
 			"Message": "",

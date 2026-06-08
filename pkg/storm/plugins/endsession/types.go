@@ -1,6 +1,7 @@
 package endsession
 
 import (
+	"context"
 	_ "embed"
 	"html/template"
 	"time"
@@ -14,6 +15,20 @@ var logoutHtmlTemplate string
 
 var logoutTmpl = template.Must(template.New("logout").Parse(logoutHtmlTemplate))
 
+// LogoutHook is called after a session is terminated.
+// Implementations can use this to trigger back-channel logout,
+// audit logging, or other post-logout actions.
+type LogoutHook interface {
+	PostLogout(ctx context.Context, userID, clientID, sid string)
+}
+
+// LogoutHookFunc is a convenience adapter for LogoutHook.
+type LogoutHookFunc func(ctx context.Context, userID, clientID, sid string)
+
+func (f LogoutHookFunc) PostLogout(ctx context.Context, userID, clientID, sid string) {
+	f(ctx, userID, clientID, sid)
+}
+
 // Plugin implements the OIDC End Session endpoint.
 type Plugin struct {
 	store            storm.SessionStore
@@ -24,6 +39,8 @@ type Plugin struct {
 	maxAgeIAT        time.Duration
 	maxAge           time.Duration
 	decoder          *protocol.Decoder
+	logoutHook       LogoutHook
+	logoutTmpl       *template.Template
 }
 
 // Config holds the dependencies for the EndSession plugin.
@@ -42,6 +59,13 @@ type Config struct {
 	// Set to 0 to disable auth_time max_age checking.
 	MaxAge  time.Duration
 	Decoder *protocol.Decoder
+	// LogoutHook is called after a session is terminated.
+	// Use this to trigger back-channel logout, audit logging, etc.
+	LogoutHook LogoutHook
+	// LogoutTemplate overrides the default logout HTML template.
+	// The template receives a map with "Title", "Heading", and "Message" keys.
+	// If nil, the embedded default template is used.
+	LogoutTemplate *template.Template
 }
 
 // New creates a new EndSession plugin from a PluginContext.
@@ -52,12 +76,13 @@ func New(ctx *storm.PluginContext) *Plugin {
 		keyStore:         ctx.Storage.(storm.KeyStore),
 		defaultLogoutURI: "/",
 		decoder:          ctx.Decoder,
+		logoutTmpl:       logoutTmpl,
 	}
 }
 
 // NewWithConfig creates a new EndSession plugin with explicit config.
 func NewWithConfig(cfg Config) *Plugin {
-	return &Plugin{
+	p := &Plugin{
 		store:            cfg.Store,
 		clientStore:      cfg.ClientStore,
 		keyStore:         cfg.KeyStore,
@@ -66,5 +91,11 @@ func NewWithConfig(cfg Config) *Plugin {
 		maxAgeIAT:        cfg.MaxAgeIAT,
 		maxAge:           cfg.MaxAge,
 		decoder:          cfg.Decoder,
+		logoutHook:       cfg.LogoutHook,
+		logoutTmpl:       logoutTmpl,
 	}
+	if cfg.LogoutTemplate != nil {
+		p.logoutTmpl = cfg.LogoutTemplate
+	}
+	return p
 }

@@ -117,7 +117,7 @@ type AuthStore interface {
 // instead of redirecting to the login UI, ensuring the auth_time
 // claim reflects the original authentication time.
 type AutoCompleteAuthRequest interface {
-	CompleteAuthRequest(ctx context.Context, id string, subject string, authTime time.Time) error
+	CompleteAuthRequest(ctx context.Context, id string, subject string, authTime time.Time, sid string) error
 }
 
 // CodeReuseDetector is an optional interface that storage can implement
@@ -150,6 +150,7 @@ type AuthRequest interface {
 	GetState() string
 	GetSubject() string
 	GetClaims() *protocol.ClaimsRequest
+	GetSID() string
 	Done() bool
 }
 

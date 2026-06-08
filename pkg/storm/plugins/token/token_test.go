@@ -53,6 +53,7 @@ type fakeAuthRequest struct {
 	acr           string
 	amr           []string
 	audience      []string
+	sid           string
 	extraClaims   map[string]any
 	claims        *protocol.ClaimsRequest
 }
@@ -72,6 +73,7 @@ func (r *fakeAuthRequest) GetScopes() []string                       { return r.
 func (r *fakeAuthRequest) GetState() string                          { return "" }
 func (r *fakeAuthRequest) GetSubject() string                        { return r.subject }
 func (r *fakeAuthRequest) GetClaims() *protocol.ClaimsRequest        { return r.claims }
+func (r *fakeAuthRequest) GetSID() string                            { return r.sid }
 func (r *fakeAuthRequest) Done() bool                                { return false }
 func (r *fakeAuthRequest) ExtraIDTokenClaims() map[string]any        { return r.extraClaims }
 

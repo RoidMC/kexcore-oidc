@@ -53,8 +53,8 @@ type Storage struct {
 	tokens        map[string]*Token
 	refreshTokens map[string]*RefreshToken
 
-	// sessions tracks which users have authenticated (subject → auth_time).
-	sessions map[string]time.Time
+	// sessions tracks which users have authenticated (subject → session info).
+	sessions map[string]*sessionInfo
 
 	// clientSessions tracks which clients have active sessions for a subject.
 	// Used by BackChannelStore.ClientsForSession to find RPs to notify on logout.
@@ -273,7 +273,7 @@ func NewStorage(userStore UserStore, algorithms []string) *Storage {
 		usedCodes:          make(map[string]string),
 		tokens:             make(map[string]*Token),
 		refreshTokens:      make(map[string]*RefreshToken),
-		sessions:           make(map[string]time.Time),
+		sessions:           make(map[string]*sessionInfo),
 		clientSessions:     make(map[string]map[string]*clientSession),
 		registrationTokens: make(map[string]string),
 		registrations:      make(map[string]*storm.ClientRegistration),

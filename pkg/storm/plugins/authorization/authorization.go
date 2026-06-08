@@ -70,7 +70,7 @@ var formPostTmpl = template.Must(template.New("form_post").Parse(formPostHtmlTem
 // to populate the auth_time claim in ID tokens, ensuring consistency
 // across multiple token issuances for the same session.
 type SessionProvider interface {
-	GetSession(ctx context.Context, r *http.Request, clientID string) (subject string, authTime time.Time, ok bool)
+	GetSession(ctx context.Context, r *http.Request, clientID string) (subject string, authTime time.Time, sid string, ok bool)
 }
 
 // Config holds the dependencies for the Authorization plugin.
@@ -327,7 +327,7 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 				protocol.ErrLoginRequired().WithDescription("prompt=none but no session provider configured"))
 			return
 		}
-		subject, authTime, ok := p.sessionProvider.GetSession(r.Context(), r, authReq.ClientID)
+		subject, authTime, sid, ok := p.sessionProvider.GetSession(r.Context(), r, authReq.ClientID)
 		if !ok {
 			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.ErrLoginRequired().WithDescription("user is not logged in"))
@@ -349,7 +349,7 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 				protocol.DefaultToServerError(err, "unable to save auth request"))
 			return
 		}
-		if err := completer.CompleteAuthRequest(r.Context(), req.GetID(), subject, authTime); err != nil {
+		if err := completer.CompleteAuthRequest(r.Context(), req.GetID(), subject, authTime, sid); err != nil {
 			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.DefaultToServerError(err, "unable to complete auth request"))
 			return
@@ -369,7 +369,7 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// is within the max_age window, skip re-authentication and
 	// auto-complete with the original auth_time.
 	if authReq.MaxAge != nil && p.sessionProvider != nil {
-		subject, authTime, ok := p.sessionProvider.GetSession(r.Context(), r, authReq.ClientID)
+		subject, authTime, sid, ok := p.sessionProvider.GetSession(r.Context(), r, authReq.ClientID)
 		if ok {
 			elapsed := time.Since(authTime)
 			if elapsed <= time.Duration(*authReq.MaxAge)*time.Second {
@@ -385,7 +385,7 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 						protocol.DefaultToServerError(err, "unable to save auth request"))
 					return
 				}
-				if err := completer.CompleteAuthRequest(r.Context(), req.GetID(), subject, authTime); err != nil {
+				if err := completer.CompleteAuthRequest(r.Context(), req.GetID(), subject, authTime, sid); err != nil {
 					writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 						protocol.DefaultToServerError(err, "unable to complete auth request"))
 					return

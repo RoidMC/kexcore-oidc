@@ -19,6 +19,12 @@ type clientSession struct {
 	sid      string
 }
 
+// sessionInfo holds the authentication time and session ID for an active session.
+type sessionInfo struct {
+	authTime time.Time
+	sid      string
+}
+
 // =================================================================
 // storm.SessionStore
 // =================================================================
@@ -105,23 +111,23 @@ func (s *Storage) ClientsForSession(_ context.Context, sub, sid string) ([]storm
 
 // GetSession implements authorization.SessionProvider.
 // It checks whether the given subject has an active session and
-// returns the original authentication time.
-func (s *Storage) GetSession(_ context.Context, _ *http.Request, _ string) (string, time.Time, bool) {
+// returns the original authentication time and session ID.
+func (s *Storage) GetSession(_ context.Context, _ *http.Request, _ string) (string, time.Time, string, bool) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	for subj, authTime := range s.sessions {
-		if !authTime.IsZero() {
-			return subj, authTime, true
+	for subj, info := range s.sessions {
+		if !info.authTime.IsZero() {
+			return subj, info.authTime, info.sid, true
 		}
 	}
-	return "", time.Time{}, false
+	return "", time.Time{}, "", false
 }
 
 // CreateSession records a subject as having an active session.
-func (s *Storage) CreateSession(subject string, authTime time.Time) {
+func (s *Storage) CreateSession(subject string, authTime time.Time, sid string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	s.sessions[subject] = authTime
+	s.sessions[subject] = &sessionInfo{authTime: authTime, sid: sid}
 }
 
 // =================================================================
@@ -145,7 +151,7 @@ func (s *Storage) CheckUsernamePassword(username, password, id string) error {
 		if len(request.ACRValues) > 0 {
 			request.acr = request.ACRValues[0]
 		}
-		s.sessions[user.ID] = request.authTime
+		s.sessions[user.ID] = &sessionInfo{authTime: request.authTime, sid: request.sessionID}
 		return nil
 	}
 	return fmt.Errorf("invalid username or password")
@@ -155,7 +161,7 @@ func (s *Storage) CheckUsernamePassword(username, password, id string) error {
 // It marks an auth request as done with the given subject and
 // the original authentication time, without going through the
 // login UI. Used for prompt=none with active sessions.
-func (s *Storage) CompleteAuthRequest(_ context.Context, id string, subject string, authTime time.Time) error {
+func (s *Storage) CompleteAuthRequest(_ context.Context, id string, subject string, authTime time.Time, sid string) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -169,6 +175,7 @@ func (s *Storage) CompleteAuthRequest(_ context.Context, id string, subject stri
 	request.UserID = subject
 	request.done = true
 	request.authTime = authTime
+	request.sessionID = sid
 	if len(request.ACRValues) > 0 {
 		request.acr = request.ACRValues[0]
 	}

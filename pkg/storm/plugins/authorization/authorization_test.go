@@ -688,6 +688,7 @@ func (r *fakeAuthRequest) GetScopes() []string                       { return r.
 func (r *fakeAuthRequest) GetState() string                          { return r.state }
 func (r *fakeAuthRequest) GetSubject() string                        { return r.subject }
 func (r *fakeAuthRequest) GetClaims() *protocol.ClaimsRequest        { return nil }
+func (r *fakeAuthRequest) GetSID() string                            { return "" }
 func (r *fakeAuthRequest) Done() bool                                { return false }
 
 // ExtraIDTokenClaims implements IDTokenClaimsExtender when extraClaims is non-nil.
@@ -1166,14 +1167,16 @@ type fakeAutoCompleteAuthStore struct {
 	completedID    string
 	completedSubj  string
 	completedTime  time.Time
+	completedSID   string
 	completeCalled bool
 }
 
-func (s *fakeAutoCompleteAuthStore) CompleteAuthRequest(_ context.Context, id string, subject string, authTime time.Time) error {
+func (s *fakeAutoCompleteAuthStore) CompleteAuthRequest(_ context.Context, id string, subject string, authTime time.Time, sid string) error {
 	s.completeCalled = true
 	s.completedID = id
 	s.completedSubj = subject
 	s.completedTime = authTime
+	s.completedSID = sid
 	return nil
 }
 
@@ -1181,11 +1184,12 @@ func (s *fakeAutoCompleteAuthStore) CompleteAuthRequest(_ context.Context, id st
 type fakeSessionProvider struct {
 	subject  string
 	authTime time.Time
+	sid      string
 	ok       bool
 }
 
-func (s *fakeSessionProvider) GetSession(_ context.Context, _ *http.Request, _ string) (string, time.Time, bool) {
-	return s.subject, s.authTime, s.ok
+func (s *fakeSessionProvider) GetSession(_ context.Context, _ *http.Request, _ string) (string, time.Time, string, bool) {
+	return s.subject, s.authTime, s.sid, s.ok
 }
 
 func TestPromptNone_AutoComplete_Success(t *testing.T) {
@@ -1243,7 +1247,7 @@ func TestPromptNone_AutoCompleteProviderCalled(t *testing.T) {
 	assert.True(t, ok, "authStore should implement AutoCompleteAuthRequest")
 
 	// Verify session provider returns correct values
-	subj, at, ok := p.sessionProvider.GetSession(context.Background(), nil, "client-1")
+	subj, at, _, ok := p.sessionProvider.GetSession(context.Background(), nil, "client-1")
 	assert.True(t, ok)
 	assert.Equal(t, "user-123", subj)
 	assert.Equal(t, authTime.Unix(), at.Unix())
@@ -1297,7 +1301,7 @@ func TestCompleteAuthRequest_DuplicateProtection(t *testing.T) {
 	// Verify that the interface contract is correct
 	// The actual duplicate protection is in the storage implementation
 	store := &fakeAutoCompleteAuthStore{}
-	err := store.CompleteAuthRequest(context.Background(), "test-id", "user-1", time.Now())
+	err := store.CompleteAuthRequest(context.Background(), "test-id", "user-1", time.Now(), "sid-123")
 	assert.NoError(t, err)
 	assert.True(t, store.completeCalled)
 	assert.Equal(t, "test-id", store.completedID)
@@ -1312,7 +1316,7 @@ func TestSessionProvider_ReturnsAuthTime(t *testing.T) {
 		ok:       true,
 	}
 
-	subject, at, ok := provider.GetSession(context.Background(), nil, "client-1")
+	subject, at, _, ok := provider.GetSession(context.Background(), nil, "client-1")
 	assert.True(t, ok)
 	assert.Equal(t, "user-456", subject)
 	assert.Equal(t, authTime, at)
@@ -1321,7 +1325,7 @@ func TestSessionProvider_ReturnsAuthTime(t *testing.T) {
 func TestSessionProvider_NoSession(t *testing.T) {
 	provider := &fakeSessionProvider{ok: false}
 
-	_, _, ok := provider.GetSession(context.Background(), nil, "client-1")
+	_, _, _, ok := provider.GetSession(context.Background(), nil, "client-1")
 	assert.False(t, ok)
 }
 
@@ -1346,7 +1350,7 @@ func TestMaxAge_AutoComplete_WithinWindow(t *testing.T) {
 	assert.True(t, ok, "authStore should implement AutoCompleteAuthRequest")
 
 	// Verify session provider returns correct values
-	subj, at, ok := p.sessionProvider.GetSession(context.Background(), nil, "client-1")
+	subj, at, _, ok := p.sessionProvider.GetSession(context.Background(), nil, "client-1")
 	assert.True(t, ok)
 	assert.Equal(t, "user-123", subj)
 
@@ -1374,7 +1378,7 @@ func TestMaxAge_AutoComplete_OutsideWindow(t *testing.T) {
 		authTime: authTime,
 		ok:       true,
 	}
-	subj, _, ok := provider.GetSession(context.Background(), nil, "client-1")
+	subj, _, _, ok := provider.GetSession(context.Background(), nil, "client-1")
 	assert.True(t, ok)
 	assert.Equal(t, "user-123", subj)
 }

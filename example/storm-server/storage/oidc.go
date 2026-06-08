@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/text/language"
 
+	"github.com/google/uuid"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 )
@@ -98,7 +99,7 @@ func (a *AuthRequest) Done() bool                             { return a.done }
 func (a *AuthRequest) ExtraIDTokenClaims() map[string]any {
 	return a.extraIDTokenClaims
 }
-func (a *AuthRequest) GetSessionID() string { return a.sessionID }
+func (a *AuthRequest) GetSID() string { return a.sessionID }
 
 func PromptToInternal(oidcPrompt protocol.SpaceDelimitedArray) []string {
 	prompts := make([]string, 0, len(oidcPrompt))
@@ -145,6 +146,7 @@ func authRequestToInternal(authReq *protocol.AuthRequest, userID string, user *U
 		ACRValues:          authReq.ACRValues,
 		Claims:             authReq.Claims,
 		extraIDTokenClaims: buildIDTokenClaims(authReq.Claims, user),
+		sessionID:          uuid.NewString(),
 	}
 }
 
