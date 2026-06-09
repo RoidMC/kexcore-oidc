@@ -5,6 +5,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
 // --- optional client interfaces ---
@@ -25,12 +26,7 @@ type RedirectURIClient interface {
 }
 
 // RedirectURIGlobClient is optionally implemented by clients that need
-// glob/wildcard redirect URI matching. See [doublestar.Match] for glob
-// interpretation.
-//
-// Note: globbing is not permitted by the OIDC standard and can have
-// security implications. It is advised to only use this in rare cases
-// such as development mode.
+// glob/wildcard redirect URI matching.
 type RedirectURIGlobClient interface {
 	storm.Client
 	RedirectURIGlobs() []string
@@ -44,12 +40,13 @@ type ApplicationTypeClient interface {
 }
 
 // ApplicationType defines the type of OAuth 2.0 / OIDC client.
-type ApplicationType int
+type ApplicationType = int
 
+// Application type constants (re-exported from shared package).
 const (
-	ApplicationTypeWeb       ApplicationType = iota // web
-	ApplicationTypeUserAgent                        // user_agent
-	ApplicationTypeNative                           // native
+	ApplicationTypeWeb       = shared.ApplicationTypeWeb       // web
+	ApplicationTypeUserAgent = shared.ApplicationTypeUserAgent // user_agent
+	ApplicationTypeNative    = shared.ApplicationTypeNative    // native
 )
 
 // DevModeClient is optionally implemented by clients that enable

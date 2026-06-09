@@ -82,6 +82,8 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 	slices.Sort(authSigningAlgs)
 
 	// Token/response signing: non-asymmetric only (from KeyStore)
+	// Request Object signing: same as OP signing (asymmetric only).
+	// HS algorithms are for client_secret_jwt auth, not OP-signed objects.
 	cfg.IDTokenSigningAlgValuesSupported = signingAlgs
 	cfg.UserinfoSigningAlgValuesSupported = signingAlgs
 	cfg.RequestObjectSigningAlgValuesSupported = signingAlgs

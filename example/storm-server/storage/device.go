@@ -21,6 +21,7 @@ type deviceAuth struct {
 	clientID   string
 	deviceCode string
 	userCode   string
+	subject    string
 	expires    time.Time
 	scopes     []string
 	done       bool
@@ -29,23 +30,22 @@ type deviceAuth struct {
 
 type DeviceAuthStore struct {
 	lock    sync.Mutex
-	entries map[string]*deviceAuth
-}
-
-func (s *Storage) DeviceAuthStore() *DeviceAuthStore {
-	return &DeviceAuthStore{entries: make(map[string]*deviceAuth)}
+	entries map[string]*deviceAuth // deviceCode -> entry
+	byCode  map[string]*deviceAuth // userCode -> entry
 }
 
 func (d *DeviceAuthStore) StoreDeviceAuthorization(_ context.Context, clientID, deviceCode, userCode string, expires time.Time, scopes []string) error {
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	d.entries[deviceCode] = &deviceAuth{
+	entry := &deviceAuth{
 		clientID:   clientID,
 		deviceCode: deviceCode,
 		userCode:   userCode,
 		expires:    expires,
 		scopes:     scopes,
 	}
+	d.entries[deviceCode] = entry
+	d.byCode[userCode] = entry
 	return nil
 }
 
@@ -57,10 +57,55 @@ func (d *DeviceAuthStore) GetDeviceAuthorizationState(_ context.Context, _, devi
 		return nil, fmt.Errorf("device authorization not found")
 	}
 	return &storm.DeviceAuthorizationState{
-		ClientID: entry.clientID,
-		Scopes:   entry.scopes,
-		Done:     entry.done,
-		Denied:   entry.denied,
-		Expires:  entry.expires,
+		DeviceCode: entry.deviceCode,
+		ClientID:   entry.clientID,
+		UserCode:   entry.userCode,
+		Subject:    entry.subject,
+		Scopes:     entry.scopes,
+		Done:       entry.done,
+		Denied:     entry.denied,
+		Expires:    entry.expires,
 	}, nil
+}
+
+func (d *DeviceAuthStore) GetDeviceAuthorizationByUserCode(_ context.Context, userCode string) (*storm.DeviceAuthorizationState, error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	entry, ok := d.byCode[userCode]
+	if !ok {
+		return nil, fmt.Errorf("device authorization not found")
+	}
+	return &storm.DeviceAuthorizationState{
+		DeviceCode: entry.deviceCode,
+		ClientID:   entry.clientID,
+		UserCode:   entry.userCode,
+		Subject:    entry.subject,
+		Scopes:     entry.scopes,
+		Done:       entry.done,
+		Denied:     entry.denied,
+		Expires:    entry.expires,
+	}, nil
+}
+
+func (d *DeviceAuthStore) ApproveDeviceAuthorization(_ context.Context, userCode, subject string) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	entry, ok := d.byCode[userCode]
+	if !ok {
+		return fmt.Errorf("device authorization not found")
+	}
+	entry.done = true
+	entry.subject = subject
+	return nil
+}
+
+func (d *DeviceAuthStore) DenyDeviceAuthorization(_ context.Context, userCode string) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	entry, ok := d.byCode[userCode]
+	if !ok {
+		return fmt.Errorf("device authorization not found")
+	}
+	entry.denied = true
+	return nil
 }

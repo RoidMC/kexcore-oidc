@@ -7,7 +7,10 @@ package storage
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
+
+	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
@@ -35,9 +38,42 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 		for _, gt := range req.GrantTypes {
 			grantTypes = append(grantTypes, protocol.GrantType(gt))
 		}
+		// Per OIDC Core, authorization_code grant implies refresh_token support.
+		hasCode := slices.Contains(grantTypes, protocol.GrantTypeCode)
+		hasRefresh := slices.Contains(grantTypes, protocol.GrantTypeRefreshToken)
+		if hasCode && !hasRefresh {
+			grantTypes = append(grantTypes, protocol.GrantTypeRefreshToken)
+		}
 	} else {
 		grantTypes = []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken}
 	}
+	// Parse encryption key from jwks field if present.
+	// Per OIDC Core §10.1, match by kid (if specified in request) and use=enc.
+	// Note: jwks_uri is not resolved here; the DCR plugin layer should fetch
+	// and merge into jwks before calling CreateClient.
+	var encKey interface{}
+	if len(req.JWKS) > 0 {
+		set, err := jwk.Parse(req.JWKS)
+		if err == nil {
+			targetAlg := req.IDTokenEncryptedResponseAlg
+			for i := range set.Len() {
+				key, _ := set.Key(i)
+				// Filter by use=enc if present
+				if ku, ok := key.KeyUsage(); ok && ku != "" && ku != "enc" {
+					continue
+				}
+				// Filter by alg if specified
+				if targetAlg != "" {
+					if ka, ok := key.Algorithm(); !ok || ka.String() != targetAlg {
+						continue
+					}
+				}
+				encKey = key
+				break
+			}
+		}
+	}
+
 	client := &Client{
 		id:                     clientID,
 		secret:                 clientSecret,
@@ -48,27 +84,38 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 		grantTypes:             grantTypes,
 		postLogoutRedirectURIs: req.PostLogoutRedirectURIs,
 		backChannelLogoutURI:   req.BackChannelLogoutURI,
+		idTokenEncryptionAlg:   req.IDTokenEncryptedResponseAlg,
+		idTokenEncryptionEnc:   req.IDTokenEncryptedResponseEnc,
+		clientEncryptionKey:    encKey,
 	}
 	s.clients[clientID] = client
 
+	// Build grant_types list from the actual (possibly augmented) grantTypes slice
+	grantTypesStr := make([]string, len(grantTypes))
+	for i, gt := range grantTypes {
+		grantTypesStr[i] = string(gt)
+	}
+
 	reg := &storm.ClientRegistration{
-		ClientID:                clientID,
-		ClientSecret:            clientSecret,
-		RegistrationAccessToken: accessToken,
-		RegistrationClientURI:   uri,
-		ClientIDIssuedAt:        time.Now().Unix(),
-		ClientSecretExpiresAt:   0,
-		ApplicationType:         req.ApplicationType,
-		ClientName:              req.ClientName,
-		RedirectURIs:            req.RedirectURIs,
-		ResponseTypes:           req.ResponseTypes,
-		GrantTypes:              req.GrantTypes,
-		TokenEndpointAuthMethod: req.TokenEndpointAuthMethod,
-		Scope:                   req.Scope,
-		JWKSURI:                 req.JWKSURI,
-		JWKS:                    req.JWKS,
-		PostLogoutRedirectURIs:  req.PostLogoutRedirectURIs,
-		BackChannelLogoutURI:    req.BackChannelLogoutURI,
+		ClientID:                    clientID,
+		ClientSecret:                clientSecret,
+		RegistrationAccessToken:     accessToken,
+		RegistrationClientURI:       uri,
+		ClientIDIssuedAt:            time.Now().Unix(),
+		ClientSecretExpiresAt:       0,
+		ApplicationType:             req.ApplicationType,
+		ClientName:                  req.ClientName,
+		RedirectURIs:                req.RedirectURIs,
+		ResponseTypes:               req.ResponseTypes,
+		GrantTypes:                  grantTypesStr,
+		TokenEndpointAuthMethod:     req.TokenEndpointAuthMethod,
+		Scope:                       req.Scope,
+		JWKSURI:                     req.JWKSURI,
+		JWKS:                        req.JWKS,
+		PostLogoutRedirectURIs:      req.PostLogoutRedirectURIs,
+		BackChannelLogoutURI:        req.BackChannelLogoutURI,
+		IDTokenEncryptedResponseAlg: req.IDTokenEncryptedResponseAlg,
+		IDTokenEncryptedResponseEnc: req.IDTokenEncryptedResponseEnc,
 	}
 
 	// Store registration data for later lookup

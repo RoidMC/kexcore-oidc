@@ -18,7 +18,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -397,7 +396,7 @@ func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 
 	_ = teStore.CreateTokenExchangeRequest(r.Context(), teReq)
 
-	accessToken, _, _, validity, err := p.createAccessToken(r.Context(), teReq, client)
+	accessToken, _, _, validity, err := p.createAccessToken(r.Context(), teReq, client, false)
 	if err != nil {
 		tokenError(w, r, protocol.ErrServerError().WithParent(err))
 		return
@@ -569,7 +568,7 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 	// Apply pairwise subject transformation if applicable
 	request = p.applyPairwise(request, client)
 
-	accessToken, tokenID, refreshToken, validity, err := p.createAccessToken(ctx, request, client)
+	accessToken, tokenID, refreshToken, validity, err := p.createAccessToken(ctx, request, client, issueRefresh)
 	if err != nil {
 		return nil, "", err
 	}
@@ -675,21 +674,13 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 }
 
 // createAccessToken creates an access token, optionally with a refresh token.
-func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenRequest, client storm.Client) (encryptedToken string, tokenID string, refreshToken string, validity time.Duration, err error) {
-	// Refresh token 应当在以下条件同时满足时颁发：
-	//   1. response_type 包含 "code"（authorization code grant 或 hybrid flow），
-	//      因为只有 code flow 才会走到 token 端点换取令牌，才能颁发 refresh_token；
-	//      implicit flow 的 token 直接从授权端点返回，不在 token 端点颁发。
-	//   2. client 声明了 refresh_token grant type（OIDC Core §11 规定
-	//      offline_access scope 必须颁发 refresh_token，但即使没有 offline_access，
-	//      OP 也允许自主决定颁发——只要 client 有此 grant type 即可）。
-	needsRefresh := false
-	if authReq, ok := request.(storm.AuthRequest); ok {
-		rt := authReq.GetResponseType()
-		hasCode := strings.Contains(string(rt), string(protocol.ResponseTypeCode))
-		needsRefresh = hasCode &&
-			validateGrantType(client, protocol.GrantTypeRefreshToken)
-	}
+func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenRequest, client storm.Client, issueRefresh bool) (encryptedToken string, tokenID string, refreshToken string, validity time.Duration, err error) {
+	// Refresh token 颁发条件：
+	//   1. 调用方要求颁发（issueRefresh=true）
+	//   2. client 声明了 refresh_token grant type
+	// 对于 authorization_code grant：只有 response_type 含 code 时 issueRefresh 才为 true
+	// 对于 refresh_token grant：始终为 true（刷新后必须返回新 refresh_token）
+	needsRefresh := issueRefresh && validateGrantType(client, protocol.GrantTypeRefreshToken)
 
 	var expiration time.Time
 	if needsRefresh {
@@ -714,7 +705,7 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 
 // createClientCredentialsResponse creates a token response for client_credentials grant.
 func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenRequest storm.TokenRequest, client storm.Client) (*protocol.AccessTokenResponse, error) {
-	accessToken, _, _, validity, err := p.createAccessToken(ctx, tokenRequest, client)
+	accessToken, _, _, validity, err := p.createAccessToken(ctx, tokenRequest, client, false)
 	if err != nil {
 		return nil, err
 	}

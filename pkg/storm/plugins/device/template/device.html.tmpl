@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head><meta charset="UTF-8" /><title>Device Authorization</title></head>
+<body>
+<h1>Device Authorization</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<p>A device is requesting authorization. Code: <strong>{{.UserCode}}</strong></p>
+{{if .ClientID}}<p>Client: {{.ClientID}}</p>{{end}}
+{{if .Scopes}}<p>Scopes: {{.Scopes}}</p>{{end}}
+<form method="POST" action="/device">
+<input type="hidden" name="user_code" value="{{.UserCode}}">
+<button type="submit" name="action" value="approve">Approve</button>
+<button type="submit" name="action" value="deny">Deny</button>
+</form>
+</body>
+</html>

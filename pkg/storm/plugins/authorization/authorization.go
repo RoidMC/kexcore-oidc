@@ -289,13 +289,15 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate id_token_hint (OIDC Core §3.1.2.2)
+	var idTokenHintSubject string
 	if authReq.IDTokenHint != "" {
-		_, _, err := p.validateIDTokenHint(r.Context(), authReq.IDTokenHint)
+		subject, _, err := p.validateIDTokenHint(r.Context(), authReq.IDTokenHint)
 		if err != nil {
 			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.ErrInvalidRequest().WithDescription("invalid id_token_hint").WithParent(err))
 			return
 		}
+		idTokenHintSubject = subject
 		// Note: subject matching is delegated to the login UI, which can
 		// re-parse the id_token_hint to extract the sub claim and compare
 		// it against the authenticated user. Per OIDC Core §3.1.2.2, if
@@ -321,13 +323,59 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// If no session exists, return login_required immediately.
 	// If a session exists, auto-complete the auth request with the
 	// original auth_time and skip the login UI entirely.
+	//
+	// Session resolution order:
+	//   1. session cookie (browser clients)
+	//   2. id_token_hint subject lookup (API / conformance-test clients)
+	//   3. login_hint subject lookup
+	//
+	// If both cookie and id_token_hint are present, the subjects MUST match;
+	// otherwise the request is treated as unauthenticated per OIDC Core §3.1.2.2.
 	if slices.Contains(authReq.Prompt, protocol.PromptNone) {
 		if p.sessionProvider == nil {
 			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.ErrLoginRequired().WithDescription("prompt=none but no session provider configured"))
 			return
 		}
-		subject, authTime, sid, ok := p.sessionProvider.GetSession(r.Context(), r, authReq.ClientID)
+
+		cookieSubject, cookieAuthTime, cookieSID, cookieOK := p.sessionProvider.GetSession(r.Context(), r, authReq.ClientID)
+
+		// Resolve subject from hints when cookie is absent or to cross-check.
+		var hintSubject string
+		if idTokenHintSubject != "" {
+			hintSubject = idTokenHintSubject
+		} else if authReq.LoginHint != "" {
+			hintSubject = authReq.LoginHint
+		}
+
+		var subject string
+		var authTime time.Time
+		var sid string
+		var ok bool
+
+		switch {
+		case cookieOK && hintSubject != "":
+			// Both cookie and hint present — subjects must match.
+			if cookieSubject == hintSubject {
+				subject, authTime, sid, ok = cookieSubject, cookieAuthTime, cookieSID, true
+			} else {
+				writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
+					protocol.ErrLoginRequired().WithDescription("session subject does not match id_token_hint"))
+				return
+			}
+		case cookieOK:
+			subject, authTime, sid, ok = cookieSubject, cookieAuthTime, cookieSID, true
+		case hintSubject != "":
+			if sessionBySubject, canLookup := p.sessionProvider.(interface {
+				GetSessionBySubject(subject string) (authTime time.Time, sid string, ok bool)
+			}); canLookup {
+				authTime, sid, ok = sessionBySubject.GetSessionBySubject(hintSubject)
+				if ok {
+					subject = hintSubject
+				}
+			}
+		}
+
 		if !ok {
 			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.ErrLoginRequired().WithDescription("user is not logged in"))
@@ -577,7 +625,7 @@ func writeFormPostResponse(w http.ResponseWriter, redirectURI string, response *
 
 // --- parsing ---
 
-// parseAuthorizeRequest, validateAuthRequestParams, validateRedirectURI,
+// parseAuthorizeRequest, validateAuthRequestParamsExceptRedirectURI, validateRedirectURI,
 // validateRedirectURIWeb, validateRedirectURINative, checkRedirectURIAgainstClient,
 // validatePrompt, validateScopes, validateResponseType, createAuthRequestCode,
 // validatePKCE, validateNonce, writeFormPostError,

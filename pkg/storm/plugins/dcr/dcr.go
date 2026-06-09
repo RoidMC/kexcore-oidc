@@ -9,9 +9,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
@@ -68,6 +70,35 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding request body").WithParent(err), nil)
 		return
+	}
+
+	// If jwks_uri specified but jwks not, fetch the key set and populate jwks
+	// so the storage layer can parse encryption keys from it.
+	if len(req.JWKS) == 0 && req.JWKSURI != "" {
+		resp, err := http.Get(req.JWKSURI)
+		if err != nil {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("failed to fetch jwks_uri: %s", req.JWKSURI).WithParent(err), nil)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("failed to fetch jwks_uri: HTTP %d", resp.StatusCode), nil)
+			return
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("failed to read jwks_uri response").WithParent(err), nil)
+			return
+		}
+		if !json.Valid(body) {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("jwks_uri response is not valid JSON"), nil)
+			return
+		}
+		if _, err := jwk.Parse(body); err != nil {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("jwks_uri response is not a valid JWK Set").WithParent(err), nil)
+			return
+		}
+		req.JWKS = body
 	}
 
 	// Generate client credentials

@@ -17,24 +17,8 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
-// Plugin implements the Pushed Authorization Requests endpoint.
-type Plugin struct {
-	store       storm.PARStore
-	clientStore storm.ClientStore
-	decoder     *protocol.Decoder
-	lifetime    time.Duration
-}
-
-// Config holds the dependencies for the PAR plugin.
-type Config struct {
-	Store       storm.PARStore
-	ClientStore storm.ClientStore
-	Decoder     *protocol.Decoder
-	Lifetime    time.Duration
-}
-
-// New creates a new PAR plugin.
-func New(cfg Config) *Plugin {
+// NewWithConfig creates a new PAR plugin with explicit config.
+func NewWithConfig(cfg Config) *Plugin {
 	if cfg.Lifetime == 0 {
 		cfg.Lifetime = 5 * time.Minute
 	}
@@ -46,12 +30,34 @@ func New(cfg Config) *Plugin {
 	}
 }
 
+// init self-registers the PAR plugin in the global registry.
+func init() {
+	storm.RegisterPlugin("par", storm.PriorityPAR, func(ctx *storm.PluginContext) storm.Plugin {
+		parStore, ok := ctx.Storage.(storm.PARStore)
+		if !ok {
+			return nil
+		}
+		return NewWithConfig(Config{
+			Store:       parStore,
+			ClientStore: ctx.Storage.(storm.ClientStore),
+			Decoder:     ctx.Decoder,
+		})
+	})
+}
+
+// Category returns CategoryStandard — PAR is optional.
+func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
+
+// Requires returns the storage dependencies.
+func (p *Plugin) Requires() []string {
+	return []string{"PARStore", "ClientStore"}
+}
+
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "par" }
 
-// Register installs the POST /par route.
-//
 // OAuth 2.0 standard endpoint: POST /par (RFC 9126 §3)
+// Register installs the POST /par route.
 func (p *Plugin) Register(r chi.Router) {
 	r.Post("/par", p.handle)
 }
@@ -67,10 +73,12 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientID := r.Form.Get("client_id")
-	clientSecret := r.Form.Get("client_secret")
+	clientID, clientSecret, err := validatePARRequest(r)
+	if err != nil {
+		shared.WriteError(w, r, err, nil)
+		return
+	}
 
-	// Authenticate the client
 	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
 	if err != nil {
 		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
@@ -84,29 +92,29 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse the authorization request parameters
 	authReq := new(protocol.AuthRequest)
 	if err := p.decoder.Decode(authReq, r.Form); err != nil {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding auth request").WithParent(err), nil)
 		return
 	}
 
-	// Store the pushed authorization request
+	// RFC 9126 §3: Validate pushed authorization request parameters
+	// before storing. This provides fail-fast behavior for clients.
+	if err := shared.ValidateAuthRequestParams(client, authReq); err != nil {
+		shared.WriteError(w, r, err, nil)
+		return
+	}
+
 	requestURI, err := p.store.StorePushedAuthRequest(r.Context(), clientID, authReq, p.lifetime)
 	if err != nil {
 		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error storing pushed auth request"), nil)
 		return
 	}
 
-	issuer := shared.IssuerFromContext(r.Context())
-
 	resp := &protocol.PushedAuthResponse{
 		RequestURI: requestURI,
 		ExpiresIn:  int(p.lifetime.Seconds()),
 	}
-
-	// Set the issuer in the response if needed
-	_ = issuer
 
 	shared.JSONResponse(w, resp, http.StatusCreated)
 }

@@ -53,7 +53,8 @@ type Storage struct {
 	tokens        map[string]*Token
 	refreshTokens map[string]*RefreshToken
 
-	// sessions tracks which users have authenticated (subject → session info).
+	// sessions tracks active sessions by session ID.
+	// Key: session ID, Value: session info including subject and auth time.
 	sessions map[string]*sessionInfo
 
 	// clientSessions tracks which clients have active sessions for a subject.
@@ -65,6 +66,12 @@ type Storage struct {
 
 	// registrations stores the full registration data (clientID -> *storm.ClientRegistration).
 	registrations map[string]*storm.ClientRegistration
+
+	// deviceAuthStore handles device authorization grant (RFC 8628).
+	*DeviceAuthStore
+
+	// parStore handles pushed authorization requests (RFC 9126).
+	*PARStore
 
 	userStore UserStore
 
@@ -277,6 +284,8 @@ func NewStorage(userStore UserStore, algorithms []string) *Storage {
 		clientSessions:     make(map[string]map[string]*clientSession),
 		registrationTokens: make(map[string]string),
 		registrations:      make(map[string]*storm.ClientRegistration),
+		DeviceAuthStore:    &DeviceAuthStore{entries: make(map[string]*deviceAuth), byCode: make(map[string]*deviceAuth)},
+		PARStore:           NewPARStore(),
 		userStore:          userStore,
 		signingKeys:        signingKeys,
 		tokenTTL:           1 * time.Hour,
@@ -407,6 +416,8 @@ var (
 	_ storm.RevocationStore        = (*Storage)(nil)
 	_ storm.SessionStore           = (*Storage)(nil)
 	_ storm.BackChannelStore       = (*Storage)(nil)
+	_ storm.DeviceAuthStore        = (*Storage)(nil)
+	_ storm.PARStore               = (*Storage)(nil)
 	_ storm.ClientCredentialsStore = (*Storage)(nil)
 	_ storm.JWTProfileStore        = (*Storage)(nil)
 	_ storm.DCRStore               = (*Storage)(nil)

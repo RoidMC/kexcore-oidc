@@ -21,8 +21,10 @@ type clientSession struct {
 
 // sessionInfo holds the authentication time and session ID for an active session.
 type sessionInfo struct {
+	subject  string
 	authTime time.Time
 	sid      string
+	expiry   time.Time
 }
 
 // =================================================================
@@ -33,8 +35,14 @@ func (s *Storage) TerminateSession(_ context.Context, userID, clientID string) e
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	// Remove the user's session so prompt=none returns login_required.
-	delete(s.sessions, userID)
+	// Remove the user's sessions so prompt=none returns login_required.
+	// Since sessions are keyed by session ID, we need to find and remove
+	// all sessions belonging to this user.
+	for sid, info := range s.sessions {
+		if info.subject == userID {
+			delete(s.sessions, sid)
+		}
+	}
 
 	for id, token := range s.tokens {
 		if token.ApplicationID == clientID && token.Subject == userID {
@@ -112,22 +120,78 @@ func (s *Storage) ClientsForSession(_ context.Context, sub, sid string) ([]storm
 // GetSession implements authorization.SessionProvider.
 // It checks whether the given subject has an active session and
 // returns the original authentication time and session ID.
-func (s *Storage) GetSession(_ context.Context, _ *http.Request, _ string) (string, time.Time, string, bool) {
+// The session is identified by the "session_id" cookie in the request.
+func (s *Storage) GetSession(_ context.Context, r *http.Request, _ string) (string, time.Time, string, bool) {
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		return "", time.Time{}, "", false
+	}
+
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	for subj, info := range s.sessions {
-		if !info.authTime.IsZero() {
-			return subj, info.authTime, info.sid, true
-		}
+
+	info, ok := s.sessions[cookie.Value]
+	if !ok {
+		return "", time.Time{}, "", false
 	}
-	return "", time.Time{}, "", false
+
+	// Check if session has expired
+	if !info.expiry.IsZero() && time.Now().After(info.expiry) {
+		delete(s.sessions, cookie.Value)
+		return "", time.Time{}, "", false
+	}
+
+	return info.subject, info.authTime, info.sid, true
 }
 
 // CreateSession records a subject as having an active session.
+// The session is stored with the session ID as the key.
+// Default session expiry is 24 hours.
 func (s *Storage) CreateSession(subject string, authTime time.Time, sid string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	s.sessions[subject] = &sessionInfo{authTime: authTime, sid: sid}
+	s.sessions[sid] = &sessionInfo{
+		subject:  subject,
+		authTime: authTime,
+		sid:      sid,
+		expiry:   time.Now().Add(24 * time.Hour),
+	}
+}
+
+// GetSessionBySubject returns the most recent active session for a given subject.
+// Used by prompt=none when the caller provides id_token_hint or login_hint
+// instead of a session cookie.
+func (s *Storage) GetSessionBySubject(subject string) (authTime time.Time, sid string, ok bool) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	var found *sessionInfo
+	for _, info := range s.sessions {
+		if info.subject != subject {
+			continue
+		}
+		if !info.expiry.IsZero() && time.Now().After(info.expiry) {
+			continue
+		}
+		if found == nil || info.authTime.After(found.authTime) {
+			found = info
+		}
+	}
+	if found == nil {
+		return time.Time{}, "", false
+	}
+	return found.authTime, found.sid, true
+}
+
+// GetAuthRequestSessionID returns the session ID for the given auth request.
+// Used by the login handler to set the session_id cookie after successful login.
+func (s *Storage) GetAuthRequestSessionID(id string) string {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if req, ok := s.authRequests[id]; ok {
+		return req.sessionID
+	}
+	return ""
 }
 
 // =================================================================
@@ -151,7 +215,13 @@ func (s *Storage) CheckUsernamePassword(username, password, id string) error {
 		if len(request.ACRValues) > 0 {
 			request.acr = request.ACRValues[0]
 		}
-		s.sessions[user.ID] = &sessionInfo{authTime: request.authTime, sid: request.sessionID}
+		// Store session with session ID as key (not subject)
+		s.sessions[request.sessionID] = &sessionInfo{
+			subject:  user.ID,
+			authTime: request.authTime,
+			sid:      request.sessionID,
+			expiry:   time.Now().Add(24 * time.Hour),
+		}
 		return nil
 	}
 	return fmt.Errorf("invalid username or password")

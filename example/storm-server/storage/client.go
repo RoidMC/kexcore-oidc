@@ -141,7 +141,7 @@ func DeviceClient(id, secret string) *Client {
 		authMethod:    protocol.AuthMethodBasic,
 		loginURLFn:    defaultLoginURL,
 		responseTypes: []protocol.ResponseType{protocol.ResponseTypeCode},
-		grantTypes:    []protocol.GrantType{protocol.GrantTypeDeviceCode},
+		grantTypes:    []protocol.GrantType{protocol.GrantTypeDeviceCode, protocol.GrantTypeRefreshToken},
 	}
 }
 
@@ -165,5 +165,15 @@ func EncryptedWebClientWithKey(id, secret string, alg, enc string, key interface
 func BackChannelLogoutWebClient(id, secret, uri string, redirectURIs ...string) *Client {
 	c := WebClient(id, secret, redirectURIs...)
 	c.backChannelLogoutURI = uri
+	return c
+}
+
+// OIDFEncryptedTestClient creates an OIDF test client with ID token encryption
+// using jwk.Key (which includes kid in the JWE header per OIDCC-10.2.1).
+func OIDFEncryptedTestClient(id, secret string, alg, enc string, key interface{}, redirectURIs ...string) *Client {
+	c := OIDFTestClient(id, secret, redirectURIs...)
+	c.idTokenEncryptionAlg = alg
+	c.idTokenEncryptionEnc = enc
+	c.clientEncryptionKey = key
 	return c
 }
