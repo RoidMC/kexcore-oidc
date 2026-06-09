@@ -98,6 +98,11 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	token := r.Form.Get("token")
 	tokenTypeHint := r.Form.Get("token_type_hint")
 
+	if token == "" {
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("token is missing"), nil)
+		return
+	}
+
 	// Authenticate the client using the shared helper
 	client, err := p.clientAuth.AuthenticateClient(r)
 	if err != nil {
