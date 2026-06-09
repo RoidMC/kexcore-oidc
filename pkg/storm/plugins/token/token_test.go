@@ -1435,14 +1435,12 @@ func TestGetNonce_WithoutNonceProvider(t *testing.T) {
 // --- hashToken tests ---
 
 func TestHashToken_ValidAlgorithm(t *testing.T) {
-	p := newTestPlugin(t, &fakeClientStore{}, newFakeAuthStore(), newFakeTokenStore())
-	hash := p.hashToken("test-token", "ES256")
+	hash := hashToken("test-token", "ES256")
 	assert.NotEmpty(t, hash)
 }
 
 func TestHashToken_InvalidAlgorithm(t *testing.T) {
-	p := newTestPlugin(t, &fakeClientStore{}, newFakeAuthStore(), newFakeTokenStore())
-	hash := p.hashToken("test-token", "INVALID")
+	hash := hashToken("test-token", "INVALID")
 	assert.Empty(t, hash)
 }
 

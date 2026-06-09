@@ -80,6 +80,8 @@ const (
 	PriorityBackChannel   = 850
 	PriorityDevice        = 900
 	PriorityPAR           = 950
+	PriorityDPoP          = 960
+	PriorityMTLS          = 970
 	PriorityDCR           = 1000
 )
 

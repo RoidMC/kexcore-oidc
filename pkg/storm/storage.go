@@ -224,15 +224,26 @@ type SessionStore interface {
 type DeviceAuthStore interface {
 	StoreDeviceAuthorization(ctx context.Context, clientID, deviceCode, userCode string, expires time.Time, scopes []string) error
 	GetDeviceAuthorizationState(ctx context.Context, clientID, deviceCode string) (*DeviceAuthorizationState, error)
+	// GetDeviceAuthorizationByUserCode looks up a device authorization by user code.
+	// Used by the verification page (GET /device) to display authorization details.
+	GetDeviceAuthorizationByUserCode(ctx context.Context, userCode string) (*DeviceAuthorizationState, error)
+	// ApproveDeviceAuthorization marks a device authorization as approved by the end-user.
+	// subject is the authenticated user's identifier.
+	ApproveDeviceAuthorization(ctx context.Context, userCode, subject string) error
+	// DenyDeviceAuthorization marks a device authorization as denied by the end-user.
+	DenyDeviceAuthorization(ctx context.Context, userCode string) error
 }
 
 // DeviceAuthorizationState represents the current state of a device auth flow.
 type DeviceAuthorizationState struct {
-	ClientID string
-	Scopes   []string
-	Done     bool
-	Denied   bool
-	Expires  time.Time
+	DeviceCode string
+	ClientID   string
+	UserCode   string
+	Subject    string
+	Scopes     []string
+	Done       bool
+	Denied     bool
+	Expires    time.Time
 }
 
 // ClientCredentialsStore is required by the Client Credentials grant.
@@ -275,52 +286,56 @@ type DCRStore interface {
 
 // RegistrationRequest represents a dynamic client registration request.
 type RegistrationRequest struct {
-	ApplicationType         string          `json:"application_type"`
-	ClientName              string          `json:"client_name"`
-	ClientURI               string          `json:"client_uri"`
-	LogoURI                 string          `json:"logo_uri"`
-	RedirectURIs            []string        `json:"redirect_uris"`
-	ResponseTypes           []string        `json:"response_types"`
-	GrantTypes              []string        `json:"grant_types"`
-	TokenEndpointAuthMethod string          `json:"token_endpoint_auth_method"`
-	Scope                   string          `json:"scope"`
-	Contacts                []string        `json:"contacts"`
-	JWKSURI                 string          `json:"jwks_uri"`
-	JWKS                    json.RawMessage `json:"jwks"`
-	PolicyURI               string          `json:"policy_uri"`
-	TOSURI                  string          `json:"tos_uri"`
-	SoftwareID              string          `json:"software_id"`
-	SoftwareVersion         string          `json:"software_version"`
-	PostLogoutRedirectURIs  []string        `json:"post_logout_redirect_uris"`
-	BackChannelLogoutURI    string          `json:"backchannel_logout_uri"`
+	ApplicationType             string          `json:"application_type"`
+	ClientName                  string          `json:"client_name"`
+	ClientURI                   string          `json:"client_uri"`
+	LogoURI                     string          `json:"logo_uri"`
+	RedirectURIs                []string        `json:"redirect_uris"`
+	ResponseTypes               []string        `json:"response_types"`
+	GrantTypes                  []string        `json:"grant_types"`
+	TokenEndpointAuthMethod     string          `json:"token_endpoint_auth_method"`
+	Scope                       string          `json:"scope"`
+	Contacts                    []string        `json:"contacts"`
+	JWKSURI                     string          `json:"jwks_uri"`
+	JWKS                        json.RawMessage `json:"jwks"`
+	PolicyURI                   string          `json:"policy_uri"`
+	TOSURI                      string          `json:"tos_uri"`
+	SoftwareID                  string          `json:"software_id"`
+	SoftwareVersion             string          `json:"software_version"`
+	PostLogoutRedirectURIs      []string        `json:"post_logout_redirect_uris"`
+	BackChannelLogoutURI        string          `json:"backchannel_logout_uri"`
+	IDTokenEncryptedResponseAlg string          `json:"id_token_encrypted_response_alg,omitempty"`
+	IDTokenEncryptedResponseEnc string          `json:"id_token_encrypted_response_enc,omitempty"`
 }
 
 // ClientRegistration represents a registered client.
 type ClientRegistration struct {
-	ClientID                string          `json:"client_id"`
-	ClientSecret            string          `json:"client_secret,omitempty"`
-	RegistrationAccessToken string          `json:"registration_access_token,omitempty"`
-	RegistrationClientURI   string          `json:"registration_client_uri,omitempty"`
-	ClientIDIssuedAt        int64           `json:"client_id_issued_at"`
-	ClientSecretExpiresAt   int64           `json:"client_secret_expires_at"`
-	ApplicationType         string          `json:"application_type,omitempty"`
-	ClientName              string          `json:"client_name,omitempty"`
-	ClientURI               string          `json:"client_uri,omitempty"`
-	LogoURI                 string          `json:"logo_uri,omitempty"`
-	RedirectURIs            []string        `json:"redirect_uris"`
-	ResponseTypes           []string        `json:"response_types,omitempty"`
-	GrantTypes              []string        `json:"grant_types,omitempty"`
-	TokenEndpointAuthMethod string          `json:"token_endpoint_auth_method,omitempty"`
-	Scope                   string          `json:"scope,omitempty"`
-	Contacts                []string        `json:"contacts,omitempty"`
-	JWKSURI                 string          `json:"jwks_uri,omitempty"`
-	JWKS                    json.RawMessage `json:"jwks,omitempty"`
-	PolicyURI               string          `json:"policy_uri,omitempty"`
-	TOSURI                  string          `json:"tos_uri,omitempty"`
-	SoftwareID              string          `json:"software_id,omitempty"`
-	SoftwareVersion         string          `json:"software_version,omitempty"`
-	PostLogoutRedirectURIs  []string        `json:"post_logout_redirect_uris,omitempty"`
-	BackChannelLogoutURI    string          `json:"backchannel_logout_uri,omitempty"`
+	ClientID                    string          `json:"client_id"`
+	ClientSecret                string          `json:"client_secret,omitempty"`
+	RegistrationAccessToken     string          `json:"registration_access_token,omitempty"`
+	RegistrationClientURI       string          `json:"registration_client_uri,omitempty"`
+	ClientIDIssuedAt            int64           `json:"client_id_issued_at"`
+	ClientSecretExpiresAt       int64           `json:"client_secret_expires_at"`
+	ApplicationType             string          `json:"application_type,omitempty"`
+	ClientName                  string          `json:"client_name,omitempty"`
+	ClientURI                   string          `json:"client_uri,omitempty"`
+	LogoURI                     string          `json:"logo_uri,omitempty"`
+	RedirectURIs                []string        `json:"redirect_uris"`
+	ResponseTypes               []string        `json:"response_types,omitempty"`
+	GrantTypes                  []string        `json:"grant_types,omitempty"`
+	TokenEndpointAuthMethod     string          `json:"token_endpoint_auth_method,omitempty"`
+	Scope                       string          `json:"scope,omitempty"`
+	Contacts                    []string        `json:"contacts,omitempty"`
+	JWKSURI                     string          `json:"jwks_uri,omitempty"`
+	JWKS                        json.RawMessage `json:"jwks,omitempty"`
+	PolicyURI                   string          `json:"policy_uri,omitempty"`
+	TOSURI                      string          `json:"tos_uri,omitempty"`
+	SoftwareID                  string          `json:"software_id,omitempty"`
+	SoftwareVersion             string          `json:"software_version,omitempty"`
+	PostLogoutRedirectURIs      []string        `json:"post_logout_redirect_uris,omitempty"`
+	BackChannelLogoutURI        string          `json:"backchannel_logout_uri,omitempty"`
+	IDTokenEncryptedResponseAlg string          `json:"id_token_encrypted_response_alg,omitempty"`
+	IDTokenEncryptedResponseEnc string          `json:"id_token_encrypted_response_enc,omitempty"`
 }
 
 // BackChannelStore is required by the Back Channel Logout plugin.
@@ -332,6 +347,19 @@ type BackChannelStore interface {
 type PARStore interface {
 	StorePushedAuthRequest(ctx context.Context, clientID string, req *protocol.AuthRequest, lifetime time.Duration) (requestURI string, err error)
 	GetPushedAuthRequest(ctx context.Context, requestURI string) (*protocol.AuthRequest, error)
+}
+
+// PairwiseTransformer is an optional interface that transforms subjects
+// into pairwise identifiers (OIDC Core §8.1). If the storage implements
+// this interface, the token plugin will automatically apply pairwise
+// transformation when creating tokens for clients that require it.
+type PairwiseTransformer interface {
+	// Transform converts a real subject into a pairwise subject for a given client.
+	// The same (clientID, subject) pair must always produce the same result.
+	Transform(clientID, subject string) string
+
+	// IsPairwiseClient returns true if the client uses pairwise subject identifiers.
+	IsPairwiseClient(clientID string) bool
 }
 
 // UniCrypto provides a unified cryptographic interface for all algorithm families.

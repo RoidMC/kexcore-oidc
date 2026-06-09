@@ -13,18 +13,6 @@ import (
 	"encoding/base64"
 )
 
-// SubjectTransformer transforms a real subject into a pairwise subject.
-type SubjectTransformer struct {
-	salt []byte
-}
-
-// NewSubjectTransformer creates a new pairwise subject transformer.
-// The salt should be a stable secret (e.g., derived from sector_identifier_uri
-// or a server configuration).
-func NewSubjectTransformer(salt []byte) *SubjectTransformer {
-	return &SubjectTransformer{salt: salt}
-}
-
 // Transform converts a real subject into a pairwise subject for a given client.
 // The same (clientID, subject) pair always produces the same pairwise subject.
 func (t *SubjectTransformer) Transform(clientID, subject string) string {

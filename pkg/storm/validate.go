@@ -73,6 +73,9 @@ func (e *Engine) storageImplements(ifaceName string) bool {
 	case "BackChannelStore":
 		_, ok := e.storage.(BackChannelStore)
 		return ok
+	case "PARStore":
+		_, ok := e.storage.(PARStore)
+		return ok
 	case "ClientStore", "KeyStore":
 		return true // always satisfied by Storage interface
 	default:
