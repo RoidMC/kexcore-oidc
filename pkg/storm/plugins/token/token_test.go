@@ -1403,7 +1403,7 @@ func TestTokenResponse_CacheControlHeaders(t *testing.T) {
 		responseType: protocol.ResponseTypeCode,
 	}
 	ts := newFakeTokenStore()
-	p := newTestPluginNoKeyStore(t, cs, as, ts)
+	p := newTestPlugin(t, cs, as, ts)
 
 	form := newTokenForm("authorization_code", url.Values{
 		"code":         {"cache-test"},
