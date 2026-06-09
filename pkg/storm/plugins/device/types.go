@@ -17,8 +17,6 @@ var deviceTmpl = template.Must(template.New("device").Parse(deviceHtmlTemplate))
 type Plugin struct {
 	store       storm.DeviceAuthStore
 	clientStore storm.ClientStore
-	tokenStore  storm.TokenStore
-	keyStore    storm.KeyStore
 	lifetime    time.Duration
 	interval    time.Duration
 	deviceTmpl  *template.Template
@@ -28,8 +26,6 @@ type Plugin struct {
 type Config struct {
 	Store       storm.DeviceAuthStore
 	ClientStore storm.ClientStore
-	TokenStore  storm.TokenStore
-	KeyStore    storm.KeyStore
 	// Lifetime is the device code expiration duration (default: 15m).
 	Lifetime time.Duration
 	// Interval is the minimum polling interval in seconds (default: 5).
@@ -51,8 +47,6 @@ func NewWithConfig(cfg Config) *Plugin {
 	p := &Plugin{
 		store:       cfg.Store,
 		clientStore: cfg.ClientStore,
-		tokenStore:  cfg.TokenStore,
-		keyStore:    cfg.KeyStore,
 		lifetime:    cfg.Lifetime,
 		interval:    cfg.Interval,
 		deviceTmpl:  deviceTmpl,

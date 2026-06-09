@@ -161,6 +161,13 @@ type TokenStore interface {
 	TokenRequestByRefreshToken(ctx context.Context, refreshToken string) (RefreshTokenRequest, error)
 }
 
+// TokenCNFStore is an optional extension of TokenStore that supports
+// storing the cnf (confirmation) claim for certificate-bound or
+// DPoP-bound access tokens (RFC 8705 §3.1, RFC 9449 §7.1).
+type TokenCNFStore interface {
+	SetTokenCNF(ctx context.Context, tokenID string, cnf map[string]any) error
+}
+
 // TokenRequest is the common interface for all token creation requests.
 type TokenRequest interface {
 	GetSubject() string

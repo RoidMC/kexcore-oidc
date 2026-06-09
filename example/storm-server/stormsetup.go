@@ -27,10 +27,14 @@ import (
 
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/authorization"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/backchannel"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/device"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/discovery"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/dpop"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/endsession"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/introspection"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/keys"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/mtls"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/par"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/revocation"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/token"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/userinfo"
@@ -85,7 +89,7 @@ func defaultDiscoveryConfig(signingAlgorithms []string) storm.DiscoveryConfig {
 			"code_challenge_methods_supported":                 []string{"S256"},
 			"scopes_supported":                                 []string{"openid", "profile", "email", "phone", "address", "offline_access"},
 			"claims_supported":                                 []string{"sub", "aud", "exp", "iat", "iss", "auth_time", "nonce", "acr", "amr", "c_hash", "at_hash", "name", "given_name", "family_name", "preferred_username", "email", "email_verified", "phone_number", "phone_number_verified", "locale"},
-			"subject_types_supported":                          []string{"public"},
+			"subject_types_supported":                          []string{"public", "pairwise"},
 			"id_token_signing_alg_values_supported":            signingAlgorithms,
 			"token_endpoint_auth_signing_alg_values_supported": signingAlgorithms,
 			"introspection_endpoint_auth_methods_supported":    []string{"client_secret_basic", "client_secret_post", "private_key_jwt"},
@@ -182,6 +186,15 @@ func loginHandler(stor *storage.Storage, issuer string) http.Handler {
 			renderLogin(w, id, issuer, err.Error())
 			return
 		}
+		// Set session_id cookie after successful login
+		http.SetCookie(w, &http.Cookie{
+			Name:     "session_id",
+			Value:    stor.GetAuthRequestSessionID(id),
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
 		http.Redirect(w, r, strings.TrimRight(issuer, "/")+"/authorize/callback?id="+id, http.StatusFound)
 	})
 	return r

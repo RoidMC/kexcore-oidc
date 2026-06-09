@@ -25,6 +25,8 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/dpop"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/mtls"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
@@ -573,14 +575,30 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 		return nil, "", err
 	}
 
+	// Resolve cnf claim from mTLS certificate and/or DPoP proof
+	cnf := p.resolveCNF(ctx)
+
+	// Store cnf in token metadata if storage supports it
+	if cnf != nil {
+		if cnfStore, ok := p.tokenStore.(storm.TokenCNFStore); ok {
+			_ = cnfStore.SetTokenCNF(ctx, tokenID, cnf)
+		}
+	}
+
 	idToken, err := p.createIDToken(ctx, request, client, accessToken, code)
 	if err != nil {
 		return nil, "", err
 	}
 
+	// Determine token_type: DPoP-bound tokens use "DPoP" (RFC 9449 §7.1)
+	tokenType := protocol.BearerToken
+	if dpop.DPoPFromContext(ctx) != nil {
+		tokenType = dpop.AccessTokenType
+	}
+
 	resp := &protocol.AccessTokenResponse{
 		AccessToken: accessToken,
-		TokenType:   protocol.BearerToken,
+		TokenType:   tokenType,
 		ExpiresIn:   uint64(validity.Seconds()),
 		Scope:       request.GetScopes(),
 		IDToken:     idToken,
@@ -590,6 +608,30 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 	}
 
 	return resp, tokenID, nil
+}
+
+// resolveCNF builds the cnf (confirmation) claim from mTLS and DPoP context.
+// mTLS: cnf.x5t#S256 (RFC 8705 §3.1)
+// DPoP: cnf.jkt (RFC 9449 §7.1)
+// If both are present, both keys are included.
+func (p *Plugin) resolveCNF(ctx context.Context) map[string]any {
+	var cnf map[string]any
+
+	if cert := mtls.ClientCertFromContext(ctx); cert != nil {
+		if cnf == nil {
+			cnf = make(map[string]any)
+		}
+		cnf["x5t#S256"] = mtls.CertThumbprint(cert)
+	}
+
+	if proof := dpop.DPoPFromContext(ctx); proof != nil {
+		if cnf == nil {
+			cnf = make(map[string]any)
+		}
+		cnf["jkt"] = proof.JKT
+	}
+
+	return cnf
 }
 
 // createIDToken creates and signs an ID token.

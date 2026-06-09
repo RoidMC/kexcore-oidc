@@ -93,6 +93,19 @@ func (s *Storage) TokenRequestByRefreshToken(_ context.Context, refreshToken str
 	return &RefreshTokenRequest{token}, nil
 }
 
+// SetTokenCNF stores the cnf (confirmation) claim for a token (RFC 8705 / RFC 9449).
+func (s *Storage) SetTokenCNF(_ context.Context, tokenID string, cnf map[string]any) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	token, ok := s.tokens[tokenID]
+	if !ok {
+		return fmt.Errorf("token not found: %s", tokenID)
+	}
+	token.CNF = cnf
+	return nil
+}
+
 func (s *Storage) createRefreshToken(_ context.Context, accessTokenID string, req storm.TokenRequest) (string, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()

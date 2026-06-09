@@ -24,20 +24,25 @@ func CNFClaim(cert *x509.Certificate) map[string]any {
 
 // AuthenticateClient authenticates the client using the TLS client
 // certificate per RFC 8705 Section 3.
+// It checks that a certificate was presented and extracts the client ID.
+// Certificate chain validation is the responsibility of the TLS layer
+// (for tls_client_auth) or should be done separately via ValidateCertChain
+// (for self_signed_tls_client_auth).
 func AuthenticateClient(r *http.Request, clientID string) (bool, error) {
 	cert := ClientCertFromContext(r.Context())
 	if cert == nil {
 		return false, nil
 	}
 
-	// Verify basic certificate validity
-	if err := cert.CheckSignatureFrom(cert); err != nil {
-		// Not self-signed - check against system roots
-		pool := x509.NewCertPool()
-		pool.AddCert(cert)
-		if _, err := cert.Verify(x509.VerifyOptions{Roots: pool}); err != nil {
-			return false, nil
-		}
+	// For tls_client_auth: the TLS layer already validated the chain.
+	// For self_signed_tls_client_auth: the caller should use ValidateCertChain.
+	// Here we just verify the certificate has the expected client ID.
+	extractedID := ExtractClientIDFromCert(cert)
+	if extractedID == "" {
+		return false, nil
+	}
+	if extractedID != clientID {
+		return false, nil
 	}
 
 	return true, nil

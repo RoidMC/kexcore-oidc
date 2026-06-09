@@ -50,6 +50,12 @@ func (s *Storage) SetIntrospectionFromToken(_ context.Context, resp *protocol.In
 		resp.Expiration = protocol.FromTime(token.Expiration)
 		resp.NotBefore = protocol.FromTime(token.Expiration)
 	}
+	if token.CNF != nil {
+		if resp.Claims == nil {
+			resp.Claims = make(map[string]any)
+		}
+		resp.Claims["cnf"] = token.CNF
+	}
 
 	return nil
 }

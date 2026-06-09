@@ -20,6 +20,7 @@ type Token struct {
 	Expiration     time.Time
 	Scopes         []string
 	Claims         *protocol.ClaimsRequest
+	CNF            map[string]any
 }
 
 type RefreshToken struct {

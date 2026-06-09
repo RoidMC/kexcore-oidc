@@ -23,6 +23,7 @@ func generateRandomCode(length int) string {
 
 // generateRandomUserCode generates a user-friendly code using consonants only
 // (to avoid spelling words). RFC 8628 §6.1 recommends this format.
+// Returns a code in XXXX-XXXX format for readability.
 func generateRandomUserCode(length int) string {
 	const charset = "BCDFGHJKLMNPQRSTVWXYZ"
 	b := make([]byte, length)
@@ -32,7 +33,13 @@ func generateRandomUserCode(length int) string {
 	for i := range b {
 		b[i] = charset[b[i]%byte(len(charset))]
 	}
-	return string(b)
+	code := string(b)
+	// Insert hyphen in the middle for readability (RFC 8628 §6.1)
+	if len(code) >= 4 {
+		mid := len(code) / 2
+		code = code[:mid] + "-" + code[mid:]
+	}
+	return code
 }
 
 // validateDeviceAuthorizationRequest validates the incoming device authorization request.
@@ -69,4 +76,21 @@ func formatScopes(scopes []string) string {
 		return ""
 	}
 	return strings.Join(scopes, " ")
+}
+
+// validateDeviceGrantType checks if the client has the device_code grant type.
+func validateDeviceGrantType(client storm.Client) bool {
+	type grantTypesProvider interface {
+		GrantTypes() []protocol.GrantType
+	}
+	if gp, ok := client.(grantTypesProvider); ok {
+		for _, gt := range gp.GrantTypes() {
+			if gt == protocol.GrantTypeDeviceCode {
+				return true
+			}
+		}
+		return false
+	}
+	// Without GrantTypes(), allow by default
+	return true
 }

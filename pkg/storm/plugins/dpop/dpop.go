@@ -23,13 +23,17 @@ import (
 type Plugin struct {
 	mu         sync.Mutex
 	usedNonces map[string]time.Time // jti replay detection
+	stopCh     chan struct{}        // signals cleanup goroutine to stop
 }
 
 // NewWithConfig creates a new DPoP plugin.
 func NewWithConfig() *Plugin {
-	return &Plugin{
+	p := &Plugin{
 		usedNonces: make(map[string]time.Time),
+		stopCh:     make(chan struct{}),
 	}
+	go p.cleanupLoop()
+	return p
 }
 
 // init self-registers the DPoP plugin in the global registry.
@@ -107,7 +111,6 @@ func (p *Plugin) Middleware(next http.Handler) http.Handler {
 }
 
 // CleanupNonceCache removes expired nonces from the cache.
-// Should be called periodically to prevent memory leaks.
 func (p *Plugin) CleanupNonceCache() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -116,5 +119,28 @@ func (p *Plugin) CleanupNonceCache() {
 		if t.Before(cutoff) {
 			delete(p.usedNonces, jti)
 		}
+	}
+}
+
+// cleanupLoop runs periodic nonce cache cleanup.
+func (p *Plugin) cleanupLoop() {
+	ticker := time.NewTicker(MaxProofAge)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			p.CleanupNonceCache()
+		case <-p.stopCh:
+			return
+		}
+	}
+}
+
+// Stop terminates the background cleanup goroutine.
+func (p *Plugin) Stop() {
+	select {
+	case <-p.stopCh:
+	default:
+		close(p.stopCh)
 	}
 }

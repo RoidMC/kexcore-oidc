@@ -29,19 +29,9 @@ func init() {
 		if !ok {
 			return nil
 		}
-		ts, ok := ctx.Storage.(storm.TokenStore)
-		if !ok {
-			return nil
-		}
-		ks, ok := ctx.Storage.(storm.KeyStore)
-		if !ok {
-			return nil
-		}
 		return &Plugin{
 			store:       das,
 			clientStore: cs,
-			tokenStore:  ts,
-			keyStore:    ks,
 			lifetime:    15 * time.Minute,
 			interval:    5 * time.Second,
 			deviceTmpl:  deviceTmpl,
@@ -91,6 +81,12 @@ func (p *Plugin) handleDeviceAuthorization(w http.ResponseWriter, r *http.Reques
 	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
 	if err != nil {
 		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
+		return
+	}
+
+	// RFC 8628 §3.1: client must have device_code grant type
+	if !validateDeviceGrantType(client) {
+		shared.WriteError(w, r, protocol.ErrUnauthorizedClient().WithDescription("client missing grant_type device_code"), nil)
 		return
 	}
 
