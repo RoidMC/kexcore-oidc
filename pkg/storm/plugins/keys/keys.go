@@ -1,4 +1,4 @@
-// Package keys implements the JWKS (JSON Web Key Set) endpoint plugin.
+﻿// Package keys implements the JWKS (JSON Web Key Set) endpoint plugin.
 package keys
 
 import (
@@ -75,26 +75,37 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		for i, c := range certs {
 			x5c[i] = base64.StdEncoding.EncodeToString(c)
 		}
-		x5cJSON, _ := json.Marshal(x5c)
 
 		// x5t: SHA-1 thumbprint per RFC 7517 §4.8
-		x5t := ""
+		var x5t string
 		if len(certs[0]) > 0 {
 			h := sha1.Sum(certs[0])
 			x5t = base64.RawURLEncoding.EncodeToString(h[:])
 		}
-		x5tJSON, _ := json.Marshal(x5t)
 
 		// x5t#S256: SHA-256 thumbprint per RFC 7517 §4.9
-		x5tS256 := ""
+		var x5tS256 string
 		if len(certs[0]) > 0 {
 			h := sha256.Sum256(certs[0])
 			x5tS256 = base64.RawURLEncoding.EncodeToString(h[:])
 		}
-		x5tS256JSON, _ := json.Marshal(x5tS256)
 
-		// Inject into raw JSON by replacing the closing }
-		return append(raw[:len(raw)-1], []byte(`,"x5c":`+string(x5cJSON)+`,"x5t":`+string(x5tJSON)+`,"x5t#S256":`+string(x5tS256JSON)+`}`)...)
+		// Unmarshal into map, inject fields, re-marshal — avoids manual JSON string concatenation.
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return raw
+		}
+		x5cJSON, _ := json.Marshal(x5c)
+		x5tJSON, _ := json.Marshal(x5t)
+		x5tS256JSON, _ := json.Marshal(x5tS256)
+		m["x5c"] = x5cJSON
+		m["x5t"] = x5tJSON
+		m["x5t#S256"] = x5tS256JSON
+		out, err := json.Marshal(m)
+		if err != nil {
+			return raw
+		}
+		return out
 	}
 
 	// Build the JWKS response, handling both standard and GM/T keys.
