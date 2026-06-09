@@ -477,7 +477,12 @@ func isHybridResponseType(rt protocol.ResponseType) bool {
 // usesFragmentDefault returns true if the response type defaults to fragment
 // response mode per OAuth 2.0 Multiple Response Types §2.1.
 // Pure code flow uses query; all others (implicit + hybrid) use fragment.
+// When response_type is empty (missing/invalid), default to query per
+// RFC 6749 §4.1.2.1 — the error response should use the code flow default.
 func usesFragmentDefault(rt protocol.ResponseType) bool {
+	if rt == "" {
+		return false
+	}
 	return rt != protocol.ResponseTypeCode
 }
 

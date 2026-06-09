@@ -580,7 +580,7 @@ func writeFormPostResponse(w http.ResponseWriter, redirectURI string, response *
 // parseAuthorizeRequest, validateAuthRequestParams, validateRedirectURI,
 // validateRedirectURIWeb, validateRedirectURINative, checkRedirectURIAgainstClient,
 // validatePrompt, validateScopes, validateResponseType, createAuthRequestCode,
-// validatePKCE, validateNonce, writeAuthError, writeFormPostError,
+// validatePKCE, validateNonce, writeFormPostError,
 // isImplicitResponseType, copyRequestObjectToAuthRequest, and algorithmToJWA
 // are defined in util.go.
 
