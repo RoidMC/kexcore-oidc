@@ -389,6 +389,12 @@ type DeviceAuthStore interface {
 	ApproveDeviceAuthorization(ctx context.Context, userCode, subject string) error
 	// DenyDeviceAuthorization marks a device authorization as denied by the end-user.
 	DenyDeviceAuthorization(ctx context.Context, userCode string) error
+	// UpdateDeviceAuthorizationPoll records the last poll time for slow_down detection.
+	// Called by the token endpoint when a client polls for the device code grant.
+	UpdateDeviceAuthorizationPoll(ctx context.Context, clientID, deviceCode string, lastPoll time.Time) error
+	// UpdateDeviceAuthorizationInterval increases the polling interval for slow_down compliance.
+	// RFC 8628 §3.4: the interval MUST be increased by 5 seconds on slow_down.
+	UpdateDeviceAuthorizationInterval(ctx context.Context, clientID, deviceCode string, increment int) error
 }
 
 // DeviceAuthorizationState represents the current state of a device auth flow.
@@ -401,6 +407,8 @@ type DeviceAuthorizationState struct {
 	Done       bool
 	Denied     bool
 	Expires    time.Time
+	LastPoll   time.Time // last poll time for slow_down detection (RFC 8628 §3.4)
+	Interval   int       // current polling interval in seconds
 }
 
 // ClientCredentialsStore is required by the Client Credentials grant.

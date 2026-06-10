@@ -35,13 +35,14 @@ import (
 // New creates a new Token plugin from a PluginContext.
 func New(ctx *storm.PluginContext) *Plugin {
 	p := &Plugin{
-		tokenStore:  ctx.Storage.(storm.TokenStore),
-		clientStore: ctx.Storage.(storm.ClientStore),
-		authStore:   ctx.Storage.(storm.AuthStore),
-		crypto:      ctx.Crypto,
-		keyStore:    ctx.Storage.(storm.KeyStore),
-		decoder:     ctx.Decoder,
-		logger:      slog.Default(),
+		tokenStore:         ctx.Storage.(storm.TokenStore),
+		clientStore:        ctx.Storage.(storm.ClientStore),
+		authStore:          ctx.Storage.(storm.AuthStore),
+		crypto:             ctx.Crypto,
+		keyStore:           ctx.Storage.(storm.KeyStore),
+		decoder:            ctx.Decoder,
+		logger:             slog.Default(),
+		devicePollInterval: 5 * time.Second,
 	}
 	if das, ok := ctx.Storage.(storm.DeviceAuthStore); ok {
 		p.deviceAuthStore = das
@@ -57,14 +58,18 @@ func NewWithConfig(cfg Config) *Plugin {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	if cfg.DevicePollInterval == 0 {
+		cfg.DevicePollInterval = 5 * time.Second
+	}
 	return &Plugin{
-		tokenStore:  cfg.TokenStore,
-		clientStore: cfg.ClientStore,
-		authStore:   cfg.AuthStore,
-		crypto:      cfg.Crypto,
-		keyStore:    cfg.KeyStore,
-		decoder:     cfg.Decoder,
-		logger:      cfg.Logger,
+		tokenStore:         cfg.TokenStore,
+		clientStore:        cfg.ClientStore,
+		authStore:          cfg.AuthStore,
+		crypto:             cfg.Crypto,
+		keyStore:           cfg.KeyStore,
+		decoder:            cfg.Decoder,
+		logger:             cfg.Logger,
+		devicePollInterval: cfg.DevicePollInterval,
 	}
 }
 
@@ -625,6 +630,31 @@ func (p *Plugin) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 	if state.Denied {
 		tokenError(w, r, protocol.ErrAccessDenied())
 		return
+	}
+
+	// RFC 8628 §3.4: slow_down detection
+	// If the client polls faster than the interval, return slow_down error
+	// and increase the interval by 5 seconds for all subsequent requests.
+	now := time.Now()
+	interval := p.devicePollInterval
+	if state.Interval > 0 {
+		interval = time.Duration(state.Interval) * time.Second
+	}
+
+	if !state.LastPoll.IsZero() {
+		elapsed := now.Sub(state.LastPoll)
+		if elapsed < interval {
+			if err := p.deviceAuthStore.UpdateDeviceAuthorizationInterval(r.Context(), clientID, deviceCode, 5); err != nil {
+				p.logger.Warn("failed to increase device poll interval", "error", err)
+			}
+			tokenError(w, r, protocol.ErrSlowDown())
+			return
+		}
+	}
+
+	// Update last poll time
+	if err := p.deviceAuthStore.UpdateDeviceAuthorizationPoll(r.Context(), clientID, deviceCode, now); err != nil {
+		p.logger.Warn("failed to update device poll time", "error", err)
 	}
 
 	if !state.Done {

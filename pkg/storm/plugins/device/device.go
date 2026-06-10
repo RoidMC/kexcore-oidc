@@ -98,7 +98,11 @@ func (p *Plugin) handleDeviceAuthorization(w http.ResponseWriter, r *http.Reques
 	}
 
 	deviceCode := generateRandomCode(32)
-	userCode := generateRandomUserCode(8)
+	userCode, err := generateUniqueUserCode(r.Context(), p.store, p.maxUserCodeRetries)
+	if err != nil {
+		shared.WriteError(w, r, err, nil)
+		return
+	}
 
 	if err := p.store.StoreDeviceAuthorization(r.Context(), clientID, deviceCode, userCode, time.Now().Add(p.lifetime), scopes); err != nil {
 		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error storing device authorization"), nil)
@@ -122,34 +126,42 @@ func (p *Plugin) handleDeviceAuthorization(w http.ResponseWriter, r *http.Reques
 // handleDevicePage handles GET /device — the device verification page.
 // Users enter their user_code here to review and approve/deny the authorization.
 func (p *Plugin) handleDevicePage(w http.ResponseWriter, r *http.Request) {
-	userCode := r.URL.Query().Get("user_code")
+	userCode := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("user_code")))
+
+	// Generate CSRF token for the form if protection is enabled
+	var csrfToken string
+	if p.csrfHandler != nil {
+		csrfToken = generateCSRFToken()
+		p.setCSRFCookie(w, csrfToken)
+	}
+
 	if userCode == "" {
-		p.renderDevicePage(w, "", "", "", "")
+		p.renderDevicePage(w, "", "", "", "", csrfToken)
 		return
 	}
 
 	state, err := p.store.GetDeviceAuthorizationByUserCode(r.Context(), userCode)
 	if err != nil {
-		p.renderDevicePage(w, userCode, "", "", "Invalid or unknown user code.")
+		p.renderDevicePage(w, userCode, "", "", "Invalid or unknown user code.", csrfToken)
 		return
 	}
 
 	if deviceCodeExpired(state) {
-		p.renderDevicePage(w, userCode, state.ClientID, formatScopes(state.Scopes), "This code has expired.")
+		p.renderDevicePage(w, userCode, state.ClientID, formatScopes(state.Scopes), "This code has expired.", csrfToken)
 		return
 	}
 
 	if state.Done {
-		p.renderDevicePage(w, userCode, state.ClientID, formatScopes(state.Scopes), "This code has already been approved.")
+		p.renderDevicePage(w, userCode, state.ClientID, formatScopes(state.Scopes), "This code has already been approved.", csrfToken)
 		return
 	}
 
 	if state.Denied {
-		p.renderDevicePage(w, userCode, state.ClientID, formatScopes(state.Scopes), "This code has been denied.")
+		p.renderDevicePage(w, userCode, state.ClientID, formatScopes(state.Scopes), "This code has been denied.", csrfToken)
 		return
 	}
 
-	p.renderDevicePage(w, userCode, state.ClientID, formatScopes(state.Scopes), "")
+	p.renderDevicePage(w, userCode, state.ClientID, formatScopes(state.Scopes), "", csrfToken)
 }
 
 // handleDeviceApproval handles POST /device — approve or deny the device authorization.
@@ -159,9 +171,14 @@ func (p *Plugin) handleDeviceApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userCode := r.Form.Get("user_code")
+	if !p.validateCSRF(r) {
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid or missing CSRF token"), nil)
+		return
+	}
+
+	userCode := strings.ToUpper(strings.TrimSpace(r.Form.Get("user_code")))
 	action := r.Form.Get("action")
-	subject := r.Form.Get("subject")
+	subject := strings.TrimSpace(r.Form.Get("subject"))
 
 	if userCode == "" {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("user_code is required"), nil)
@@ -173,7 +190,7 @@ func (p *Plugin) handleDeviceApproval(w http.ResponseWriter, r *http.Request) {
 			shared.WriteError(w, r, protocol.DefaultToServerError(err, "error denying device authorization"), nil)
 			return
 		}
-		p.renderDevicePage(w, userCode, "", "", "Authorization denied.")
+		p.renderDevicePage(w, userCode, "", "", "Authorization denied.", "")
 		return
 	}
 
@@ -186,19 +203,20 @@ func (p *Plugin) handleDeviceApproval(w http.ResponseWriter, r *http.Request) {
 		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error approving device authorization"), nil)
 		return
 	}
-	p.renderDevicePage(w, userCode, "", "", "Authorization approved. You may close this window.")
+	p.renderDevicePage(w, userCode, "", "", "Authorization approved. You may close this window.", "")
 }
 
 // renderDevicePage renders the device verification page template.
-func (p *Plugin) renderDevicePage(w http.ResponseWriter, userCode, clientID, scopes, errMsg string) {
+func (p *Plugin) renderDevicePage(w http.ResponseWriter, userCode, clientID, scopes, errMsg, csrfToken string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if errMsg != "" && strings.Contains(errMsg, "Invalid") {
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	_ = p.deviceTmpl.Execute(w, map[string]string{
-		"UserCode": userCode,
-		"ClientID": clientID,
-		"Scopes":   scopes,
-		"Error":    errMsg,
+		"UserCode":  userCode,
+		"ClientID":  clientID,
+		"Scopes":    scopes,
+		"Error":     errMsg,
+		"CSRFToken": csrfToken,
 	})
 }

@@ -1481,3 +1481,384 @@ func TestPlugin_Contribute(t *testing.T) {
 func sharedIssuerContext(issuer string) context.Context {
 	return protocol.ContextWithIssuer(context.Background(), issuer)
 }
+
+// --- device_code grant tests (RFC 8628) ---
+
+// fakeDeviceAuthStore implements storm.DeviceAuthStore for testing.
+type fakeDeviceAuthStore struct {
+	entries map[string]*deviceAuthEntry
+}
+
+type deviceAuthEntry struct {
+	DeviceCode string
+	ClientID   string
+	UserCode   string
+	Subject    string
+	Scopes     []string
+	Done       bool
+	Denied     bool
+	Expires    time.Time
+	LastPoll   time.Time
+	Interval   int
+}
+
+func newFakeDeviceAuthStore() *fakeDeviceAuthStore {
+	return &fakeDeviceAuthStore{entries: make(map[string]*deviceAuthEntry)}
+}
+
+func (s *fakeDeviceAuthStore) StoreDeviceAuthorization(_ context.Context, clientID, deviceCode, userCode string, expires time.Time, scopes []string) error {
+	s.entries[deviceCode] = &deviceAuthEntry{
+		DeviceCode: deviceCode,
+		ClientID:   clientID,
+		UserCode:   userCode,
+		Expires:    expires,
+		Scopes:     scopes,
+		Interval:   5,
+	}
+	return nil
+}
+
+func (s *fakeDeviceAuthStore) GetDeviceAuthorizationState(_ context.Context, clientID, deviceCode string) (*storm.DeviceAuthorizationState, error) {
+	entry, ok := s.entries[deviceCode]
+	if !ok {
+		return nil, fmt.Errorf("unknown device_code")
+	}
+	if entry.ClientID != clientID {
+		return nil, fmt.Errorf("client mismatch")
+	}
+	return &storm.DeviceAuthorizationState{
+		DeviceCode: entry.DeviceCode,
+		ClientID:   entry.ClientID,
+		UserCode:   entry.UserCode,
+		Subject:    entry.Subject,
+		Scopes:     entry.Scopes,
+		Done:       entry.Done,
+		Denied:     entry.Denied,
+		Expires:    entry.Expires,
+		LastPoll:   entry.LastPoll,
+		Interval:   entry.Interval,
+	}, nil
+}
+
+func (s *fakeDeviceAuthStore) GetDeviceAuthorizationByUserCode(_ context.Context, userCode string) (*storm.DeviceAuthorizationState, error) {
+	for _, entry := range s.entries {
+		if entry.UserCode == userCode {
+			return &storm.DeviceAuthorizationState{
+				DeviceCode: entry.DeviceCode,
+				ClientID:   entry.ClientID,
+				UserCode:   entry.UserCode,
+				Subject:    entry.Subject,
+				Scopes:     entry.Scopes,
+				Done:       entry.Done,
+				Denied:     entry.Denied,
+				Expires:    entry.Expires,
+				LastPoll:   entry.LastPoll,
+				Interval:   entry.Interval,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("unknown user_code")
+}
+
+func (s *fakeDeviceAuthStore) ApproveDeviceAuthorization(_ context.Context, userCode, subject string) error {
+	for _, entry := range s.entries {
+		if entry.UserCode == userCode {
+			entry.Subject = subject
+			entry.Done = true
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown user_code")
+}
+
+func (s *fakeDeviceAuthStore) DenyDeviceAuthorization(_ context.Context, userCode string) error {
+	for _, entry := range s.entries {
+		if entry.UserCode == userCode {
+			entry.Denied = true
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown user_code")
+}
+
+func (s *fakeDeviceAuthStore) UpdateDeviceAuthorizationPoll(_ context.Context, _, deviceCode string, lastPoll time.Time) error {
+	entry, ok := s.entries[deviceCode]
+	if !ok {
+		return fmt.Errorf("unknown device_code")
+	}
+	entry.LastPoll = lastPoll
+	return nil
+}
+
+func (s *fakeDeviceAuthStore) UpdateDeviceAuthorizationInterval(_ context.Context, _, deviceCode string, increment int) error {
+	entry, ok := s.entries[deviceCode]
+	if !ok {
+		return fmt.Errorf("unknown device_code")
+	}
+	entry.Interval += increment
+	return nil
+}
+
+// newTestPluginWithDevice creates a plugin with device_auth_store support.
+func newTestPluginWithDevice(t *testing.T, clientStore *fakeClientStore, authStore *fakeAuthStore, tokenStore *fakeTokenStore, deviceStore *fakeDeviceAuthStore) *Plugin {
+	t.Helper()
+	ks := &fakeKeyStore{
+		signingKey: mustNewFakeSigningKey(t),
+	}
+	decoder := protocol.NewDecoder()
+	decoder.IgnoreUnknownKeys(true)
+	return &Plugin{
+		tokenStore:         tokenStore,
+		clientStore:        clientStore,
+		authStore:          authStore,
+		crypto:             &fakeCrypto{},
+		keyStore:           ks,
+		decoder:            decoder,
+		logger:             slog.Default(),
+		deviceAuthStore:    deviceStore,
+		devicePollInterval: 5 * time.Second,
+	}
+}
+
+func TestHandleDeviceCode_Pending(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"device-client": {id: "device-client", authMethod: protocol.AuthMethodNone, grantTypes: []protocol.GrantType{protocol.GrantTypeDeviceCode}},
+		},
+	}
+	ds := newFakeDeviceAuthStore()
+	ds.entries["device-123"] = &deviceAuthEntry{
+		DeviceCode: "device-123",
+		ClientID:   "device-client",
+		UserCode:   "ABCD-EFGH",
+		Expires:    time.Now().Add(15 * time.Minute),
+		Scopes:     []string{"openid"},
+		Interval:   5,
+	}
+	ts := newFakeTokenStore()
+	p := newTestPluginWithDevice(t, cs, newFakeAuthStore(), ts, ds)
+
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	form.Set("device_code", "device-123")
+	form.Set("client_id", "device-client")
+	r := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	p.handleDeviceCode(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	errResp := decodeError(t, w)
+	assert.Equal(t, "authorization_pending", errResp["error"])
+}
+
+func TestHandleDeviceCode_Expired(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"device-client": {id: "device-client", authMethod: protocol.AuthMethodNone, grantTypes: []protocol.GrantType{protocol.GrantTypeDeviceCode}},
+		},
+	}
+	ds := newFakeDeviceAuthStore()
+	ds.entries["device-expired"] = &deviceAuthEntry{
+		DeviceCode: "device-expired",
+		ClientID:   "device-client",
+		UserCode:   "ABCD-EFGH",
+		Expires:    time.Now().Add(-1 * time.Minute), // expired
+		Scopes:     []string{"openid"},
+		Interval:   5,
+	}
+	ts := newFakeTokenStore()
+	p := newTestPluginWithDevice(t, cs, newFakeAuthStore(), ts, ds)
+
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	form.Set("device_code", "device-expired")
+	form.Set("client_id", "device-client")
+	r := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	p.handleDeviceCode(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	errResp := decodeError(t, w)
+	assert.Equal(t, "expired_token", errResp["error"])
+}
+
+func TestHandleDeviceCode_AccessDenied(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"device-client": {id: "device-client", authMethod: protocol.AuthMethodNone, grantTypes: []protocol.GrantType{protocol.GrantTypeDeviceCode}},
+		},
+	}
+	ds := newFakeDeviceAuthStore()
+	ds.entries["device-denied"] = &deviceAuthEntry{
+		DeviceCode: "device-denied",
+		ClientID:   "device-client",
+		UserCode:   "ABCD-EFGH",
+		Expires:    time.Now().Add(15 * time.Minute),
+		Scopes:     []string{"openid"},
+		Denied:     true,
+		Interval:   5,
+	}
+	ts := newFakeTokenStore()
+	p := newTestPluginWithDevice(t, cs, newFakeAuthStore(), ts, ds)
+
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	form.Set("device_code", "device-denied")
+	form.Set("client_id", "device-client")
+	r := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	p.handleDeviceCode(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	errResp := decodeError(t, w)
+	assert.Equal(t, "access_denied", errResp["error"])
+}
+
+func TestHandleDeviceCode_SlowDown(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"device-client": {id: "device-client", authMethod: protocol.AuthMethodNone, grantTypes: []protocol.GrantType{protocol.GrantTypeDeviceCode}},
+		},
+	}
+	ds := newFakeDeviceAuthStore()
+	ds.entries["device-slow"] = &deviceAuthEntry{
+		DeviceCode: "device-slow",
+		ClientID:   "device-client",
+		UserCode:   "ABCD-EFGH",
+		Expires:    time.Now().Add(15 * time.Minute),
+		Scopes:     []string{"openid"},
+		Interval:   5,
+	}
+	ts := newFakeTokenStore()
+	p := newTestPluginWithDevice(t, cs, newFakeAuthStore(), ts, ds)
+
+	// First poll - should succeed with authorization_pending
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	form.Set("device_code", "device-slow")
+	form.Set("client_id", "device-client")
+	r := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	p.handleDeviceCode(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	errResp := decodeError(t, w)
+	assert.Equal(t, "authorization_pending", errResp["error"])
+
+	// Second poll immediately - should return slow_down
+	w = httptest.NewRecorder()
+	p.handleDeviceCode(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	errResp = decodeError(t, w)
+	assert.Equal(t, "slow_down", errResp["error"])
+
+	// Verify interval was increased by 5 seconds
+	entry := ds.entries["device-slow"]
+	assert.Equal(t, 10, entry.Interval)
+}
+
+func TestHandleDeviceCode_Success(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"device-client": {id: "device-client", authMethod: protocol.AuthMethodNone, grantTypes: []protocol.GrantType{protocol.GrantTypeDeviceCode}},
+		},
+	}
+	ds := newFakeDeviceAuthStore()
+	ds.entries["device-ok"] = &deviceAuthEntry{
+		DeviceCode: "device-ok",
+		ClientID:   "device-client",
+		UserCode:   "ABCD-EFGH",
+		Subject:    "user-123",
+		Expires:    time.Now().Add(15 * time.Minute),
+		Scopes:     []string{"openid"},
+		Done:       true, // User approved
+		Interval:   5,
+	}
+	ts := newFakeTokenStore()
+	p := newTestPluginWithDevice(t, cs, newFakeAuthStore(), ts, ds)
+
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	form.Set("device_code", "device-ok")
+	form.Set("client_id", "device-client")
+	r := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	p.handleDeviceCode(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+
+	var tokenResp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &tokenResp)
+	require.NoError(t, err)
+	assert.NotEmpty(t, tokenResp["access_token"])
+	assert.Equal(t, "Bearer", tokenResp["token_type"])
+	assert.NotEmpty(t, tokenResp["expires_in"])
+}
+
+func TestHandleDeviceCode_UnknownDeviceCode(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"device-client": {id: "device-client", authMethod: protocol.AuthMethodNone, grantTypes: []protocol.GrantType{protocol.GrantTypeDeviceCode}},
+		},
+	}
+	ds := newFakeDeviceAuthStore()
+	ts := newFakeTokenStore()
+	p := newTestPluginWithDevice(t, cs, newFakeAuthStore(), ts, ds)
+
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	form.Set("device_code", "unknown-device")
+	form.Set("client_id", "device-client")
+	r := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	p.handleDeviceCode(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	errResp := decodeError(t, w)
+	assert.Equal(t, "invalid_grant", errResp["error"])
+}
+
+func TestHandleDeviceCode_UnauthorizedClient(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"regular-client": {id: "regular-client", authMethod: protocol.AuthMethodNone, grantTypes: []protocol.GrantType{protocol.GrantTypeCode}},
+		},
+	}
+	ds := newFakeDeviceAuthStore()
+	ds.entries["device-123"] = &deviceAuthEntry{
+		DeviceCode: "device-123",
+		ClientID:   "regular-client",
+		UserCode:   "ABCD-EFGH",
+		Expires:    time.Now().Add(15 * time.Minute),
+		Scopes:     []string{"openid"},
+		Interval:   5,
+	}
+	ts := newFakeTokenStore()
+	p := newTestPluginWithDevice(t, cs, newFakeAuthStore(), ts, ds)
+
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	form.Set("device_code", "device-123")
+	form.Set("client_id", "regular-client")
+	r := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	p.handleDeviceCode(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	errResp := decodeError(t, w)
+	assert.Equal(t, "unauthorized_client", errResp["error"])
+}

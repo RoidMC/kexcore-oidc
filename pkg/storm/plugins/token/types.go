@@ -22,6 +22,7 @@ type Plugin struct {
 	keyStore            storm.KeyStore
 	decoder             *protocol.Decoder
 	logger              *slog.Logger
+	devicePollInterval  time.Duration // default polling interval for device_code grant
 }
 
 // Config holds the dependencies for the Token plugin.
@@ -33,6 +34,8 @@ type Config struct {
 	KeyStore    storm.KeyStore
 	Decoder     *protocol.Decoder
 	Logger      *slog.Logger
+	// DevicePollInterval is the default polling interval for device_code grant (default: 5s).
+	DevicePollInterval time.Duration
 }
 
 // --- internal request types ---

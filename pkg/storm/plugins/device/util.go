@@ -1,6 +1,7 @@
 package device
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
@@ -93,4 +94,56 @@ func validateDeviceGrantType(client storm.Client) bool {
 	}
 	// Without GrantTypes(), allow by default
 	return true
+
+}
+
+// generateUniqueUserCode creates a user_code and ensures it does not collide
+// with an existing one in the store. It retries up to maxRetries times.
+// Returns the generated code or an error if all retries are exhausted.
+func generateUniqueUserCode(ctx context.Context, store storm.DeviceAuthStore, maxRetries int) (string, error) {
+	for i := 0; i < maxRetries; i++ {
+		code := generateRandomUserCode(8)
+		_, err := store.GetDeviceAuthorizationByUserCode(ctx, code)
+		if err != nil {
+			// Not found = no collision, we can use it
+			return code, nil
+		}
+	}
+	return "", protocol.ErrServerError().WithDescription("unable to generate unique user_code")
+}
+
+const csrfCookieName = "device_csrf"
+
+// generateCSRFToken creates a random CSRF token.
+func generateCSRFToken() string {
+	return generateRandomCode(16)
+}
+
+// setCSRFCookie writes a signed CSRF token cookie using the configured handler.
+func (p *Plugin) setCSRFCookie(w http.ResponseWriter, token string) {
+	if p.csrfHandler == nil {
+		return
+	}
+	cookie, err := p.csrfHandler.CreateCookie(csrfCookieName, token)
+	if err != nil {
+		return
+	}
+	http.SetCookie(w, cookie)
+}
+
+// validateCSRF checks that the request contains a matching signed CSRF cookie and form value.
+// Returns true if valid or if CSRF protection is disabled.
+func (p *Plugin) validateCSRF(r *http.Request) bool {
+	if p.csrfHandler == nil {
+		return true // CSRF disabled
+	}
+	cookieVal, err := p.csrfHandler.CheckCookie(r, csrfCookieName)
+	if err != nil {
+		return false
+	}
+	formToken := r.FormValue("csrf_token")
+	if formToken == "" {
+		return false
+	}
+	return cookieVal == formToken
 }

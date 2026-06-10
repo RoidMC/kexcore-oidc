@@ -9,6 +9,7 @@
 {{if .Scopes}}<p>Scopes: {{.Scopes}}</p>{{end}}
 <form method="POST" action="/device">
 <input type="hidden" name="user_code" value="{{.UserCode}}">
+{{if .CSRFToken}}<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">{{end}}
 <button type="submit" name="action" value="approve">Approve</button>
 <button type="submit" name="action" value="deny">Deny</button>
 </form>
