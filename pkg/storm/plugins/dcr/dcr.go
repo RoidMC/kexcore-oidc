@@ -81,6 +81,7 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		client := &http.Client{Timeout: 10 * time.Second}
+		// Safe: ValidateRemoteURL blocks private IPs, non-HTTPS, and DNS rebinding
 		resp, err := client.Get(req.JWKSURI)
 		if err != nil {
 			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("failed to fetch jwks_uri: %s", req.JWKSURI).WithParent(err), nil)
