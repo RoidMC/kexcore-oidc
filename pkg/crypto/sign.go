@@ -148,6 +148,32 @@ func (s *Signer) tokenTypeOrDefault() string {
 	return "JWT"
 }
 
+// BuildJWSCompact assembles a JWS compact serialization from raw components.
+// This is the single place where JWS header construction happens; both the built-in
+// sign providers and external HSM/KMS wrappers use it so that developers only need
+// to supply the cryptographic signature.
+//
+// extraHeaders is optional; it is merged into the protected header (e.g. SM9 uid).
+func BuildJWSCompact(algorithm, keyID, tokenType string, payload, signature []byte, extraHeaders map[string]string) (string, error) {
+	headerMap := map[string]interface{}{
+		"alg": algorithm,
+		"typ": tokenType,
+	}
+	if keyID != "" {
+		headerMap["kid"] = keyID
+	}
+	for k, v := range extraHeaders {
+		headerMap[k] = v
+	}
+	headerJSON, err := json.Marshal(headerMap)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(headerJSON) + "." +
+		base64.RawURLEncoding.EncodeToString(payload) + "." +
+		base64.RawURLEncoding.EncodeToString(signature), nil
+}
+
 func signSM2(algorithm, keyID, tokenType string, priv *gmsm.PrivateKey, payload []byte) (string, error) {
 	h, err := GetHashAlgorithm(algorithm)
 	if err != nil {
@@ -161,19 +187,7 @@ func signSM2(algorithm, keyID, tokenType string, priv *gmsm.PrivateKey, payload 
 		return "", err
 	}
 
-	headerJSON, err := json.Marshal(map[string]interface{}{
-		"alg": algorithm,
-		"typ": tokenType,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	encodedHeader := base64.RawURLEncoding.EncodeToString(headerJSON)
-	encodedPayload := base64.RawURLEncoding.EncodeToString(payload)
-	encodedSignature := base64.RawURLEncoding.EncodeToString(signature)
-
-	return encodedHeader + "." + encodedPayload + "." + encodedSignature, nil
+	return BuildJWSCompact(algorithm, keyID, tokenType, payload, signature, nil)
 }
 
 func (s *Signer) signSM2(payload []byte) (string, error) {
@@ -228,25 +242,8 @@ func signSM9(algorithm, keyID, tokenType string, priv *sm9.SignPrivateKey, uid [
 		return "", err
 	}
 
-	headerMap := map[string]interface{}{
-		"alg": algorithm,
-		"typ": tokenType,
-		"uid": base64.RawURLEncoding.EncodeToString(uid),
-	}
-	if keyID != "" {
-		headerMap["kid"] = keyID
-	}
-
-	headerJSON, err := json.Marshal(headerMap)
-	if err != nil {
-		return "", err
-	}
-
-	encodedHeader := base64.RawURLEncoding.EncodeToString(headerJSON)
-	encodedPayload := base64.RawURLEncoding.EncodeToString(payload)
-	encodedSignature := base64.RawURLEncoding.EncodeToString(signature)
-
-	return encodedHeader + "." + encodedPayload + "." + encodedSignature, nil
+	return BuildJWSCompact(algorithm, keyID, tokenType, payload, signature,
+		map[string]string{"uid": base64.RawURLEncoding.EncodeToString(uid)})
 }
 
 func (s *Signer) signSM9(payload []byte) (string, error) {
