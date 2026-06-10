@@ -20,6 +20,8 @@ import (
 type Plugin struct {
 	store    storm.BackChannelStore
 	keyStore storm.KeyStore
+	issuer   string
+	logger   *slog.Logger
 }
 
 // New creates a new BackChannel plugin from a PluginContext.
@@ -27,6 +29,40 @@ func New(ctx *storm.PluginContext) *Plugin {
 	return &Plugin{
 		store:    ctx.Storage.(storm.BackChannelStore),
 		keyStore: ctx.Storage.(storm.KeyStore),
+		logger:   slog.Default(),
+	}
+}
+
+// SetLogger sets the logger for the plugin.
+func (p *Plugin) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		p.logger = logger
+	}
+}
+
+// SetIssuer sets the issuer URL used for logout tokens.
+func (p *Plugin) SetIssuer(issuer string) {
+	p.issuer = issuer
+}
+
+// PostLogout implements the LogoutHook interface for EndSession integration.
+// When EndSession terminates a session, it calls this method to trigger
+// back-channel logout to all registered RPs.
+func (p *Plugin) PostLogout(ctx context.Context, userID, clientID, sid string) {
+	signingKey, err := p.keyStore.SigningKey(ctx)
+	if err != nil {
+		p.logger.Error("backchannel: failed to get signing key",
+			slog.String("user_id", userID),
+			slog.Any("error", err),
+		)
+		return
+	}
+	if err := PushLogoutTokens(ctx, p.store, p.issuer, signingKey, userID, sid, p.logger); err != nil {
+		p.logger.Error("backchannel: failed to push logout tokens",
+			slog.String("user_id", userID),
+			slog.String("sid", sid),
+			slog.Any("error", err),
+		)
 	}
 }
 

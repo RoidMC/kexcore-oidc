@@ -1,6 +1,7 @@
 package storm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -324,6 +325,10 @@ func (e *Engine) Build() http.Handler {
 	e.router.Get("/healthz", e.healthHandler)
 	e.router.Get("/ready", e.readyHandler)
 
+	// Auto-connect EndSession and BackChannel plugins if both exist.
+	// BackChannel implements LogoutHook, so EndSession can trigger it.
+	e.connectLogoutHooks()
+
 	// Discovery aggregation
 	e.installDiscovery()
 
@@ -383,6 +388,42 @@ func (e *Engine) readyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shared.JSONResponse(w, map[string]string{"status": "ok"}, http.StatusOK)
+}
+
+// connectLogoutHooks auto-connects EndSession and BackChannel plugins.
+// If both plugins are registered and BackChannel implements LogoutHook,
+// it is automatically set as EndSession's logout hook.
+func (e *Engine) connectLogoutHooks() {
+	// Type for checking if a plugin can set a logout hook
+	type logoutHookSetter interface {
+		SetLogoutHook(hook interface{})
+	}
+
+	var endSession logoutHookSetter
+	var backChannel interface{}
+
+	for _, p := range e.plugins {
+		switch p.Name() {
+		case "endsession":
+			if setter, ok := p.(logoutHookSetter); ok {
+				endSession = setter
+			}
+		case "backchannel":
+			backChannel = p
+		}
+	}
+
+	// If both exist, connect them
+	if endSession != nil && backChannel != nil {
+		// Check if backChannel implements PostLogout method
+		type logoutHookProvider interface {
+			PostLogout(ctx context.Context, userID, clientID, sid string)
+		}
+		if provider, ok := backChannel.(logoutHookProvider); ok {
+			endSession.SetLogoutHook(provider)
+			e.logger.Info("connected backchannel logout hook to endsession")
+		}
+	}
 }
 
 func (e *Engine) installDiscovery() {

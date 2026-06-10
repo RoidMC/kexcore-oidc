@@ -99,3 +99,11 @@ func NewWithConfig(cfg Config) *Plugin {
 	}
 	return p
 }
+
+// SetLogoutHook sets the logout hook for post-logout actions.
+// This is used by Engine to auto-connect BackChannel plugin.
+func (p *Plugin) SetLogoutHook(hook interface{}) {
+	if lh, ok := hook.(LogoutHook); ok {
+		p.logoutHook = lh
+	}
+}
