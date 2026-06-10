@@ -17,55 +17,27 @@ import (
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto/provider/std"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto/util"
 )
 
+// --- Shared JWE types (re-exported from crypto/util) ---
+
+// JWEHeader represents the JOSE header for JWE.
+type JWEHeader = util.JWEHeader
+
+// Re-export shared error variables for backward compatibility.
 var (
-	ErrInvalidJWECompact = errors.New("kexcore/crypto: invalid JWE compact serialization")
-	ErrInvalidJWEParts   = errors.New("kexcore/crypto: JWE compact serialization must have exactly 5 parts")
-	ErrJWEKeyDecrypt     = errors.New("kexcore/crypto: failed to decrypt JWE encrypted key")
-	ErrJWEContentDecrypt = errors.New("kexcore/crypto: failed to decrypt JWE content")
-	ErrJWEHeaderMismatch = errors.New("kexcore/crypto: JWE header algorithm mismatch")
-	ErrJWEUnsupportedEnc = errors.New("kexcore/crypto: unsupported JWE content encryption algorithm")
+	ErrInvalidJWECompact = util.ErrInvalidJWECompact
+	ErrInvalidJWEParts   = util.ErrInvalidJWEParts
+	ErrJWEKeyDecrypt     = util.ErrJWEKeyDecrypt
+	ErrJWEContentDecrypt = util.ErrJWEContentDecrypt
+	ErrJWEHeaderMismatch = util.ErrJWEHeaderMismatch
+	ErrJWEUnsupportedEnc = util.ErrJWEUnsupportedEnc
 )
-
-const (
-	// SM4GCMTagSize is the GCM authentication tag size for SM4 (128 bits).
-	SM4GCMTagSize = 16
-	// SM4CCMTagSize is the CCM authentication tag size for SM4 (128 bits).
-	SM4CCMTagSize = 16
-)
-
-// jweHeader represents the JOSE header for JWE per GM/T 0125.3.
-type jweHeader struct {
-	Algorithm   string `json:"alg"`
-	Encryption  string `json:"enc"`
-	Type        string `json:"typ,omitempty"`
-	ContentType string `json:"cty,omitempty"`
-}
 
 // ParseJWECompact parses and validates a JWE compact serialization.
-func ParseJWECompact(compact string) ([]string, *jweHeader, error) {
-	parts := strings.Split(compact, ".")
-	if len(parts) != 5 {
-		return nil, nil, ErrInvalidJWEParts
-	}
-	for i, part := range parts {
-		if i == 3 {
-			continue
-		}
-		if part == "" {
-			return nil, nil, fmt.Errorf("%w: part %d is empty", ErrInvalidJWECompact, i)
-		}
-	}
-	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return nil, nil, fmt.Errorf("%w: failed to decode header: %w", ErrInvalidJWECompact, err)
-	}
-	var header jweHeader
-	if err := json.Unmarshal(headerJSON, &header); err != nil {
-		return nil, nil, fmt.Errorf("%w: failed to parse header: %w", ErrInvalidJWECompact, err)
-	}
-	return parts, &header, nil
+func ParseJWECompact(compact string) ([]string, *JWEHeader, error) {
+	return util.ParseJWECompact(compact)
 }
 
 // --- Dispatch functions ---
@@ -88,6 +60,10 @@ func DispatchDecryptJWE(compact string, key interface{}, alg string) ([]byte, er
 
 // DispatchContentEncrypt routes content encryption through ProviderRegistry.
 func DispatchContentEncrypt(enc string, key, iv, plaintext, aad []byte) ([]byte, error) {
+	// ContentEncryptor is a finer-grained registry keyed by content encryption
+	// algorithm (e.g. "A256GCM", "SGD_SM4_GCM"). It allows HSM/KMS to override
+	// just the symmetric content encryption while leaving key wrapping to software.
+	// This is separate from JWEEncryptor which covers the full JWE lifecycle.
 	if provider, ok := DefaultRegistry.GetContentEncryptor(enc); ok {
 		return provider.Encrypt(context.Background(), key, iv, plaintext, aad)
 	}
@@ -96,6 +72,8 @@ func DispatchContentEncrypt(enc string, key, iv, plaintext, aad []byte) ([]byte,
 
 // DispatchContentDecrypt routes content decryption through ProviderRegistry.
 func DispatchContentDecrypt(enc string, key, iv, sealed, aad []byte) ([]byte, error) {
+	// Same two-level dispatch as encryptJWEDir: ContentDecryptor for HSM/KMS
+	// symmetric decryption override, with std.DecryptJWEDir as software fallback.
 	if provider, ok := DefaultRegistry.GetContentDecryptor(enc); ok {
 		return provider.Decrypt(context.Background(), key, iv, sealed, aad)
 	}
@@ -139,6 +117,9 @@ func EncryptJWE(plaintext []byte, key interface{}, alg, enc string) (string, err
 // then falls back to the built-in software implementation.
 func DecryptJWE(compact string, key interface{}) ([]byte, error) {
 	parts := strings.Split(compact, ".")
+	// JWS (3 parts) is passed through as-is. Some callers use a single decrypt
+	// entry point for both JWE and JWS; JWS tokens are not encrypted so no
+	// decryption is needed.
 	if len(parts) == 3 {
 		return []byte(compact), nil
 	}
@@ -150,7 +131,7 @@ func DecryptJWE(compact string, key interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode JWE header: %w", err)
 	}
-	var hdr jweHeader
+	var hdr JWEHeader
 	if err := json.Unmarshal(headerJSON, &hdr); err != nil {
 		return nil, fmt.Errorf("failed to parse JWE header: %w", err)
 	}
@@ -185,6 +166,9 @@ func encryptJWEDir(plaintext []byte, key interface{}, enc string) (string, error
 		return "", fmt.Errorf("dir mode requires []byte key, got %T", key)
 	}
 
+	// For dir mode, the ContentEncryptor registry (keyed by enc algorithm like
+	// "SGD_SM4_GCM") takes precedence over the std fallback. This lets HSM/KMS
+	// override just the symmetric encryption while we handle JWE framing in software.
 	if provider, ok := DefaultRegistry.GetContentEncryptor(enc); ok {
 		header := map[string]string{"alg": "dir", "enc": enc}
 		headerJSON, err := json.Marshal(header)
@@ -219,6 +203,8 @@ func decryptJWEDir(compact string, key interface{}, enc string) ([]byte, error) 
 	if !ok {
 		return nil, fmt.Errorf("dir mode requires []byte key, got %T", key)
 	}
+	// Same two-level dispatch as encryptJWEDir: ContentDecryptor for HSM/KMS
+	// symmetric decryption override, with std.DecryptJWEDir as software fallback.
 	if provider, ok := DefaultRegistry.GetContentDecryptor(enc); ok {
 		parts := strings.Split(compact, ".")
 		if parts[1] != "" {

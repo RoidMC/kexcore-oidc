@@ -13,6 +13,7 @@ import (
 
 	"github.com/emmansun/gmsm/sm9"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto/util"
 )
 
 // EncryptSM9JWE encrypts plaintext using the GM/T 0125.3 JWE specification
@@ -31,7 +32,7 @@ func EncryptSM9JWE(plaintext []byte, key interface{}, uid []byte, enc string) (s
 	if enc == "" {
 		enc = sgdSM4_GCM
 	}
-	header := jweHeader{Algorithm: sgdSM9_3, Encryption: enc}
+	header := util.JWEHeader{Algorithm: sgdSM9_3, Encryption: enc}
 	headerJSON, err := json.Marshal(header)
 	if err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to marshal JWE header: %w", err)
@@ -64,7 +65,7 @@ func EncryptSM9JWE(plaintext []byte, key interface{}, uid []byte, enc string) (s
 			return "", fmt.Errorf("kexcore/crypto: failed to encrypt with SM4-CCM: %w", err)
 		}
 	default:
-		return "", fmt.Errorf("%w: %s", errJWEUnsupportedEnc, enc)
+		return "", fmt.Errorf("%w: %s", util.ErrJWEUnsupportedEnc, enc)
 	}
 
 	tagSize := sm4TagSize(enc)
@@ -88,22 +89,22 @@ func DecryptSM9JWE(compact string, key interface{}, uid []byte) ([]byte, error) 
 		return nil, fmt.Errorf("SM9 JWE requires *sm9.EncryptPrivateKey, got %T", key)
 	}
 
-	parts, header, err := parseJWECompact(compact)
+	parts, header, err := util.ParseJWECompact(compact)
 	if err != nil {
 		return nil, err
 	}
 	if header.Algorithm != sgdSM9_3 {
-		return nil, fmt.Errorf("%w: expected alg=%s, got %s", errJWEHeaderMismatch, sgdSM9_3, header.Algorithm)
+		return nil, fmt.Errorf("%w: expected alg=%s, got %s", util.ErrJWEHeaderMismatch, sgdSM9_3, header.Algorithm)
 	}
 
 	cipherDER, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed to decode encrypted key: %w", errInvalidJWECompact, err)
+		return nil, fmt.Errorf("%w: failed to decode encrypted key: %w", util.ErrInvalidJWECompact, err)
 	}
 
 	cek, err := gm.SM9UnwrapKey(userKey, uid, cipherDER, gm.SM4BlockSize)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errJWEKeyDecrypt, err)
+		return nil, fmt.Errorf("%w: %w", util.ErrJWEKeyDecrypt, err)
 	}
 
 	return decryptJWEContent(cek, header.Encryption, parts)

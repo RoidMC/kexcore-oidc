@@ -14,6 +14,7 @@ import (
 
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto/util"
 )
 
 // EncryptSM2JWE encrypts plaintext using the GM/T 0125.3 JWE specification
@@ -34,7 +35,7 @@ func EncryptSM2JWE(plaintext []byte, key interface{}) (string, error) {
 		return "", fmt.Errorf("kexcore/crypto: failed to generate IV: %w", err)
 	}
 
-	header := jweHeader{Algorithm: sgdSM2_3, Encryption: sgdSM4_GCM}
+	header := util.JWEHeader{Algorithm: sgdSM2_3, Encryption: sgdSM4_GCM}
 	headerJSON, err := json.Marshal(header)
 	if err != nil {
 		return "", fmt.Errorf("kexcore/crypto: failed to marshal JWE header: %w", err)
@@ -73,22 +74,22 @@ func DecryptSM2JWE(compact string, key interface{}) ([]byte, error) {
 		return nil, fmt.Errorf("SM2 JWE requires *sm2.PrivateKey, got %T", key)
 	}
 
-	parts, header, err := parseJWECompact(compact)
+	parts, header, err := util.ParseJWECompact(compact)
 	if err != nil {
 		return nil, err
 	}
 	if header.Algorithm != sgdSM2_3 {
-		return nil, fmt.Errorf("%w: expected alg=%s, got %s", errJWEHeaderMismatch, sgdSM2_3, header.Algorithm)
+		return nil, fmt.Errorf("%w: expected alg=%s, got %s", util.ErrJWEHeaderMismatch, sgdSM2_3, header.Algorithm)
 	}
 
 	encryptedKey, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed to decode encrypted key: %w", errInvalidJWECompact, err)
+		return nil, fmt.Errorf("%w: failed to decode encrypted key: %w", util.ErrInvalidJWECompact, err)
 	}
 
 	cek, err := gm.SM2Decrypt(privKey, encryptedKey)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errJWEKeyDecrypt, err)
+		return nil, fmt.Errorf("%w: %w", util.ErrJWEKeyDecrypt, err)
 	}
 
 	return decryptJWEContent(cek, header.Encryption, parts)

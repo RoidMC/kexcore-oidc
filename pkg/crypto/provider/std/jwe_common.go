@@ -6,10 +6,9 @@ package std
 
 import (
 	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"strings"
+
+	"github.com/roidmc/kexcore-oidc/pkg/crypto/util"
 )
 
 const (
@@ -21,58 +20,18 @@ const (
 	sm4CCMTagSize = 16
 )
 
-var (
-	errInvalidJWECompact = errors.New("kexcore/crypto: invalid JWE compact serialization")
-	errInvalidJWEParts   = errors.New("kexcore/crypto: JWE compact serialization must have exactly 5 parts")
-	errJWEKeyDecrypt     = errors.New("kexcore/crypto: failed to decrypt JWE encrypted key")
-	errJWEContentDecrypt = errors.New("kexcore/crypto: failed to decrypt JWE content")
-	errJWEHeaderMismatch = errors.New("kexcore/crypto: JWE header algorithm mismatch")
-	errJWEUnsupportedEnc = errors.New("kexcore/crypto: unsupported JWE content encryption algorithm")
-)
-
-type jweHeader struct {
-	Algorithm   string `json:"alg"`
-	Encryption  string `json:"enc"`
-	Type        string `json:"typ,omitempty"`
-	ContentType string `json:"cty,omitempty"`
-}
-
-func parseJWECompact(compact string) ([]string, *jweHeader, error) {
-	parts := strings.Split(compact, ".")
-	if len(parts) != 5 {
-		return nil, nil, errInvalidJWEParts
-	}
-	for i, part := range parts {
-		if i == 3 {
-			continue
-		}
-		if part == "" {
-			return nil, nil, fmt.Errorf("%w: part %d is empty", errInvalidJWECompact, i)
-		}
-	}
-	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return nil, nil, fmt.Errorf("%w: failed to decode header: %w", errInvalidJWECompact, err)
-	}
-	var header jweHeader
-	if err := json.Unmarshal(headerJSON, &header); err != nil {
-		return nil, nil, fmt.Errorf("%w: failed to parse header: %w", errInvalidJWECompact, err)
-	}
-	return parts, &header, nil
-}
-
 func decryptJWEContent(cek []byte, enc string, parts []string) ([]byte, error) {
 	iv, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed to decode IV: %w", errInvalidJWECompact, err)
+		return nil, fmt.Errorf("%w: failed to decode IV: %w", util.ErrInvalidJWECompact, err)
 	}
 	ciphertext, err := base64.RawURLEncoding.DecodeString(parts[3])
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed to decode ciphertext: %w", errInvalidJWECompact, err)
+		return nil, fmt.Errorf("%w: failed to decode ciphertext: %w", util.ErrInvalidJWECompact, err)
 	}
 	tag, err := base64.RawURLEncoding.DecodeString(parts[4])
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed to decode tag: %w", errInvalidJWECompact, err)
+		return nil, fmt.Errorf("%w: failed to decode tag: %w", util.ErrInvalidJWECompact, err)
 	}
 	sealed := make([]byte, len(ciphertext)+len(tag))
 	copy(sealed, ciphertext)
@@ -85,7 +44,7 @@ func decryptJWEContent(cek []byte, enc string, parts []string) ([]byte, error) {
 	case sgdSM4_CCM:
 		return SM4CCMDecrypt(cek, iv, sealed, aad)
 	default:
-		return nil, fmt.Errorf("%w: %s", errJWEUnsupportedEnc, enc)
+		return nil, fmt.Errorf("%w: %s", util.ErrJWEUnsupportedEnc, enc)
 	}
 }
 
