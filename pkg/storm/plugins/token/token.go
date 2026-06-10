@@ -25,8 +25,6 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/dpop"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/plugins/mtls"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
@@ -209,7 +207,10 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resp, tokenID, err := p.createTokenResponseFromTokenRequest(r.Context(), authReq, client, true, tokenReq.Code)
+	resp, tokenID, err := p.createTokenResponseFromTokenRequest(r.Context(), authReq, client, tokenResponseOpts{
+		IssueRefresh: true,
+		Code:         tokenReq.Code,
+	})
 	if err != nil {
 		tokenError(w, r, err)
 		return
@@ -265,7 +266,10 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), refreshReq, client, true, "")
+	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), refreshReq, client, tokenResponseOpts{
+		IssueRefresh:        true,
+		CurrentRefreshToken: tokenReq.RefreshToken,
+	})
 	if err != nil {
 		tokenError(w, r, err)
 		return
@@ -398,7 +402,7 @@ func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 
 	_ = teStore.CreateTokenExchangeRequest(r.Context(), teReq)
 
-	accessToken, _, _, validity, err := p.createAccessToken(r.Context(), teReq, client, false)
+	accessToken, _, _, validity, err := p.createAccessToken(r.Context(), teReq, client, false, "")
 	if err != nil {
 		tokenError(w, r, protocol.ErrServerError().WithParent(err))
 		return
@@ -493,7 +497,9 @@ func (p *Plugin) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		scopes:   state.Scopes,
 	}
 
-	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), req, client, true, "")
+	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), req, client, tokenResponseOpts{
+		IssueRefresh: true,
+	})
 	if err != nil {
 		tokenError(w, r, err)
 		return
@@ -541,7 +547,7 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 // signed with the client's private key (RFC 7523 §2.2, OIDC Core §9).
 func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (storm.Client, error) {
 	issuer := shared.IssuerFromContext(r.Context())
-	request, err := protocol.VerifyJWTAssertion(r.Context(), assertion, issuer, p.keyStore, 0)
+	request, err := protocol.VerifyJWTAssertion(r.Context(), assertion, issuer, p.keyStore, 10*time.Second)
 	if err != nil {
 		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
 	}
@@ -565,12 +571,20 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 
 // --- token creation ---
 
+// tokenResponseOpts configures token response creation.
+// Each grant type sets only the fields it needs.
+type tokenResponseOpts struct {
+	IssueRefresh        bool   // whether to issue a refresh token
+	Code                string // authorization code (for c_hash in ID token)
+	CurrentRefreshToken string // old refresh token to invalidate (rotation)
+}
+
 // createTokenResponseFromTokenRequest creates a token response from any TokenRequest implementation.
-func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, request storm.TokenRequest, client storm.Client, issueRefresh bool, code string) (*protocol.AccessTokenResponse, string, error) {
+func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, request storm.TokenRequest, client storm.Client, opts tokenResponseOpts) (*protocol.AccessTokenResponse, string, error) {
 	// Apply pairwise subject transformation if applicable
 	request = p.applyPairwise(request, client)
 
-	accessToken, tokenID, refreshToken, validity, err := p.createAccessToken(ctx, request, client, issueRefresh)
+	accessToken, tokenID, refreshToken, validity, err := p.createAccessToken(ctx, request, client, opts.IssueRefresh, opts.CurrentRefreshToken)
 	if err != nil {
 		return nil, "", err
 	}
@@ -585,15 +599,15 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 		}
 	}
 
-	idToken, err := p.createIDToken(ctx, request, client, accessToken, code)
+	idToken, err := p.createIDToken(ctx, request, client, accessToken, opts.Code)
 	if err != nil {
 		return nil, "", err
 	}
 
 	// Determine token_type: DPoP-bound tokens use "DPoP" (RFC 9449 §7.1)
 	tokenType := protocol.BearerToken
-	if dpop.DPoPFromContext(ctx) != nil {
-		tokenType = dpop.AccessTokenType
+	if shared.DPoPFromContext(ctx) != nil {
+		tokenType = "DPoP"
 	}
 
 	resp := &protocol.AccessTokenResponse{
@@ -603,7 +617,7 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 		Scope:       request.GetScopes(),
 		IDToken:     idToken,
 	}
-	if issueRefresh && refreshToken != "" {
+	if opts.IssueRefresh && refreshToken != "" {
 		resp.RefreshToken = refreshToken
 	}
 
@@ -617,18 +631,18 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 func (p *Plugin) resolveCNF(ctx context.Context) map[string]any {
 	var cnf map[string]any
 
-	if cert := mtls.ClientCertFromContext(ctx); cert != nil {
+	if cert := shared.ClientCertFromContext(ctx); cert != nil {
 		if cnf == nil {
 			cnf = make(map[string]any)
 		}
-		cnf["x5t#S256"] = mtls.CertThumbprint(cert)
+		cnf["x5t#S256"] = shared.CertThumbprint(cert)
 	}
 
-	if proof := dpop.DPoPFromContext(ctx); proof != nil {
+	if proof := shared.DPoPFromContext(ctx); proof != nil {
 		if cnf == nil {
 			cnf = make(map[string]any)
 		}
-		cnf["jkt"] = proof.JKT
+		cnf["jkt"] = proof.JWKThumbprint()
 	}
 
 	return cnf
@@ -716,7 +730,8 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 }
 
 // createAccessToken creates an access token, optionally with a refresh token.
-func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenRequest, client storm.Client, issueRefresh bool) (encryptedToken string, tokenID string, refreshToken string, validity time.Duration, err error) {
+// currentRefreshToken: if non-empty, the old refresh token to invalidate (rotation).
+func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenRequest, client storm.Client, issueRefresh bool, currentRefreshToken string) (encryptedToken string, tokenID string, refreshToken string, validity time.Duration, err error) {
 	// Refresh token 颁发条件：
 	//   1. 调用方要求颁发（issueRefresh=true）
 	//   2. client 声明了 refresh_token grant type
@@ -726,7 +741,7 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 
 	var expiration time.Time
 	if needsRefresh {
-		tokenID, refreshToken, expiration, err = p.tokenStore.CreateAccessAndRefreshTokens(ctx, request, "")
+		tokenID, refreshToken, expiration, err = p.tokenStore.CreateAccessAndRefreshTokens(ctx, request, currentRefreshToken)
 	} else {
 		tokenID, expiration, err = p.tokenStore.CreateAccessToken(ctx, request)
 	}
@@ -747,7 +762,7 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 
 // createClientCredentialsResponse creates a token response for client_credentials grant.
 func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenRequest storm.TokenRequest, client storm.Client) (*protocol.AccessTokenResponse, error) {
-	accessToken, _, _, validity, err := p.createAccessToken(ctx, tokenRequest, client, false)
+	accessToken, _, _, validity, err := p.createAccessToken(ctx, tokenRequest, client, false, "")
 	if err != nil {
 		return nil, err
 	}

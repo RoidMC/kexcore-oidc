@@ -283,3 +283,134 @@ func TestValidate_UnrecognizedInterfaceName(t *testing.T) {
 	}()
 	engine.Build()
 }
+
+func TestValidate_ErrorMessageContainsHint(t *testing.T) {
+	store := &baseStorage{}
+	engine := storm.New(store, shared.StaticIssuer("https://example.com"))
+
+	engine.Register(&mockPlugin{
+		name:     "token",
+		category: storm.CategoryCore,
+		requires: []string{"TokenStore"},
+	})
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("panic value is not string: %v", r)
+		}
+		if !contains(msg, "CreateAccessToken") {
+			t.Errorf("error message should contain method hint, got: %s", msg)
+		}
+		if !contains(msg, "TokenStore") {
+			t.Errorf("error message should contain interface name, got: %s", msg)
+		}
+		if !contains(msg, "storage.go") {
+			t.Errorf("error message should reference storage.go, got: %s", msg)
+		}
+	}()
+	engine.Build()
+}
+
+func TestValidate_AuthStoreHint(t *testing.T) {
+	store := &baseStorage{}
+	engine := storm.New(store, shared.StaticIssuer("https://example.com"))
+
+	engine.Register(&mockPlugin{
+		name:     "auth",
+		category: storm.CategoryCore,
+		requires: []string{"AuthStore"},
+	})
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic")
+		}
+		msg := r.(string)
+		if !contains(msg, "CreateAuthRequest") {
+			t.Errorf("AuthStore hint should mention CreateAuthRequest, got: %s", msg)
+		}
+	}()
+	engine.Build()
+}
+
+func TestValidate_UserinfoStoreHint(t *testing.T) {
+	store := &baseStorage{}
+	engine := storm.New(store, shared.StaticIssuer("https://example.com"))
+
+	engine.Register(&mockPlugin{
+		name:     "userinfo",
+		category: storm.CategoryCore,
+		requires: []string{"UserinfoStore"},
+	})
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic")
+		}
+		msg := r.(string)
+		if !contains(msg, "SetUserinfoFromToken") {
+			t.Errorf("UserinfoStore hint should mention SetUserinfoFromToken, got: %s", msg)
+		}
+	}()
+	engine.Build()
+}
+
+// --- optional interface discovery tests ---
+
+// tokenScopeProviderStore extends baseStorage with TokenScopeProvider
+type tokenScopeProviderStore struct{ baseStorage }
+
+func (s *tokenScopeProviderStore) TokenScopes(_ context.Context, tokenID string) ([]string, error) {
+	return []string{"openid", "profile"}, nil
+}
+
+// userinfoWithScopeStore extends baseStorage with UserinfoStore + TokenScopeProvider
+type userinfoWithScopeStore struct{ baseStorage }
+
+func (s *userinfoWithScopeStore) SetUserinfoFromToken(ctx context.Context, resp *protocol.UserInfo, tokenID, subject, origin string) error {
+	return errors.New("not implemented")
+}
+func (s *userinfoWithScopeStore) TokenScopes(_ context.Context, tokenID string) ([]string, error) {
+	return []string{"openid", "profile"}, nil
+}
+
+func TestValidate_TokenScopeProvider_Optional(t *testing.T) {
+	store := &userinfoWithScopeStore{}
+	engine := storm.New(store, shared.StaticIssuer("https://example.com"))
+
+	engine.Register(&mockPlugin{
+		name:     "userinfo",
+		category: storm.CategoryCore,
+		requires: []string{"UserinfoStore"},
+	})
+
+	// TokenScopeProvider is optional — should not cause validation to fail
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic: %v", r)
+		}
+	}()
+	engine.Build()
+}
+
+// --- helper ---
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

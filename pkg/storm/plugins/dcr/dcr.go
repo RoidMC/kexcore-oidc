@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jwk"
@@ -75,7 +76,12 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// If jwks_uri specified but jwks not, fetch the key set and populate jwks
 	// so the storage layer can parse encryption keys from it.
 	if len(req.JWKS) == 0 && req.JWKSURI != "" {
-		resp, err := http.Get(req.JWKSURI)
+		if err := shared.ValidateRemoteURL(req.JWKSURI); err != nil {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid jwks_uri: %s", err.Error()), nil)
+			return
+		}
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Get(req.JWKSURI)
 		if err != nil {
 			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("failed to fetch jwks_uri: %s", req.JWKSURI).WithParent(err), nil)
 			return

@@ -4,6 +4,8 @@
 
 package protocol
 
+import "slices"
+
 // UserInfo implements OpenID Connect Core 1.0, section 5.1.
 // https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
 type UserInfo struct {
@@ -35,6 +37,31 @@ func (u *UserInfo) GetAddress() *UserInfoAddress {
 // GetSubject implements [rp.SubjectGetter]
 func (u *UserInfo) GetSubject() string {
 	return u.Subject
+}
+
+// FilterByScopes removes standard OIDC claims that are not covered by the
+// granted scopes. Custom claims in the Claims map are always preserved.
+//
+// OIDC Core §5.3.2: The UserInfo Response MUST include the "sub" claim.
+// Other claims are filtered by scope per §5.4:
+//   - profile: name, given_name, family_name, middle_name, nickname, preferred_username,
+//     profile, picture, website, gender, birthdate, zoneinfo, locale, updated_at
+//   - email: email, email_verified
+//   - phone: phone_number, phone_number_verified
+//   - address: address
+func (u *UserInfo) FilterByScopes(scopes []string) {
+	if !slices.Contains(scopes, ScopeProfile) {
+		u.UserInfoProfile = UserInfoProfile{}
+	}
+	if !slices.Contains(scopes, ScopeEmail) {
+		u.UserInfoEmail = UserInfoEmail{}
+	}
+	if !slices.Contains(scopes, ScopePhone) {
+		u.UserInfoPhone = UserInfoPhone{}
+	}
+	if !slices.Contains(scopes, ScopeAddress) {
+		u.Address = nil
+	}
 }
 
 type uiAlias UserInfo

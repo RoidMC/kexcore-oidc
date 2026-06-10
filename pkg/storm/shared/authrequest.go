@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"fmt"
 	"net"
 	"net/url"
 	"slices"
@@ -269,6 +270,49 @@ func HTTPLoopbackOrLocalhost(rawURL string) (*url.URL, bool) {
 		return parsedURL, hostName == "localhost" || net.ParseIP(hostName).IsLoopback()
 	}
 	return nil, false
+}
+
+// ValidateRemoteURL validates a user-provided URL to prevent SSRF attacks.
+// Rules:
+//   - Scheme must be https (or http for localhost only)
+//   - For non-localhost URLs, DNS is resolved and private/link-local/loopback IPs are blocked
+func ValidateRemoteURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("missing host")
+	}
+
+	host := parsed.Hostname()
+	local := IsLocalhost(host)
+
+	switch parsed.Scheme {
+	case "https":
+		// OK
+	case "http":
+		if !local {
+			return fmt.Errorf("http scheme only allowed for localhost")
+		}
+	default:
+		return fmt.Errorf("unsupported scheme: %s", parsed.Scheme)
+	}
+
+	if !local {
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			return fmt.Errorf("DNS lookup failed: %w", err)
+		}
+		for _, ip := range ips {
+			if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+				ip.IsPrivate() || ip.IsUnspecified() {
+				return fmt.Errorf("host resolves to private IP: %s", ip)
+			}
+		}
+	}
+
+	return nil
 }
 
 // equalURI returns true if two URLs have the same path and raw query.

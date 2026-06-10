@@ -11,12 +11,19 @@ package userinfo
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
@@ -105,11 +112,33 @@ func (c *fakeGMCrypto) AlgorithmSuite() string {
 
 const testIssuer = "https://op.example.com"
 
+type fakeCNFLookup struct {
+	cnfFn func(ctx context.Context, tokenID string) (map[string]any, error)
+}
+
+func (f *fakeCNFLookup) TokenCNF(ctx context.Context, tokenID string) (map[string]any, error) {
+	if f.cnfFn != nil {
+		return f.cnfFn(ctx, tokenID)
+	}
+	return nil, nil
+}
+
+var _ storm.TokenCNFLookup = (*fakeCNFLookup)(nil)
+
 func newTestPlugin(store storm.UserinfoStore, crypto storm.UniCrypto, keyStore protocol.KeyStore) *Plugin {
 	return &Plugin{
 		store:    store,
 		crypto:   crypto,
 		keyStore: keyStore,
+	}
+}
+
+func newTestPluginWithScopeProvider(store storm.UserinfoStore, crypto storm.UniCrypto, keyStore protocol.KeyStore, sp storm.TokenScopeProvider) *Plugin {
+	return &Plugin{
+		store:         store,
+		scopeProvider: sp,
+		crypto:        crypto,
+		keyStore:      keyStore,
 	}
 }
 
@@ -672,4 +701,459 @@ func TestUserInfo_PluginLifecycle(t *testing.T) {
 	assert.Equal(t, storm.CategoryStandard, plugin.Category())
 	assert.Equal(t, "userinfo", plugin.Name())
 	assert.Equal(t, []string{"UserinfoStore", "KeyStore"}, plugin.Requires())
+}
+
+// --- scope filtering tests ---
+
+type fakeScopeProvider struct {
+	scopes []string
+	err    error
+}
+
+func (sp *fakeScopeProvider) TokenScopes(_ context.Context, _ string) ([]string, error) {
+	return sp.scopes, sp.err
+}
+
+func TestUserInfo_ScopeFiltering_ProfileOnly(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "user1"
+			info.Name = "Test User"
+			info.Email = "test@example.com"
+			info.EmailVerified = true
+			info.PhoneNumber = "+1234567890"
+			info.Address = &protocol.UserInfoAddress{Formatted: "N/A"}
+			info.AppendClaims("custom_claim", "value")
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:user1"), nil
+		},
+	}
+	sp := &fakeScopeProvider{scopes: []string{"openid", "profile"}}
+	plugin := newTestPluginWithScopeProvider(store, crypto, &fakeKeyStore{}, sp)
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer test-token")
+	w := serveRequest(plugin, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var info protocol.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &info)
+	require.NoError(t, err)
+
+	assert.Equal(t, "user1", info.Subject)
+	assert.Equal(t, "Test User", info.Name)
+	assert.Empty(t, info.Email, "email should be filtered out without email scope")
+	assert.Nil(t, info.Address, "address should be filtered out without address scope")
+	assert.Empty(t, info.PhoneNumber, "phone should be filtered out without phone scope")
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
+	assert.Equal(t, "value", raw["custom_claim"], "custom claims should always be preserved")
+}
+
+func TestUserInfo_ScopeFiltering_AllScopes(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "user2"
+			info.Name = "Full User"
+			info.Email = "full@example.com"
+			info.EmailVerified = true
+			info.PhoneNumber = "+9876543210"
+			info.Address = &protocol.UserInfoAddress{Formatted: "Full Address"}
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:user2"), nil
+		},
+	}
+	sp := &fakeScopeProvider{scopes: []string{"openid", "profile", "email", "phone", "address"}}
+	plugin := newTestPluginWithScopeProvider(store, crypto, &fakeKeyStore{}, sp)
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer test-token")
+	w := serveRequest(plugin, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var info protocol.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &info)
+	require.NoError(t, err)
+
+	assert.Equal(t, "user2", info.Subject)
+	assert.Equal(t, "Full User", info.Name)
+	assert.Equal(t, "full@example.com", info.Email)
+	assert.Equal(t, "+9876543210", info.PhoneNumber)
+	assert.NotNil(t, info.Address)
+}
+
+func TestUserInfo_ScopeFiltering_OpenIDOnly(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "user3"
+			info.Name = "Minimal User"
+			info.Email = "min@example.com"
+			info.AppendClaims("custom", "kept")
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:user3"), nil
+		},
+	}
+	sp := &fakeScopeProvider{scopes: []string{"openid"}}
+	plugin := newTestPluginWithScopeProvider(store, crypto, &fakeKeyStore{}, sp)
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer test-token")
+	w := serveRequest(plugin, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var info protocol.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &info)
+	require.NoError(t, err)
+
+	assert.Equal(t, "user3", info.Subject, "sub must always be present")
+	assert.Empty(t, info.Name, "profile claims should be filtered")
+	assert.Empty(t, info.Email, "email claims should be filtered")
+	assert.Nil(t, info.Address, "address should be filtered")
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
+	assert.Equal(t, "kept", raw["custom"], "custom claims should be preserved")
+}
+
+func TestUserInfo_ScopeFiltering_NoProvider(t *testing.T) {
+	// When storage doesn't implement TokenScopeProvider, no filtering occurs
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "user4"
+			info.Name = "No Filter"
+			info.Email = "no@example.com"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:user4"), nil
+		},
+	}
+	// No scope provider — backward compatible
+	plugin := newTestPlugin(store, crypto, &fakeKeyStore{})
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer test-token")
+	w := serveRequest(plugin, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var info protocol.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &info)
+	require.NoError(t, err)
+
+	assert.Equal(t, "user4", info.Subject)
+	assert.Equal(t, "No Filter", info.Name, "without scope provider, all claims should pass through")
+	assert.Equal(t, "no@example.com", info.Email)
+}
+
+// --- cnf binding verification tests ---
+
+// fakeDPoPProof implements shared.DPoPProof for testing.
+type fakeDPoPProof struct{ jkt string }
+
+func (f *fakeDPoPProof) JWKThumbprint() string { return f.jkt }
+
+// TestUserInfo_DPoPBinding_Success validates that a DPoP-bound token is accepted
+// when the request contains a matching DPoP proof.
+func TestUserInfo_DPoPBinding_Success(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "dpop-user"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:dpop-user"), nil
+		},
+	}
+	cnfLookup := &fakeCNFLookup{
+		cnfFn: func(ctx context.Context, tokenID string) (map[string]any, error) {
+			return map[string]any{"jkt": "abc123"}, nil
+		},
+	}
+	plugin := &Plugin{
+		store:     store,
+		cnfLookup: cnfLookup,
+		crypto:    crypto,
+		keyStore:  &fakeKeyStore{},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer dpop-token")
+	// Inject matching DPoP proof
+	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{jkt: "abc123"})
+	r = r.WithContext(ctx)
+
+	w := serveRequest(plugin, r)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var info protocol.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &info)
+	require.NoError(t, err)
+	assert.Equal(t, "dpop-user", info.Subject)
+}
+
+// TestUserInfo_DPoPBinding_MissingProof validates that a DPoP-bound token is rejected
+// when no DPoP proof is present in the request.
+func TestUserInfo_DPoPBinding_MissingProof(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "dpop-user"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:dpop-user"), nil
+		},
+	}
+	cnfLookup := &fakeCNFLookup{
+		cnfFn: func(ctx context.Context, tokenID string) (map[string]any, error) {
+			return map[string]any{"jkt": "abc123"}, nil
+		},
+	}
+	plugin := &Plugin{
+		store:     store,
+		cnfLookup: cnfLookup,
+		crypto:    crypto,
+		keyStore:  &fakeKeyStore{},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer dpop-token")
+	// No DPoP proof in context
+
+	w := serveRequest(plugin, r)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	errResp := extractErrorBody(t, w.Body.Bytes())
+	assert.Contains(t, errResp.Description, "DPoP proof required")
+}
+
+// TestUserInfo_DPoPBinding_MismatchedJKT validates that a DPoP-bound token is rejected
+// when the DPoP proof's jkt doesn't match the token's cnf.jkt.
+func TestUserInfo_DPoPBinding_MismatchedJKT(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "dpop-user"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:dpop-user"), nil
+		},
+	}
+	cnfLookup := &fakeCNFLookup{
+		cnfFn: func(ctx context.Context, tokenID string) (map[string]any, error) {
+			return map[string]any{"jkt": "abc123"}, nil
+		},
+	}
+	plugin := &Plugin{
+		store:     store,
+		cnfLookup: cnfLookup,
+		crypto:    crypto,
+		keyStore:  &fakeKeyStore{},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer dpop-token")
+	// Wrong jkt
+	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{jkt: "wrong-jkt"})
+	r = r.WithContext(ctx)
+
+	w := serveRequest(plugin, r)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	errResp := extractErrorBody(t, w.Body.Bytes())
+	assert.Contains(t, errResp.Description, "does not match")
+}
+
+// TestUserInfo_mTLSBinding_Success validates that an mTLS-bound token is accepted
+// when the request contains a matching client certificate.
+func TestUserInfo_mTLSBinding_Success(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "mtls-user"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:mtls-user"), nil
+		},
+	}
+	// Pre-compute a valid thumbprint for the test certificate
+	testCert := generateSelfSignedCert(t)
+	expectedThumbprint := shared.CertThumbprint(testCert)
+
+	cnfLookup := &fakeCNFLookup{
+		cnfFn: func(ctx context.Context, tokenID string) (map[string]any, error) {
+			return map[string]any{"x5t#S256": expectedThumbprint}, nil
+		},
+	}
+	plugin := &Plugin{
+		store:     store,
+		cnfLookup: cnfLookup,
+		crypto:    crypto,
+		keyStore:  &fakeKeyStore{},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer mtls-token")
+	// Inject matching client certificate
+	ctx := shared.ContextWithClientCert(r.Context(), testCert)
+	r = r.WithContext(ctx)
+
+	w := serveRequest(plugin, r)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var info protocol.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &info)
+	require.NoError(t, err)
+	assert.Equal(t, "mtls-user", info.Subject)
+}
+
+// TestUserInfo_mTLSBinding_MissingCert validates that an mTLS-bound token is rejected
+// when no client certificate is present in the request.
+func TestUserInfo_mTLSBinding_MissingCert(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "mtls-user"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:mtls-user"), nil
+		},
+	}
+	cnfLookup := &fakeCNFLookup{
+		cnfFn: func(ctx context.Context, tokenID string) (map[string]any, error) {
+			return map[string]any{"x5t#S256": "some-thumbprint"}, nil
+		},
+	}
+	plugin := &Plugin{
+		store:     store,
+		cnfLookup: cnfLookup,
+		crypto:    crypto,
+		keyStore:  &fakeKeyStore{},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer mtls-token")
+	// No client certificate in context
+
+	w := serveRequest(plugin, r)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	errResp := extractErrorBody(t, w.Body.Bytes())
+	assert.Contains(t, errResp.Description, "client certificate required")
+}
+
+// TestUserInfo_NoCNF_SkipsBinding validates that when the token has no cnf claim,
+// the binding check is skipped (backward compatible).
+func TestUserInfo_NoCNF_SkipsBinding(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "no-cnf-user"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:no-cnf-user"), nil
+		},
+	}
+	cnfLookup := &fakeCNFLookup{
+		cnfFn: func(ctx context.Context, tokenID string) (map[string]any, error) {
+			return nil, nil // no cnf
+		},
+	}
+	plugin := &Plugin{
+		store:     store,
+		cnfLookup: cnfLookup,
+		crypto:    crypto,
+		keyStore:  &fakeKeyStore{},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer plain-token")
+	// No DPoP proof, no client cert — should still work
+
+	w := serveRequest(plugin, r)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var info protocol.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &info)
+	require.NoError(t, err)
+	assert.Equal(t, "no-cnf-user", info.Subject)
+}
+
+// TestUserInfo_NilCNFLookup_NoBindingCheck validates that when CNFLookup is nil
+// (storage doesn't implement TokenCNFLookup), the binding check is skipped entirely.
+func TestUserInfo_NilCNFLookup_NoBindingCheck(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "no-lookup-user"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:no-lookup-user"), nil
+		},
+	}
+	plugin := &Plugin{
+		store:    store,
+		crypto:   crypto,
+		keyStore: &fakeKeyStore{},
+		// cnfLookup is nil — storage doesn't implement TokenCNFLookup
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer any-token")
+
+	w := serveRequest(plugin, r)
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+// generateSelfSignedCert creates a self-signed certificate for testing.
+func generateSelfSignedCert(t *testing.T) *x509.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	require.NoError(t, err)
+
+	cert, err := x509.ParseCertificate(certDER)
+	require.NoError(t, err)
+	return cert
 }

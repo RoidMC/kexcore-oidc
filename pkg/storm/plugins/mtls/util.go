@@ -1,18 +1,17 @@
 package mtls
 
 import (
-	"crypto/sha256"
 	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"net/http"
+
+	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
 // CertThumbprint computes the SHA-256 thumbprint of a certificate
 // as a base64url-encoded string (RFC 8705 §3.1, x5t#S256).
 func CertThumbprint(cert *x509.Certificate) string {
-	hash := sha256.Sum256(cert.Raw)
-	return base64.RawURLEncoding.EncodeToString(hash[:])
+	return shared.CertThumbprint(cert)
 }
 
 // CNFClaim returns the cnf claim for certificate-bound tokens (RFC 8705 §3.1).

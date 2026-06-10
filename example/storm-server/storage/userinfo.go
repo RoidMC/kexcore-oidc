@@ -181,3 +181,21 @@ func applyUserInfoClaims(userinfo *protocol.UserInfo, user *User, claims map[str
 		}
 	}
 }
+
+// TokenScopes returns the scopes associated with a token.
+// Implements storm.TokenScopeProvider for scope-based UserInfo claim filtering.
+func (s *Storage) TokenScopes(_ context.Context, tokenID string) ([]string, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	token, ok := s.tokens[tokenID]
+	if !ok {
+		for _, rt := range s.refreshTokens {
+			if rt.Token == tokenID {
+				return rt.Scopes, nil
+			}
+		}
+		return nil, fmt.Errorf("token not found: %s", tokenID)
+	}
+	return token.Scopes, nil
+}

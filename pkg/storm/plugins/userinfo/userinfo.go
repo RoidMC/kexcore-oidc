@@ -18,33 +18,46 @@ import (
 
 // Plugin implements the OIDC UserInfo endpoint.
 type Plugin struct {
-	store    storm.UserinfoStore
-	crypto   storm.UniCrypto
-	keyStore protocol.KeyStore
+	store         storm.UserinfoStore
+	scopeProvider storm.TokenScopeProvider
+	cnfLookup     storm.TokenCNFLookup // optional, enables sender-constrained token verification
+	crypto        storm.UniCrypto
+	keyStore      protocol.KeyStore
 }
 
 // Config holds the dependencies for the UserInfo plugin.
 type Config struct {
-	Store    storm.UserinfoStore
-	Crypto   storm.UniCrypto
-	KeyStore protocol.KeyStore
+	Store         storm.UserinfoStore
+	ScopeProvider storm.TokenScopeProvider // optional, enables scope-based claim filtering
+	CNFLookup     storm.TokenCNFLookup     // optional, enables DPoP/mTLS token binding verification
+	Crypto        storm.UniCrypto
+	KeyStore      protocol.KeyStore
 }
 
 // New creates a new UserInfo plugin from a PluginContext.
 func New(ctx *storm.PluginContext) *Plugin {
-	return &Plugin{
+	p := &Plugin{
 		store:    ctx.Storage.(storm.UserinfoStore),
 		crypto:   ctx.Crypto,
 		keyStore: ctx.Storage.(storm.KeyStore),
 	}
+	if sp, ok := ctx.Storage.(storm.TokenScopeProvider); ok {
+		p.scopeProvider = sp
+	}
+	if cl, ok := ctx.Storage.(storm.TokenCNFLookup); ok {
+		p.cnfLookup = cl
+	}
+	return p
 }
 
 // NewWithConfig creates a new UserInfo plugin with explicit config.
 func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
-		store:    cfg.Store,
-		crypto:   cfg.Crypto,
-		keyStore: cfg.KeyStore,
+		store:         cfg.Store,
+		scopeProvider: cfg.ScopeProvider,
+		cnfLookup:     cfg.CNFLookup,
+		crypto:        cfg.Crypto,
+		keyStore:      cfg.KeyStore,
 	}
 }
 
@@ -95,6 +108,18 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RFC 8705 §5 / RFC 9449 §7.2: verify sender-constrained token binding.
+	// If the token has a cnf claim, the request MUST prove possession of the
+	// corresponding key (DPoP jkt or mTLS x5t#S256).
+	if p.cnfLookup != nil {
+		if cnf, err := p.cnfLookup.TokenCNF(r.Context(), tokenID); err == nil && len(cnf) > 0 {
+			if err := shared.VerifyTokenBinding(r.Context(), cnf); err != nil {
+				shared.WriteError(w, r, shared.NewStatusError(err, http.StatusUnauthorized), nil)
+				return
+			}
+		}
+	}
+
 	userInfo := new(protocol.UserInfo)
 	if err := p.store.SetUserinfoFromToken(r.Context(), userInfo, tokenID, subject, r.Header.Get("Origin")); err != nil {
 		shared.WriteError(w, r, shared.NewStatusError(protocol.ErrInvalidRequest().WithDescription("invalid access token"), http.StatusUnauthorized), nil)
@@ -105,6 +130,15 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	if userInfo.Subject == "" {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("user not found"), nil)
 		return
+	}
+
+	// OIDC Core §5.4: filter standard claims by scope.
+	// If the storage implements TokenScopeProvider, we enforce scope filtering
+	// at the protocol level. Custom claims in the Claims map are always preserved.
+	if p.scopeProvider != nil {
+		if scopes, err := p.scopeProvider.TokenScopes(r.Context(), tokenID); err == nil {
+			userInfo.FilterByScopes(scopes)
+		}
 	}
 
 	// Set OIDC-required headers (OIDC Core §5.3.2, RFC 6750 §3)

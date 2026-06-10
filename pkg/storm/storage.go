@@ -1,3 +1,65 @@
+// StormEngine storage interfaces.
+//
+// Storage is the data layer of StormEngine. You implement these interfaces
+// to connect the OIDC protocol engine to your database, LDAP, or any
+// other backend. The SDK never binds to a specific storage technology.
+//
+// # How it works
+//
+// Engine discovers your storage's capabilities via Go type assertions.
+// Each plugin declares which interfaces it needs (via Requires()), and
+// Engine checks at Build time that your storage satisfies them.
+// If a required interface is missing, Build() panics with a clear error
+// telling you exactly which methods to add.
+//
+// # Implementation guide
+//
+// The interfaces below are grouped by how much OIDC functionality they unlock.
+// Start with Core, add Standard/Extended as needed.
+//
+// ## Core — required for a working OIDC authorization code flow
+//
+//   - [Storage]           (base)         — ClientStore + KeyStore + Health
+//   - [ClientStore]       (always)       — client lookup + secret verification
+//   - [KeyStore]          (always)       — JWKS publication + signing key access
+//   - [AuthStore]         (authorization + token plugins) — auth request CRUD + code management
+//   - [TokenStore]        (token plugin) — access/refresh token creation + lookup
+//   - [UserinfoStore]     (userinfo plugin) — populate UserInfo from token
+//
+// These 6 interfaces are the minimum for a working authorization code flow
+// with UserInfo endpoint. The example at example/storm-server/storage/
+// provides a reference implementation (~800 lines for Core).
+//
+// ## Standard — enable common OIDC features
+//
+//   - [IntrospectStore]       — RFC 7662 Token Introspection
+//   - [RevocationStore]       — RFC 7009 Token Revocation
+//   - [SessionStore]          — Session management (RP-Initiated Logout)
+//   - [AutoCompleteAuthRequest] — prompt=none support (OIDC Core §3.1.2.6)
+//   - [CodeReuseDetector]     — RFC 6749 §4.1.2 code reuse detection
+//
+// ## Extended — advanced features, implement as needed
+//
+//   - [DCRStore]              — RFC 7591 Dynamic Client Registration
+//   - [DeviceAuthStore]       — RFC 8628 Device Authorization Grant
+//   - [PARStore]              — RFC 9126 Pushed Authorization Requests
+//   - [BackChannelStore]      — OIDC Back-Channel Logout
+//   - [ClientCredentialsStore] — OAuth 2.0 Client Credentials Grant
+//   - [JWTProfileStore]       — RFC 7523 JWT Bearer Grant
+//   - [TokenExchangeStore]    — RFC 8693 Token Exchange
+//   - [TokenCNFStore]         — RFC 8705/9449 Token Binding (cnf claim)
+//   - [TokenScopeProvider]    — Scope-based UserInfo claim filtering
+//   - [PairwiseTransformer]   — OIDC Core §8.1 Pairwise Subject Identifiers
+//
+// ## Optional extensions on Client
+//
+// Clients can implement additional interfaces for per-client behavior:
+//
+//   - [ScopeValidationClient]  — strict vs lenient scope validation
+//   - [ClientKeyProvider]      — ID token encryption (JWE)
+//   - [IDTokenLifetimeProvider] — custom ID token lifetime
+//
+// See example/storm-server/storage/ for a complete reference implementation.
 package storm
 
 import (
@@ -17,18 +79,33 @@ import (
 // Engine automatically detects which optional capability interfaces
 // the storage implements, and each plugin consumes only the interfaces
 // it needs. This eliminates the giant monolithic Storage interface.
+//
+// At minimum, your Storage must embed ClientStore and KeyStore,
+// and provide a Health() method. All other interfaces are discovered
+// via type assertion — implement them to enable additional plugins.
 type Storage interface {
 	// ClientStore provides client lookup and credential verification.
+	// Required by: authorization, token, userinfo, DCR, device, PAR plugins.
 	ClientStore
 
 	// KeyStore provides JWKS and signing key access.
+	// Required by: token, keys, authorization (Request Object verification) plugins.
 	KeyStore
 
 	// Health is used by the /ready probe.
+	// Return nil when the storage backend is reachable.
 	Health(ctx context.Context) error
 }
 
-// ClientStore is the minimal client management interface.
+// ClientStore provides client lookup and credential verification.
+// Required by: authorization, token, userinfo, DCR, device, PAR plugins.
+//
+// Implementation notes:
+//   - GetClientByClientID: return a Client that implements at least the base Client interface.
+//     For additional behavior, return a Client that also implements optional interfaces
+//     like ScopeValidationClient, RedirectURIClient, etc.
+//   - AuthorizeClientIDSecret: verify client_secret for confidential clients.
+//     Return nil if valid, error if invalid. Used for client_secret_basic and client_secret_post.
 type ClientStore interface {
 	GetClientByClientID(ctx context.Context, clientID string) (Client, error)
 	AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string) error
@@ -55,6 +132,15 @@ type ScopeValidationClient interface {
 
 // KeyStore provides cryptographic key access.
 // It extends protocol.KeyStore with SigningKey for OP-side token signing.
+//
+// Implementation notes:
+//   - KeySet: return all public keys as JWKS (for /jwks endpoint and token verification).
+//     Each key must implement protocol.Key (jwk.Key with KeyID and Algorithm).
+//   - SignatureAlgorithms: return the list of supported signing algorithms (e.g. ["RS256", "ES256"]).
+//     Used by discovery document.
+//   - SigningKey: return the current signing key + algorithm for token signing.
+//     The SDK uses this to sign ID tokens and access tokens (if JWT).
+//     Rotate keys by changing what this returns — old keys stay in KeySet for verification.
 type KeyStore interface {
 	KeySet(ctx context.Context) ([]protocol.Key, error)
 	SignatureAlgorithms(ctx context.Context) ([]string, error)
@@ -99,7 +185,17 @@ func (s *GMTokenSigner) Sign(payload []byte) (string, error) {
 	return s.SignFunc(payload)
 }
 
-// AuthStore is required by the Authorization plugin.
+// AuthStore is required by the Authorization and Token plugins.
+// It manages the lifecycle of authorization requests and authorization codes.
+//
+// Implementation notes:
+//   - CreateAuthRequest: store the auth request, return a handle (AuthRequest) with a unique ID.
+//     The returned AuthRequest must satisfy the AuthRequest interface (16 getters).
+//   - AuthRequestByID: look up by the handle ID (used during login UI flow).
+//   - AuthRequestByCode: look up by authorization code (used during token exchange).
+//     After a successful lookup, the code should be invalidated (one-time use).
+//   - SaveAuthCode: associate an authorization code string with an auth request ID.
+//   - DeleteAuthRequest: clean up after the auth request is fully processed.
 type AuthStore interface {
 	CreateAuthRequest(ctx context.Context, req *protocol.AuthRequest, userID string) (AuthRequest, error)
 	AuthRequestByID(ctx context.Context, id string) (AuthRequest, error)
@@ -154,7 +250,20 @@ type AuthRequest interface {
 	Done() bool
 }
 
-// TokenStore is required by the Token plugin for access/refresh token operations.
+// TokenStore is required by the Token, UserInfo, Introspection, and Revocation plugins.
+// It manages access token and refresh token creation and lookup.
+//
+// Implementation notes:
+//   - CreateAccessToken: store the token with subject, clientID, scopes, audience.
+//     Return a unique tokenID (opaque string, used as key for other stores) and expiration time.
+//   - CreateAccessAndRefreshTokens: same as CreateAccessToken but also issue a refresh token.
+//     currentRefreshToken is empty for first issuance; non-empty when rotating (delete old RT first).
+//   - TokenRequestByRefreshToken: look up the original token request by refresh token string.
+//     The returned RefreshTokenRequest carries the original subject, scopes, audience, etc.
+//
+// The tokenID you return is the key used by TokenCNFStore, IntrospectStore,
+// and UserinfoStore to look up token metadata. It can be a UUID, database
+// primary key, or any opaque string — the SDK never inspects it.
 type TokenStore interface {
 	CreateAccessToken(ctx context.Context, req TokenRequest) (tokenID string, expiration time.Time, err error)
 	CreateAccessAndRefreshTokens(ctx context.Context, req TokenRequest, currentRefreshToken string) (accessTokenID, newRefreshToken string, expiration time.Time, err error)
@@ -166,6 +275,16 @@ type TokenStore interface {
 // DPoP-bound access tokens (RFC 8705 §3.1, RFC 9449 §7.1).
 type TokenCNFStore interface {
 	SetTokenCNF(ctx context.Context, tokenID string, cnf map[string]any) error
+}
+
+// TokenCNFLookup is an optional extension that allows querying the stored
+// cnf (confirmation) claim for a token. Used by the UserInfo and
+// Introspection endpoints to verify sender-constrained tokens.
+//
+// If your storage implements TokenCNFStore, you should also implement
+// TokenCNFLookup so that protected resource endpoints can verify the binding.
+type TokenCNFLookup interface {
+	TokenCNF(ctx context.Context, tokenID string) (map[string]any, error)
 }
 
 // TokenRequest is the common interface for all token creation requests.
@@ -211,9 +330,28 @@ type IntrospectStore interface {
 	SetIntrospectionFromToken(ctx context.Context, resp *protocol.IntrospectionResponse, tokenID, subject, clientID string) error
 }
 
-// UserinfoStore is required by the UserInfo plugin.
+// UserinfoStore is required by the UserInfo plugin (OIDC Core §5.3).
+//
+// Implementation notes:
+//   - SetUserinfoFromToken receives a tokenID (from TokenStore) and the subject claim.
+//     Look up the user by subject, then populate the UserInfo fields based on
+//     the token's granted scopes. For scope-based filtering, you can either:
+//     (a) filter here based on token scopes, or
+//     (b) implement [TokenScopeProvider] and let the plugin filter automatically.
+//   - origin is the HTTP Origin header value (for CORS), may be empty.
+//   - Set the UserInfo.Subject field — this is enforced by the plugin.
+//
+// The SDK calls this after validating the access token. You do NOT need to
+// verify the token — just populate the response.
 type UserinfoStore interface {
 	SetUserinfoFromToken(ctx context.Context, userinfo *protocol.UserInfo, tokenID, subject, origin string) error
+}
+
+// TokenScopeProvider is an optional extension of UserinfoStore or TokenStore
+// that returns the scopes associated with a token. When implemented, the
+// UserInfo plugin uses it to filter standard OIDC claims by scope (OIDC Core §5.4).
+type TokenScopeProvider interface {
+	TokenScopes(ctx context.Context, tokenID string) ([]string, error)
 }
 
 // RevocationStore is required by the Revocation plugin.

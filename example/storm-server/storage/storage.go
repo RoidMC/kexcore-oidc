@@ -50,6 +50,11 @@ type Storage struct {
 	// Used to detect code reuse and revoke associated tokens.
 	usedCodes map[string]string
 
+	// codeCreatedAt tracks when each authorization code was created.
+	// Used to enforce auth code TTL (RFC 6749 §4.1.2: codes MUST expire
+	// after a maximum of 60 seconds).
+	codeCreatedAt map[string]time.Time
+
 	tokens        map[string]*Token
 	refreshTokens map[string]*RefreshToken
 
@@ -278,6 +283,7 @@ func NewStorage(userStore UserStore, algorithms []string) *Storage {
 		codeToAuthReq:      make(map[string]string),
 		codeTokens:         make(map[string][]string),
 		usedCodes:          make(map[string]string),
+		codeCreatedAt:      make(map[string]time.Time),
 		tokens:             make(map[string]*Token),
 		refreshTokens:      make(map[string]*RefreshToken),
 		sessions:           make(map[string]*sessionInfo),

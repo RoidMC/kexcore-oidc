@@ -1,0 +1,98 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2026 RoidMC Studios
+
+package shared
+
+import (
+	"context"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+
+	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+)
+
+// --- DPoP context ---
+
+// DPoPProof is the minimal interface for a DPoP proof stored in context.
+// Defined here to avoid import cycles between plugins.
+type DPoPProof interface {
+	JWKThumbprint() string
+}
+
+type dpopContextKey struct{}
+
+// ContextWithDPoP stores a DPoP proof in the request context.
+func ContextWithDPoP(ctx context.Context, proof DPoPProof) context.Context {
+	return context.WithValue(ctx, dpopContextKey{}, proof)
+}
+
+// DPoPFromContext retrieves the DPoP proof from the context.
+// Returns nil if no DPoP proof was presented.
+func DPoPFromContext(ctx context.Context) DPoPProof {
+	p, _ := ctx.Value(dpopContextKey{}).(DPoPProof)
+	return p
+}
+
+// --- mTLS client certificate context ---
+
+type clientCertContextKey struct{}
+
+// ContextWithClientCert stores the TLS client certificate in the request context.
+func ContextWithClientCert(ctx context.Context, cert *x509.Certificate) context.Context {
+	return context.WithValue(ctx, clientCertContextKey{}, cert)
+}
+
+// ClientCertFromContext retrieves the TLS client certificate from the context.
+// Returns nil if no certificate was presented.
+func ClientCertFromContext(ctx context.Context) *x509.Certificate {
+	cert, _ := ctx.Value(clientCertContextKey{}).(*x509.Certificate)
+	return cert
+}
+
+// CertThumbprint computes the SHA-256 thumbprint of a certificate
+// as a base64url-encoded string (RFC 8705 §3.1, x5t#S256).
+func CertThumbprint(cert *x509.Certificate) string {
+	hash := sha256.Sum256(cert.Raw)
+	return base64.RawURLEncoding.EncodeToString(hash[:])
+}
+
+// VerifyTokenBinding verifies that the current request proves possession
+// of the key bound to the token via cnf claim (RFC 8705 §5, RFC 9449 §7.2).
+//
+// This is a stateless function that checks:
+//   - cnf.jkt against DPoP proof in context
+//   - cnf.x5t#S256 against TLS client certificate in context
+//
+// Returns nil if the token is not sender-constrained (no cnf) or if
+// verification succeeds. Returns a protocol error otherwise.
+func VerifyTokenBinding(ctx context.Context, cnf map[string]any) error {
+	if len(cnf) == 0 {
+		return nil
+	}
+
+	// DPoP binding: cnf.jkt must match the DPoP proof's jkt
+	if jkt, ok := cnf["jkt"].(string); ok && jkt != "" {
+		proof := DPoPFromContext(ctx)
+		if proof == nil {
+			return protocol.ErrInvalidRequest().WithDescription("DPoP proof required for this token")
+		}
+		if proof.JWKThumbprint() != jkt {
+			return protocol.ErrInvalidRequest().WithDescription("DPoP proof jkt does not match token binding")
+		}
+	}
+
+	// mTLS binding: cnf.x5t#S256 must match the client certificate fingerprint
+	if x5t, ok := cnf["x5t#S256"].(string); ok && x5t != "" {
+		cert := ClientCertFromContext(ctx)
+		if cert == nil {
+			return protocol.ErrInvalidRequest().WithDescription("client certificate required for this token")
+		}
+		if CertThumbprint(cert) != x5t {
+			return protocol.ErrInvalidRequest().WithDescription("client certificate does not match token binding")
+		}
+	}
+
+	return nil
+}

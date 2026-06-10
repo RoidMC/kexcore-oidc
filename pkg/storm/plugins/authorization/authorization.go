@@ -205,6 +205,9 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 	)
 	cfg.GrantTypesSupported = append(cfg.GrantTypesSupported, "authorization_code")
 	cfg.CodeChallengeMethodsSupported = append(cfg.CodeChallengeMethodsSupported, "S256")
+
+	// RFC 9207: iss parameter in authorization response
+	cfg.AuthorizationResponseISSParameterSupported = true
 }
 
 // --- authorize handler ---

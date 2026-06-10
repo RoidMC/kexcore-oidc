@@ -17,7 +17,13 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
+
+// maxNonceCacheSize is the hard limit on the nonce replay cache.
+// Prevents unbounded memory growth in high-traffic deployments.
+// When exceeded, the oldest entries are evicted.
+const maxNonceCacheSize = 10000
 
 // Plugin implements DPoP proof validation and token binding.
 type Plugin struct {
@@ -29,7 +35,7 @@ type Plugin struct {
 // NewWithConfig creates a new DPoP plugin.
 func NewWithConfig() *Plugin {
 	p := &Plugin{
-		usedNonces: make(map[string]time.Time),
+		usedNonces: make(map[string]time.Time, maxNonceCacheSize),
 		stopCh:     make(chan struct{}),
 	}
 	go p.cleanupLoop()
@@ -62,17 +68,18 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 
 // --- Context helpers ---
 
-type dpopContextKey struct{}
-
 // ContextWithDPoP stores the DPoP proof in the request context.
+// Uses shared context key for cross-package access.
 func ContextWithDPoP(ctx context.Context, proof *Proof) context.Context {
-	return context.WithValue(ctx, dpopContextKey{}, proof)
+	return shared.ContextWithDPoP(ctx, proof)
 }
 
-// DPoPFromContext retrieves the DPoP proof from the context.
+// DPoPFromContext retrieves the DPoP proof from the context as *Proof.
 // Returns nil if no DPoP proof was presented.
+// For cross-package access, use shared.DPoPFromContext() which returns
+// the shared.DPoPProof interface.
 func DPoPFromContext(ctx context.Context) *Proof {
-	proof, _ := ctx.Value(dpopContextKey{}).(*Proof)
+	proof, _ := shared.DPoPFromContext(ctx).(*Proof)
 	return proof
 }
 
@@ -102,12 +109,51 @@ func (p *Plugin) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// Evict oldest entries if cache is at capacity
+		if len(p.usedNonces) >= maxNonceCacheSize {
+			p.evictOldestLocked()
+		}
 		p.usedNonces[proof.UniqueID] = time.Now()
 		p.mu.Unlock()
 
 		ctx := ContextWithDPoP(r.Context(), proof)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// evictOldestLocked removes the oldest ~25% of entries.
+// Must be called with p.mu held.
+func (p *Plugin) evictOldestLocked() {
+	// Find the 25th percentile time — evict everything older
+	target := maxNonceCacheSize / 4
+	if target == 0 {
+		target = 1
+	}
+
+	// Collect all timestamps
+	oldest := make([]time.Time, 0, len(p.usedNonces))
+	for _, t := range p.usedNonces {
+		oldest = append(oldest, t)
+	}
+	if len(oldest) < target {
+		return
+	}
+
+	// Partial sort to find the target-th oldest
+	for i := 0; i < target; i++ {
+		for j := i + 1; j < len(oldest); j++ {
+			if oldest[j].Before(oldest[i]) {
+				oldest[i], oldest[j] = oldest[j], oldest[i]
+			}
+		}
+	}
+	cutoff := oldest[target-1]
+
+	for jti, t := range p.usedNonces {
+		if !t.After(cutoff) {
+			delete(p.usedNonces, jti)
+		}
+	}
 }
 
 // CleanupNonceCache removes expired nonces from the cache.

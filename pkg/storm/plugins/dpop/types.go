@@ -13,3 +13,9 @@ type Proof struct {
 	UniqueID  string           // jti claim
 	PublicKey interface{}      // The public key from the proof (crypto.PublicKey)
 }
+
+// JWKThumbprint returns the JWK thumbprint (cnf.jkt value).
+// Implements shared.DPoPProof interface.
+func (p *Proof) JWKThumbprint() string {
+	return p.JKT
+}

@@ -7,6 +7,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -40,6 +41,11 @@ func (s *Storage) AuthRequestByID(_ context.Context, id string) (storm.AuthReque
 	return ar, nil
 }
 
+// authCodeTTL is the maximum lifetime of an authorization code.
+// RFC 6749 §4.1.2: The authorization code MUST expire after a brief
+// period of time. The OIDF FAPI 2.0 Security Profile specifies 60 seconds.
+const authCodeTTL = 60 * time.Second
+
 func (s *Storage) AuthRequestByCode(_ context.Context, code string) (storm.AuthRequest, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -48,6 +54,18 @@ func (s *Storage) AuthRequestByCode(_ context.Context, code string) (storm.AuthR
 	if !ok {
 		return nil, fmt.Errorf("code not found")
 	}
+
+	// RFC 6749 §4.1.2: check auth code TTL
+	if createdAt, ok := s.codeCreatedAt[code]; ok {
+		if time.Since(createdAt) > authCodeTTL {
+			// Code expired — clean up
+			delete(s.codeToAuthReq, code)
+			delete(s.authCodes, authReqID)
+			delete(s.codeCreatedAt, code)
+			return nil, fmt.Errorf("authorization code expired")
+		}
+	}
+
 	ar, ok := s.authRequests[authReqID]
 	if !ok {
 		return nil, fmt.Errorf("auth request not found: %s", authReqID)
@@ -64,6 +82,7 @@ func (s *Storage) SaveAuthCode(_ context.Context, id, code string) error {
 	}
 	s.authCodes[id] = code
 	s.codeToAuthReq[code] = id
+	s.codeCreatedAt[code] = time.Now()
 	return nil
 }
 
@@ -77,6 +96,7 @@ func (s *Storage) DeleteAuthRequest(_ context.Context, id string) error {
 		s.usedCodes[code] = id
 		delete(s.codeToAuthReq, code)
 		delete(s.authCodes, id)
+		delete(s.codeCreatedAt, code)
 	}
 	return nil
 }
