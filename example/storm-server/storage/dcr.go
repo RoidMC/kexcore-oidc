@@ -47,18 +47,21 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 	} else {
 		grantTypes = []protocol.GrantType{protocol.GrantTypeCode, protocol.GrantTypeRefreshToken}
 	}
-	// Parse encryption key from jwks field if present.
+	// Parse keys from jwks field if present.
 	// Per OIDC Core §10.1, match by kid (if specified in request) and use=enc.
 	// Note: jwks_uri is not resolved here; the DCR plugin layer should fetch
 	// and merge into jwks before calling CreateClient.
 	var encKey interface{}
+	var sigKeys []jwk.Key
 	if len(req.JWKS) > 0 {
 		set, err := jwk.Parse(req.JWKS)
 		if err == nil {
 			targetAlg := req.IDTokenEncryptedResponseAlg
 			for i := range set.Len() {
 				key, _ := set.Key(i)
-				// Filter by use=enc if present
+				// Collect all keys for signature verification (JWT Bearer Grant)
+				sigKeys = append(sigKeys, key)
+				// Filter by use=enc if present for encryption key
 				if ku, ok := key.KeyUsage(); ok && ku != "" && ku != "enc" {
 					continue
 				}
@@ -87,6 +90,7 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 		idTokenEncryptionAlg:   req.IDTokenEncryptedResponseAlg,
 		idTokenEncryptionEnc:   req.IDTokenEncryptedResponseEnc,
 		clientEncryptionKey:    encKey,
+		clientJWKS:             sigKeys,
 	}
 	s.clients[clientID] = client
 

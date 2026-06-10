@@ -314,6 +314,18 @@ type ClientKeyProvider interface {
 	ClientEncryptionKey() interface{}
 }
 
+// ClientJWKSProvider is optionally implemented by Client to provide
+// the client's public JWKS keys for signature verification.
+//
+// Used by the JWT Bearer Grant (RFC 7523 §2.1) to verify the client's
+// signed assertion. The returned keys should include use=sig keys.
+//
+// When not implemented, the client cannot use the JWT Bearer Grant.
+type ClientJWKSProvider interface {
+	// ClientJWKS returns the client's public keys for signature verification.
+	ClientJWKS() []jwk.Key
+}
+
 // RefreshTokenRequest extends TokenRequest for refresh token operations.
 type RefreshTokenRequest interface {
 	TokenRequest

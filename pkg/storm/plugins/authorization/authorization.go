@@ -206,6 +206,14 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 	cfg.GrantTypesSupported = append(cfg.GrantTypesSupported, "authorization_code")
 	cfg.CodeChallengeMethodsSupported = append(cfg.CodeChallengeMethodsSupported, "S256")
 
+	// Implicit/hybrid response types (only when enabled)
+	if p.enableImplicit {
+		cfg.ResponseTypesSupported = append(cfg.ResponseTypesSupported,
+			"id_token", "id_token token",
+			"code id_token", "code token", "code id_token token",
+		)
+	}
+
 	// RFC 9207: iss parameter in authorization response
 	cfg.AuthorizationResponseISSParameterSupported = true
 }

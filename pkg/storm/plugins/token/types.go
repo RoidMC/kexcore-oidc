@@ -81,6 +81,19 @@ func (r *deviceTokenRequest) GetClientID() string   { return r.clientID }
 func (r *deviceTokenRequest) GetScopes() []string   { return r.scopes }
 func (r *deviceTokenRequest) GetAudience() []string { return []string{r.clientID} }
 
+// jwtBearerTokenRequest implements storm.TokenRequest for jwt-bearer grant (RFC 7523 §2.1).
+type jwtBearerTokenRequest struct {
+	subject  string
+	clientID string
+	scopes   []string
+	audience []string
+}
+
+func (r *jwtBearerTokenRequest) GetSubject() string    { return r.subject }
+func (r *jwtBearerTokenRequest) GetClientID() string   { return r.clientID }
+func (r *jwtBearerTokenRequest) GetScopes() []string   { return r.scopes }
+func (r *jwtBearerTokenRequest) GetAudience() []string { return r.audience }
+
 // --- internal interfaces (capability detection) ---
 
 type idTokenClaimsExtender interface {

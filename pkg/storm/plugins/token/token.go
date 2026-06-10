@@ -18,9 +18,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -321,8 +325,145 @@ func (p *Plugin) handleClientCredentials(w http.ResponseWriter, r *http.Request)
 
 // --- jwt-bearer grant (RFC 7523 §2.1) ---
 
+// handleJWTProfile implements the JWT Bearer Grant (RFC 7523 §2.1).
+//
+// The client sends a signed JWT assertion to obtain an access token.
+// The JWT must contain:
+//   - iss: client_id
+//   - sub: the user subject to authorize
+//   - aud: the token endpoint or issuer URL
+//   - exp: expiration time (max 5 minutes)
+//   - iat: issued-at time
+//
+// The client must implement storm.ClientJWKSProvider to provide its
+// public keys for signature verification.
 func (p *Plugin) handleJWTProfile(w http.ResponseWriter, r *http.Request) {
-	tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("jwt-bearer grant not yet implemented"))
+	assertion := r.Form.Get("assertion")
+	if assertion == "" {
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("assertion is missing"))
+		return
+	}
+
+	// Parse JWT payload to extract claims
+	request := new(protocol.JWTTokenRequest)
+	if _, err := protocol.ParseToken(assertion, request); err != nil {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("invalid assertion: %s", err.Error()))
+		return
+	}
+
+	// Validate required claims
+	if request.Issuer == "" {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("assertion missing iss claim"))
+		return
+	}
+	if request.Subject == "" {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("assertion missing sub claim"))
+		return
+	}
+
+	// Look up client by iss (client_id)
+	client, err := p.clientStore.GetClientByClientID(r.Context(), request.Issuer)
+	if err != nil {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("unknown client: %s", request.Issuer))
+		return
+	}
+
+	// Check client has jwt-bearer grant type
+	if !validateGrantType(client, protocol.GrantTypeBearer) {
+		tokenError(w, r, protocol.ErrUnauthorizedClient().WithDescription("client missing grant_type jwt-bearer"))
+		return
+	}
+
+	// Get client's JWKS for signature verification
+	jwksProvider, ok := client.(storm.ClientJWKSProvider)
+	if !ok {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("client does not support JWT bearer grant (no JWKS)"))
+		return
+	}
+	keys := jwksProvider.ClientJWKS()
+	if len(keys) == 0 {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("client has no signing keys"))
+		return
+	}
+
+	// Parse JWS header to get kid and alg
+	jwsMsg, err := jws.Parse([]byte(assertion))
+	if err != nil {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("invalid JWS: %s", err.Error()))
+		return
+	}
+	keyID, alg := protocol.GetKeyIDAndAlg(jwsMsg)
+
+	// Find matching key
+	key, err := protocol.FindMatchingKey(keyID, protocol.KeyUseSignature, alg, keys...)
+	if err != nil {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("no matching key found for kid=%q alg=%s", keyID, alg))
+		return
+	}
+
+	// Verify signature
+	jwaAlg, ok := jwa.LookupSignatureAlgorithm(alg)
+	if !ok {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("unsupported signing algorithm: %s", alg))
+		return
+	}
+	_, err = jws.Verify([]byte(assertion), jws.WithKey(jwaAlg, key))
+	if err != nil {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("signature verification failed: %s", err.Error()))
+		return
+	}
+
+	// Verify aud contains the issuer URL (RFC 7523 §2.1)
+	issuer := shared.IssuerFromContext(r.Context())
+	if !slices.Contains(request.Audience, issuer) {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("audience must contain issuer %q", issuer))
+		return
+	}
+
+	// Verify exp (max 5 minutes per RFC 7523 §2.1)
+	if request.ExpiresAt == 0 {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("assertion missing exp claim"))
+		return
+	}
+	expTime := request.ExpiresAt.AsTime()
+	if expTime.Before(time.Now().UTC()) {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("assertion expired"))
+		return
+	}
+	if expTime.After(time.Now().UTC().Add(5 * time.Minute)) {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("assertion exp too far in the future (max 5 minutes)"))
+		return
+	}
+
+	// Verify iat is not in the future
+	if request.IssuedAt != 0 && request.IssuedAt.AsTime().After(time.Now().UTC().Add(10*time.Second)) {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("assertion iat is in the future"))
+		return
+	}
+
+	// Parse scopes from form (optional)
+	var scopes []string
+	if scopeStr := r.Form.Get("scope"); scopeStr != "" {
+		scopes = strings.Split(scopeStr, " ")
+	}
+
+	// Create token request
+	tokenRequest := &jwtBearerTokenRequest{
+		subject:  request.Subject,
+		clientID: request.Issuer,
+		scopes:   scopes,
+		audience: request.Audience,
+	}
+
+	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), tokenRequest, client, tokenResponseOpts{
+		IssueRefresh: false, // JWT Bearer Grant does not issue refresh tokens per RFC 7523
+	})
+	if err != nil {
+		tokenError(w, r, err)
+		return
+	}
+
+	shared.JSONResponse(w, resp, http.StatusOK)
 }
 
 // --- token exchange grant (RFC 8693) ---

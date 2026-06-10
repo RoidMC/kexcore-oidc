@@ -8,6 +8,7 @@ package storage
 import (
 	"time"
 
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
 
@@ -37,6 +38,7 @@ type Client struct {
 	idTokenEncryptionEnc           string
 	backChannelLogoutURI           string
 	clientEncryptionKey            interface{} // public key for ID token encryption (RSA, ECDH, or symmetric)
+	clientJWKS                     []jwk.Key   // client's public keys for JWT bearer grant verification
 }
 
 func (c *Client) GetID() string                          { return c.id }
@@ -55,6 +57,7 @@ func (c *Client) IDTokenEncryptionAlg() string           { return c.idTokenEncry
 func (c *Client) IDTokenEncryptionEnc() string           { return c.idTokenEncryptionEnc }
 func (c *Client) BackChannelLogoutURI() string           { return c.backChannelLogoutURI }
 func (c *Client) ClientEncryptionKey() interface{}       { return c.clientEncryptionKey }
+func (c *Client) ClientJWKS() []jwk.Key                  { return c.clientJWKS }
 
 func (s *Storage) RegisterClients(registerClients ...*Client) {
 	s.lock.Lock()
