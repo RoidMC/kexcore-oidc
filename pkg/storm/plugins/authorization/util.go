@@ -99,8 +99,9 @@ func parseAuthorizeRequest(form map[string][]string, decoder *protocol.Decoder) 
 // validateAuthRequestParamsExceptRedirectURI validates all params except redirect_uri.
 // This is called after redirect_uri has been validated separately, so that
 // remaining errors can be safely redirected to the registered URI.
-func validateAuthRequestParamsExceptRedirectURI(client storm.Client, authReq *protocol.AuthRequest) error {
-	return shared.ValidateAuthRequestParamsExceptRedirectURI(&authRequestClientAdapter{client}, authReq)
+// defaultScopes are applied when the client omits the scope parameter (optional).
+func validateAuthRequestParamsExceptRedirectURI(client storm.Client, authReq *protocol.AuthRequest, defaultScopes ...string) error {
+	return shared.ValidateAuthRequestParamsExceptRedirectURI(&authRequestClientAdapter{client}, authReq, defaultScopes...)
 }
 
 // validateRedirectURI validates the redirect_uri parameter.
@@ -109,8 +110,9 @@ func validateRedirectURI(client storm.Client, uri string, responseType protocol.
 }
 
 // validateScopes validates the scope parameter.
-func validateScopes(client storm.Client, authReq *protocol.AuthRequest) error {
-	return shared.ValidateScopes(&authRequestClientAdapter{client}, authReq)
+// defaultScopes are applied when the client omits the scope parameter (optional).
+func validateScopes(client storm.Client, authReq *protocol.AuthRequest, defaultScopes ...string) error {
+	return shared.ValidateScopes(&authRequestClientAdapter{client}, authReq, defaultScopes...)
 }
 
 // validateResponseType validates the response_type parameter.

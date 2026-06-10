@@ -293,8 +293,8 @@ func TestDecoder_Decode_unknownKeys(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown key")
 
-	d.IgnoreUnknownKeys(true)
-	err = d.Decode(&r, map[string][]string{"unknown": []string{"x"}})
+	// per-decode option: WithIgnoreUnknownKeys
+	err = d.Decode(&r, map[string][]string{"unknown": []string{"x"}}, WithIgnoreUnknownKeys())
 	require.NoError(t, err)
 }
 

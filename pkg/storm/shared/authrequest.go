@@ -60,21 +60,23 @@ const (
 )
 
 // ValidateAuthRequestParams validates all authorization request parameters.
-func ValidateAuthRequestParams(client AuthRequestClient, authReq *protocol.AuthRequest) error {
+// defaultScopes are applied when the client omits the scope parameter (optional).
+func ValidateAuthRequestParams(client AuthRequestClient, authReq *protocol.AuthRequest, defaultScopes ...string) error {
 	if err := ValidateRedirectURI(client, authReq.RedirectURI, authReq.ResponseType); err != nil {
 		return err
 	}
-	return ValidateAuthRequestParamsExceptRedirectURI(client, authReq)
+	return ValidateAuthRequestParamsExceptRedirectURI(client, authReq, defaultScopes...)
 }
 
 // ValidateAuthRequestParamsExceptRedirectURI validates all params except redirect_uri.
 // This is called after redirect_uri has been validated separately, so that
 // remaining errors can be safely redirected to the registered URI.
-func ValidateAuthRequestParamsExceptRedirectURI(client AuthRequestClient, authReq *protocol.AuthRequest) error {
+// defaultScopes are applied when the client omits the scope parameter (optional).
+func ValidateAuthRequestParamsExceptRedirectURI(client AuthRequestClient, authReq *protocol.AuthRequest, defaultScopes ...string) error {
 	if err := ValidatePrompt(authReq); err != nil {
 		return err
 	}
-	if err := ValidateScopes(client, authReq); err != nil {
+	if err := ValidateScopes(client, authReq, defaultScopes...); err != nil {
 		return err
 	}
 	if err := ValidatePKCE(authReq); err != nil {
@@ -154,8 +156,16 @@ func ValidatePrompt(authReq *protocol.AuthRequest) error {
 }
 
 // ValidateScopes validates the scope parameter.
-func ValidateScopes(client AuthRequestClient, authReq *protocol.AuthRequest) error {
+// If the client omits the scope parameter, defaultScopes are applied when provided.
+// Per RFC 6749 §4.1.1: "If the client omits the scope parameter when requesting
+// authorization, the authorization server MUST either process the request using
+// a pre-defined default value or fail the request indicating an invalid scope."
+func ValidateScopes(client AuthRequestClient, authReq *protocol.AuthRequest, defaultScopes ...string) error {
 	if len(authReq.Scopes) == 0 {
+		if len(defaultScopes) > 0 {
+			authReq.Scopes = defaultScopes
+			return nil
+		}
 		return protocol.ErrInvalidRequest().WithDescription("scope is missing")
 	}
 

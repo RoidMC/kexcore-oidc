@@ -105,6 +105,26 @@ func TestValidateScopes_Empty(t *testing.T) {
 	assert.Contains(t, err.Error(), "scope is missing")
 }
 
+// RFC 6749 §4.1.1: When client omits scope, default scopes are applied.
+func TestValidateScopes_EmptyWithDefault(t *testing.T) {
+	client := &fakeClient{}
+	authReq := &protocol.AuthRequest{Scopes: []string{}}
+
+	err := validateScopes(client, authReq, "openid", "profile")
+	require.NoError(t, err)
+	assert.Equal(t, protocol.SpaceDelimitedArray{"openid", "profile"}, authReq.Scopes)
+}
+
+// Default scopes are not applied when client provides scopes.
+func TestValidateScopes_WithScopesIgnoresDefault(t *testing.T) {
+	client := &fakeClient{}
+	authReq := &protocol.AuthRequest{Scopes: []string{"openid", "email"}}
+
+	err := validateScopes(client, authReq, "openid", "profile")
+	require.NoError(t, err)
+	assert.Equal(t, protocol.SpaceDelimitedArray{"openid", "email"}, authReq.Scopes)
+}
+
 // --- redirect URI validation tests ---
 
 func TestValidateRedirectURI_WebHTTPS(t *testing.T) {

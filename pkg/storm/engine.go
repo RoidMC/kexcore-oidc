@@ -227,7 +227,6 @@ func (e *Engine) autoRegisterPlugins() {
 	}
 	if pctx.Decoder == nil {
 		pctx.Decoder = protocol.NewDecoder()
-		pctx.Decoder.IgnoreUnknownKeys(true)
 	}
 
 	// Collect all candidate plugins (global + explicit factories)

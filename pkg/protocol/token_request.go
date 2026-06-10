@@ -12,13 +12,10 @@ const (
 	ClientAssertionTypeJWTAssertion = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 )
 
-type TokenRequest interface {
-	GrantType() GrantType
-}
-
 type TokenRequestType GrantType
 
 type AccessTokenRequest struct {
+	GrantType           string `schema:"grant_type,omitempty"`
 	Code                string `schema:"code"`
 	RedirectURI         string `schema:"redirect_uri"`
 	ClientID            string `schema:"client_id"`
@@ -26,10 +23,6 @@ type AccessTokenRequest struct {
 	CodeVerifier        string `schema:"code_verifier,omitempty"`
 	ClientAssertion     string `schema:"client_assertion,omitempty"`
 	ClientAssertionType string `schema:"client_assertion_type,omitempty"`
-}
-
-func (a *AccessTokenRequest) GrantType() GrantType {
-	return GrantTypeCode
 }
 
 func (a *AccessTokenRequest) SetClientID(clientID string) {
@@ -41,16 +34,13 @@ func (a *AccessTokenRequest) SetClientSecret(clientSecret string) {
 }
 
 type RefreshTokenRequest struct {
+	GrantType           string              `schema:"grant_type,omitempty"`
 	RefreshToken        string              `schema:"refresh_token"`
 	Scopes              SpaceDelimitedArray `schema:"scope"`
 	ClientID            string              `schema:"client_id"`
 	ClientSecret        string              `schema:"client_secret"`
 	ClientAssertion     string              `schema:"client_assertion"`
 	ClientAssertionType string              `schema:"client_assertion_type"`
-}
-
-func (a *RefreshTokenRequest) GrantType() GrantType {
-	return GrantTypeRefreshToken
 }
 
 func (a *RefreshTokenRequest) SetClientID(clientID string) {

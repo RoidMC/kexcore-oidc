@@ -190,10 +190,21 @@ type Decoder struct {
 	customParsers     map[reflect.Type]func(string) (reflect.Value, error)
 }
 
-// IgnoreUnknownKeys configures the decoder to skip keys that do not
-// match any exported field with a "schema" tag.
-func (d *Decoder) IgnoreUnknownKeys(ignore bool) {
-	d.ignoreUnknownKeys = ignore
+// DecodeOption configures per-decode behavior.
+type DecodeOption func(*decodeConfig)
+
+type decodeConfig struct {
+	ignoreUnknownKeys bool
+}
+
+// WithIgnoreUnknownKeys returns a DecodeOption that causes the decoder to
+// skip keys that do not match any exported field with a "schema" tag.
+// Use this when the source map may contain fields not in the target struct
+// (e.g., client authentication fields in PAR requests).
+func WithIgnoreUnknownKeys() DecodeOption {
+	return func(c *decodeConfig) {
+		c.ignoreUnknownKeys = true
+	}
 }
 
 // RegisterParser registers a custom string parser for a specific reflect.Type.
@@ -205,7 +216,16 @@ func (d *Decoder) RegisterParser(rt reflect.Type, parser func(string) (reflect.V
 // Decode decodes src (map[string][]string) into dst (struct pointer).
 // It reads "schema" struct tags for field names.
 // Custom types implementing encoding.TextUnmarshaler are supported.
-func (d *Decoder) Decode(dst any, src map[string][]string) error {
+//
+// Options can be passed to override per-decode behavior:
+//
+//	decoder.Decode(authReq, r.Form, protocol.WithIgnoreUnknownKeys())
+func (d *Decoder) Decode(dst any, src map[string][]string, opts ...DecodeOption) error {
+	cfg := &decodeConfig{ignoreUnknownKeys: d.ignoreUnknownKeys}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	v := reflect.ValueOf(dst)
 	if v.Kind() != reflect.Ptr || v.IsNil() {
 		return fmt.Errorf("protocol: Decode expects non-nil pointer, got %T", dst)
@@ -234,7 +254,7 @@ func (d *Decoder) Decode(dst any, src map[string][]string) error {
 	for key, values := range src {
 		idx, ok := fieldMap[key]
 		if !ok {
-			if d.ignoreUnknownKeys {
+			if cfg.ignoreUnknownKeys {
 				continue
 			}
 			return fmt.Errorf("protocol: unknown key %q", key)

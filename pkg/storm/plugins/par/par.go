@@ -92,8 +92,18 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// RFC 9126 §2.1 step 2: Reject if request_uri is provided.
+	if r.Form.Has("request_uri") {
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("request_uri is not allowed in pushed authorization request"), nil)
+		return
+	}
+
+	// Decode authorization request parameters.
+	// Use WithIgnoreUnknownKeys() to skip client authentication fields
+	// (client_secret, client_assertion, etc.) that are not in AuthRequest.
+	// This is a per-decode option — it doesn't affect other plugins.
 	authReq := new(protocol.AuthRequest)
-	if err := p.decoder.Decode(authReq, r.Form); err != nil {
+	if err := p.decoder.Decode(authReq, r.Form, protocol.WithIgnoreUnknownKeys()); err != nil {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding auth request").WithParent(err), nil)
 		return
 	}

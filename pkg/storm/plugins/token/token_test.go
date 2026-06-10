@@ -316,7 +316,6 @@ func newTestPlugin(t *testing.T, clientStore *fakeClientStore, authStore *fakeAu
 		signingKey: mustNewFakeSigningKey(t),
 	}
 	decoder := protocol.NewDecoder()
-	decoder.IgnoreUnknownKeys(true)
 	return &Plugin{
 		tokenStore:  tokenStore,
 		clientStore: clientStore,
@@ -332,7 +331,6 @@ func newTestPlugin(t *testing.T, clientStore *fakeClientStore, authStore *fakeAu
 func newTestPluginNoKeyStore(t *testing.T, clientStore *fakeClientStore, authStore *fakeAuthStore, tokenStore *fakeTokenStore) *Plugin {
 	t.Helper()
 	decoder := protocol.NewDecoder()
-	decoder.IgnoreUnknownKeys(true)
 	return &Plugin{
 		tokenStore:  tokenStore,
 		clientStore: clientStore,
@@ -1606,7 +1604,6 @@ func newTestPluginWithDevice(t *testing.T, clientStore *fakeClientStore, authSto
 		signingKey: mustNewFakeSigningKey(t),
 	}
 	decoder := protocol.NewDecoder()
-	decoder.IgnoreUnknownKeys(true)
 	return &Plugin{
 		tokenStore:         tokenStore,
 		clientStore:        clientStore,
