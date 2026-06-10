@@ -23,45 +23,22 @@ import (
 
 // SignJWS signs the payload using the given JWK and returns compact JWS serialization.
 // The JWK must contain a private key and have an "alg" header set.
+//
+// This is the recommended entry point for JWS signing. It delegates to Signer,
+// which checks the ProviderRegistry first for HSM/KMS overrides, then falls
+// back to the built-in software implementation (gmsm for GM/T, jwx for
+// international algorithms).
 func SignJWS(payload []byte, key jwk.Key) (string, error) {
 	algStr, ok := key.Algorithm()
 	if !ok || algStr.String() == "" {
 		return "", fmt.Errorf("crypto: JWK has no algorithm set")
 	}
 
-	// GM/T algorithms are handled by the Signer
-	if isSM2SignAlgorithm(algStr.String()) || isSM9SignAlgorithm(algStr.String()) {
-		return signJWSWithGM(payload, key)
-	}
-
-	alg, ok := jwa.LookupSignatureAlgorithm(algStr.String())
-	if !ok {
-		return "", fmt.Errorf("crypto: unsupported signature algorithm %q", algStr.String())
-	}
-
-	headers := jws.NewHeaders()
-	_ = headers.Set(jws.AlgorithmKey, alg)
-	if kid, ok := key.KeyID(); ok && kid != "" {
-		_ = headers.Set(jws.KeyIDKey, kid)
-	}
-
-	signed, err := jws.Sign(payload, jws.WithKey(alg, key, jws.WithProtectedHeaders(headers)))
-	if err != nil {
-		return "", fmt.Errorf("crypto: failed to sign JWS: %w", err)
-	}
-	return string(signed), nil
-}
-
-// signJWSWithGM handles GM/T signing (SM2/SM9) using the JWK.
-func signJWSWithGM(payload []byte, key jwk.Key) (string, error) {
 	kid, _ := key.KeyID()
-	algStr, _ := key.Algorithm()
-
 	signer, err := NewSigner(algStr.String(), key, kid)
 	if err != nil {
-		return "", fmt.Errorf("crypto: failed to create GM signer: %w", err)
+		return "", fmt.Errorf("crypto: failed to create signer: %w", err)
 	}
-
 	return signer.Sign(payload)
 }
 
@@ -132,23 +109,23 @@ func (s *Signer) Algorithm() string {
 }
 
 // Sign signs the payload and returns the compact serialized JWS.
-// For GM/T algorithms (SM2/SM9), it checks the ProviderRegistry first
-// for HSM/KMS overrides before falling back to built-in gmsm implementation.
+// Sign signs the payload and returns the compact serialized JWS.
+// It checks the ProviderRegistry first for HSM/KMS overrides (any algorithm),
+// then falls back to the built-in software implementation (gmsm for GM/T,
+// jwx for international algorithms).
 func (s *Signer) Sign(payload []byte) (string, error) {
-	// Check registry for GM/T algorithm overrides (HSM/KMS)
-	if isSM2SignAlgorithm(s.algorithm) || isSM9SignAlgorithm(s.algorithm) {
-		if provider, ok := DefaultRegistry.GetSigner(s.algorithm); ok {
-			return provider.Sign(context.Background(), s.keyID, payload)
+	// DefaultRegistry contains built-in software providers for all supported algorithms.
+	// HSM/KMS vendors can override any algorithm by registering their own provider
+	// in init() (last registration wins).
+	if provider, ok := DefaultRegistry.GetSigner(s.algorithm); ok {
+		key := s.key
+		if s.sm9Priv != nil && len(s.sm9UID) > 0 {
+			key = &SM9SignKey{PrivateKey: s.sm9Priv, UID: s.sm9UID}
 		}
+		return provider.Sign(context.Background(), s.keyID, s.tokenTypeOrDefault(), key, payload)
 	}
 
-	if s.sm2Priv != nil {
-		return s.signSM2(payload)
-	}
-	if s.sm9Priv != nil {
-		return s.signSM9(payload)
-	}
-
+	// Fallback for international algorithms not registered in DefaultRegistry.
 	alg, _ := jwa.LookupSignatureAlgorithm(s.algorithm)
 	headers := jws.NewHeaders()
 	_ = headers.Set(jws.AlgorithmKey, alg)
@@ -171,22 +148,22 @@ func (s *Signer) tokenTypeOrDefault() string {
 	return "JWT"
 }
 
-func (s *Signer) signSM2(payload []byte) (string, error) {
-	h, err := GetHashAlgorithm(s.algorithm)
+func signSM2(algorithm, keyID, tokenType string, priv *gmsm.PrivateKey, payload []byte) (string, error) {
+	h, err := GetHashAlgorithm(algorithm)
 	if err != nil {
 		return "", err
 	}
 	h.Write(payload)
 	digest := h.Sum(nil)
 
-	signature, err := s.sm2Priv.Sign(rand.Reader, digest, nil)
+	signature, err := priv.Sign(rand.Reader, digest, nil)
 	if err != nil {
 		return "", err
 	}
 
 	headerJSON, err := json.Marshal(map[string]interface{}{
-		"alg": s.algorithm,
-		"typ": s.tokenTypeOrDefault(),
+		"alg": algorithm,
+		"typ": tokenType,
 	})
 	if err != nil {
 		return "", err
@@ -197,6 +174,10 @@ func (s *Signer) signSM2(payload []byte) (string, error) {
 	encodedSignature := base64.RawURLEncoding.EncodeToString(signature)
 
 	return encodedHeader + "." + encodedPayload + "." + encodedSignature, nil
+}
+
+func (s *Signer) signSM2(payload []byte) (string, error) {
+	return signSM2(s.algorithm, s.keyID, s.tokenTypeOrDefault(), s.sm2Priv, payload)
 }
 
 // Sign marshals payload to JSON and signs it.
@@ -230,30 +211,30 @@ func isSM9SignAlgorithm(alg string) bool {
 
 // signSM9 signs the payload using SM9 identity-based signature.
 // The JWS protected header includes the uid parameter per GM/T 0125.1.
-func (s *Signer) signSM9(payload []byte) (string, error) {
-	if len(s.sm9UID) == 0 {
-		return "", errors.New("signer: SM9 signing requires uid to be set via SetSM9UID")
+func signSM9(algorithm, keyID, tokenType string, priv *sm9.SignPrivateKey, uid []byte, payload []byte) (string, error) {
+	if len(uid) == 0 {
+		return "", errors.New("signer: SM9 signing requires uid")
 	}
 
-	h, err := GetHashAlgorithm(s.algorithm)
+	h, err := GetHashAlgorithm(algorithm)
 	if err != nil {
 		return "", err
 	}
 	h.Write(payload)
 	digest := h.Sum(nil)
 
-	signature, err := gm.SM9Sign(s.sm9Priv, digest)
+	signature, err := gm.SM9Sign(priv, digest)
 	if err != nil {
 		return "", err
 	}
 
 	headerMap := map[string]interface{}{
-		"alg": s.algorithm,
-		"typ": s.tokenTypeOrDefault(),
-		"uid": base64.RawURLEncoding.EncodeToString(s.sm9UID),
+		"alg": algorithm,
+		"typ": tokenType,
+		"uid": base64.RawURLEncoding.EncodeToString(uid),
 	}
-	if s.keyID != "" {
-		headerMap["kid"] = s.keyID
+	if keyID != "" {
+		headerMap["kid"] = keyID
 	}
 
 	headerJSON, err := json.Marshal(headerMap)
@@ -266,4 +247,8 @@ func (s *Signer) signSM9(payload []byte) (string, error) {
 	encodedSignature := base64.RawURLEncoding.EncodeToString(signature)
 
 	return encodedHeader + "." + encodedPayload + "." + encodedSignature, nil
+}
+
+func (s *Signer) signSM9(payload []byte) (string, error) {
+	return signSM9(s.algorithm, s.keyID, s.tokenTypeOrDefault(), s.sm9Priv, s.sm9UID, payload)
 }

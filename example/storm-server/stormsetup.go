@@ -149,7 +149,6 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 	tokenCrypto := storage.NewTokenCrypto(sha256.Sum256([]byte("test")), cfg.CryptoMethod)
 
 	decoder := protocol.NewDecoder()
-	decoder.IgnoreUnknownKeys(true)
 
 	// Plugins auto-register via init() — just create the engine.
 	// The engine discovers all registered plugins, checks storage dependencies,

@@ -10,18 +10,24 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/emmansun/gmsm/sm2"
+	gmsm "github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
 	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
+	"github.com/roidmc/kexcore-oidc/pkg/crypto/provider/std"
 )
 
-// SignProvider is the interface for external JWS signing implementations.
-// HSM/KMS vendors can implement this interface and register it to DefaultRegistry.
+// SignProvider is the interface for JWS signing implementations.
+// Both built-in software signers and HSM/KMS vendors implement this interface
+// and register it to DefaultRegistry. The last registration wins, so HSM/KMS
+// providers registered in init() will override the built-in ones.
 type SignProvider interface {
 	// Algorithm returns the supported JWA signature algorithm, e.g. "SGD_SM3_SM2".
 	Algorithm() string
-	// Sign signs the payload with the key identified by keyID and returns compact JWS.
-	Sign(ctx context.Context, keyID string, payload []byte) (string, error)
+	// Sign signs the payload and returns compact JWS.
+	// key is the signing key material; type depends on algorithm (e.g. *sm2.PrivateKey for SM2).
+	// tokenType is the JWT typ header value (e.g. "JWT", "logout+jwt"); HSM providers may ignore it.
+	// HSM/KMS providers can ignore key if they locate key material by keyID internally.
+	Sign(ctx context.Context, keyID, tokenType string, key interface{}, payload []byte) (string, error)
 }
 
 // VerifyProvider is the interface for external JWS signature verification.
@@ -191,14 +197,18 @@ func (r *ProviderRegistry) GetContentDecryptor(alg string) (ContentDecryptProvid
 	return p, ok
 }
 
-// --- built-in gmsm providers ---
+// --- built-in software providers (registered to DefaultRegistry; HSM/KMS overrides in init()) ---
 
-type sm2SignProvider struct{}
+type stdSm2SignProvider struct{}
 
-func (sm2SignProvider) Algorithm() string { return SGD_SM3_SM2 }
+func (stdSm2SignProvider) Algorithm() string { return SGD_SM3_SM2 }
 
-func (sm2SignProvider) Sign(ctx context.Context, keyID string, payload []byte) (string, error) {
-	return "", fmt.Errorf("sm2SignProvider.Sign not yet implemented: use crypto.NewSigner directly")
+func (stdSm2SignProvider) Sign(ctx context.Context, keyID, tokenType string, key interface{}, payload []byte) (string, error) {
+	priv, ok := key.(*gmsm.PrivateKey)
+	if !ok {
+		return "", fmt.Errorf("stdSm2SignProvider: expected *sm2.PrivateKey, got %T", key)
+	}
+	return signSM2(SGD_SM3_SM2, keyID, tokenType, priv, payload)
 }
 
 type sm2VerifyProvider struct{}
@@ -222,12 +232,33 @@ func (sm2VerifyProvider) Verify(ctx context.Context, signingInput, signature []b
 	return nil
 }
 
-type sm9SignProvider struct{}
+type stdSm9SignProvider struct{}
 
-func (sm9SignProvider) Algorithm() string { return SGD_SM3_SM9 }
+func (stdSm9SignProvider) Algorithm() string { return SGD_SM3_SM9 }
 
-func (sm9SignProvider) Sign(ctx context.Context, keyID string, payload []byte) (string, error) {
-	return "", fmt.Errorf("sm9SignProvider.Sign not yet implemented: use crypto.NewSigner directly")
+func (stdSm9SignProvider) Sign(ctx context.Context, keyID, tokenType string, key interface{}, payload []byte) (string, error) {
+	// SM9 requires uid. When called through Signer.Sign, key is wrapped as SM9SignKey.
+	signKey, ok := key.(*SM9SignKey)
+	if ok {
+		return signSM9(SGD_SM3_SM9, keyID, tokenType, signKey.PrivateKey, signKey.UID, payload)
+	}
+	// Also allow bare *sm9.SignPrivateKey with uid passed via context (HSM fallback).
+	priv, ok := key.(*sm9.SignPrivateKey)
+	if ok {
+		uid, _ := ctx.Value("sm9.uid").([]byte)
+		if len(uid) == 0 {
+			return "", fmt.Errorf("stdSm9SignProvider: SM9 signing requires uid (set via Signer.SetSM9UID or ctx sm9.uid)")
+		}
+		return signSM9(SGD_SM3_SM9, keyID, tokenType, priv, uid, payload)
+	}
+	return "", fmt.Errorf("stdSm9SignProvider: expected *SM9SignKey or *sm9.SignPrivateKey, got %T", key)
+}
+
+// SM9SignKey wraps the SM9 signing key material with the user identifier.
+// It is passed as the key argument to stdSm9SignProvider.Sign.
+type SM9SignKey struct {
+	PrivateKey *sm9.SignPrivateKey
+	UID        []byte
 }
 
 // SM9VerifyArgs holds the arguments needed for SM9 signature verification.
@@ -263,19 +294,11 @@ func (sm2JWEProvider) KeyAlgorithm() string      { return SGD_SM2_3 }
 func (sm2JWEProvider) ContentEncryption() string { return SGD_SM4_GCM }
 
 func (sm2JWEProvider) Encrypt(ctx context.Context, plaintext []byte, key interface{}) (string, error) {
-	pubKey, ok := key.(*ecdsa.PublicKey)
-	if !ok {
-		return "", fmt.Errorf("sm2JWEProvider: expected *ecdsa.PublicKey, got %T", key)
-	}
-	return SM2EncryptJWE(pubKey, plaintext)
+	return std.EncryptSM2JWE(plaintext, key)
 }
 
 func (sm2JWEProvider) Decrypt(ctx context.Context, compact string, key interface{}) ([]byte, error) {
-	privKey, ok := key.(*sm2.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("sm2JWEProvider: expected *sm2.PrivateKey, got %T", key)
-	}
-	return SM2DecryptJWE(privKey, compact)
+	return std.DecryptSM2JWE(compact, key)
 }
 
 type sm9JWEProvider struct{}
@@ -292,7 +315,7 @@ func (sm9JWEProvider) Encrypt(ctx context.Context, plaintext []byte, key interfa
 	if err != nil {
 		return "", fmt.Errorf("sm9JWEProvider: failed to resolve SM9 key: %w", err)
 	}
-	return SM9EncryptJWE(masterPubKey, uid, SGD_SM4_GCM, plaintext)
+	return std.EncryptSM9JWE(plaintext, masterPubKey, uid, SGD_SM4_GCM)
 }
 
 func (sm9JWEProvider) Decrypt(ctx context.Context, compact string, key interface{}) ([]byte, error) {
@@ -300,7 +323,7 @@ func (sm9JWEProvider) Decrypt(ctx context.Context, compact string, key interface
 	if !ok {
 		return nil, fmt.Errorf("sm9JWEProvider: expected *SM9DecryptKey, got %T", key)
 	}
-	return SM9DecryptJWE(decKey.PrivateKey, decKey.UID, compact)
+	return std.DecryptSM9JWE(compact, decKey.PrivateKey, decKey.UID)
 }
 
 // SM9EncryptKey is the crypto-layer interface for SM9 encryption keys.
@@ -347,11 +370,11 @@ type sm4GCMContentProvider struct{}
 func (sm4GCMContentProvider) Algorithm() string { return SGD_SM4_GCM }
 
 func (sm4GCMContentProvider) Encrypt(ctx context.Context, key, iv, plaintext, aad []byte) ([]byte, error) {
-	return gm.SM4EncryptGCMWithNonce(key, iv, plaintext, aad)
+	return std.SM4GCMEncrypt(key, iv, plaintext, aad)
 }
 
 func (sm4GCMContentProvider) Decrypt(ctx context.Context, key, iv, sealed, aad []byte) ([]byte, error) {
-	return gm.SM4DecryptGCMWithNonce(key, iv, sealed, aad)
+	return std.SM4GCMDecrypt(key, iv, sealed, aad)
 }
 
 type aesGCMContentProvider struct {
@@ -361,11 +384,11 @@ type aesGCMContentProvider struct {
 func (p aesGCMContentProvider) Algorithm() string { return p.alg }
 
 func (aesGCMContentProvider) Encrypt(ctx context.Context, key, iv, plaintext, aad []byte) ([]byte, error) {
-	return AESGCMEncrypt(key, iv, plaintext, aad)
+	return std.AESGCMEncrypt(key, iv, plaintext, aad)
 }
 
 func (aesGCMContentProvider) Decrypt(ctx context.Context, key, iv, sealed, aad []byte) ([]byte, error) {
-	return AESGCMDecrypt(key, iv, sealed, aad)
+	return std.AESGCMDecrypt(key, iv, sealed, aad)
 }
 
 type aesCBCContentProvider struct {
@@ -375,16 +398,16 @@ type aesCBCContentProvider struct {
 func (p aesCBCContentProvider) Algorithm() string { return p.alg }
 
 func (p aesCBCContentProvider) Encrypt(ctx context.Context, key, iv, plaintext, aad []byte) ([]byte, error) {
-	return AESCBCEncrypt(p.alg, key, iv, plaintext, aad)
+	return std.AESCBCEncrypt(p.alg, key, iv, plaintext, aad)
 }
 
 func (p aesCBCContentProvider) Decrypt(ctx context.Context, key, iv, sealed, aad []byte) ([]byte, error) {
-	return AESCBCDecrypt(p.alg, key, iv, sealed, aad)
+	return std.AESCBCDecrypt(p.alg, key, iv, sealed, aad)
 }
 
 func init() {
-	DefaultRegistry.RegisterSigner(SGD_SM3_SM2, sm2SignProvider{})
-	DefaultRegistry.RegisterSigner(SGD_SM3_SM9, sm9SignProvider{})
+	DefaultRegistry.RegisterSigner(SGD_SM3_SM2, stdSm2SignProvider{})
+	DefaultRegistry.RegisterSigner(SGD_SM3_SM9, stdSm9SignProvider{})
 	DefaultRegistry.RegisterVerifier(SGD_SM3_SM2, sm2VerifyProvider{})
 	DefaultRegistry.RegisterVerifier(SGD_SM3_SM9, sm9VerifyProvider{})
 	DefaultRegistry.RegisterJWEEncryptor(SGD_SM2_3, sm2JWEProvider{})

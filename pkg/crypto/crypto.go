@@ -5,11 +5,11 @@
 package crypto
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+
+	"github.com/roidmc/kexcore-oidc/pkg/crypto/provider/std"
 )
 
 var (
@@ -30,27 +30,18 @@ func EncryptAES(data string, key string) (string, error) {
 }
 
 func EncryptBytesAES(plainText []byte, key string) ([]byte, error) {
-	block, err := aes.NewCipher([]byte(key))
-	if err != nil {
-		return nil, err
-	}
-
-	aesgcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-
+	symKey := []byte(key)
 	nonce := make([]byte, AESGCMNonceSize)
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-
-	ciphertext := aesgcm.Seal(nil, nonce, plainText, nil)
-
-	result := make([]byte, AESGCMNonceSize+len(ciphertext))
+	sealed, err := std.AESGCMEncrypt(symKey, nonce, plainText, nil)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]byte, AESGCMNonceSize+len(sealed))
 	copy(result[:AESGCMNonceSize], nonce)
-	copy(result[AESGCMNonceSize:], ciphertext)
-
+	copy(result[AESGCMNonceSize:], sealed)
 	return result, nil
 }
 
@@ -67,24 +58,12 @@ func DecryptAES(data string, key string) (string, error) {
 }
 
 func DecryptBytesAES(cipherText []byte, key string) ([]byte, error) {
-	block, err := aes.NewCipher([]byte(key))
-	if err != nil {
-		return nil, err
-	}
-
-	aesgcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-
 	if len(cipherText) < AESGCMNonceSize {
 		return nil, ErrCipherTextTooShort
 	}
-
 	nonce := cipherText[:AESGCMNonceSize]
-	cipherText = cipherText[AESGCMNonceSize:]
-
-	return aesgcm.Open(nil, nonce, cipherText, nil)
+	sealed := cipherText[AESGCMNonceSize:]
+	return std.AESGCMDecrypt([]byte(key), nonce, sealed, nil)
 }
 
 func EncryptSM4(data string, key string) (string, error) {
@@ -101,7 +80,7 @@ func EncryptBytesSM4(plainText []byte, key string) ([]byte, error) {
 	if _, err := rand.Read(iv); err != nil {
 		return nil, err
 	}
-	sealed, err := DispatchContentEncrypt(SGD_SM4_GCM, symKey, iv, plainText, nil)
+	sealed, err := std.SM4GCMEncrypt(symKey, iv, plainText, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -130,5 +109,5 @@ func DecryptBytesSM4(cipherText []byte, key string) ([]byte, error) {
 	}
 	iv := cipherText[:AESGCMNonceSize]
 	sealed := cipherText[AESGCMNonceSize:]
-	return DispatchContentDecrypt(SGD_SM4_GCM, symKey, iv, sealed, nil)
+	return std.SM4GCMDecrypt(symKey, iv, sealed, nil)
 }
