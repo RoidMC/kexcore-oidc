@@ -1410,3 +1410,21 @@ func TestMaxAge_NilNoAutoComplete(t *testing.T) {
 	}
 	assert.Nil(t, authReq.MaxAge, "max_age should be nil")
 }
+
+// --- Contribute tests ---
+
+func TestContribute_CodeChallengeMethods_S256Only(t *testing.T) {
+	p := &Plugin{allowPlainPKCE: false}
+	cfg := &protocol.DiscoveryConfiguration{}
+	p.Contribute(context.Background(), cfg)
+	assert.Contains(t, cfg.CodeChallengeMethodsSupported, "S256")
+	assert.NotContains(t, cfg.CodeChallengeMethodsSupported, "plain")
+}
+
+func TestContribute_CodeChallengeMethods_WithPlain(t *testing.T) {
+	p := &Plugin{allowPlainPKCE: true}
+	cfg := &protocol.DiscoveryConfiguration{}
+	p.Contribute(context.Background(), cfg)
+	assert.Contains(t, cfg.CodeChallengeMethodsSupported, "S256")
+	assert.Contains(t, cfg.CodeChallengeMethodsSupported, "plain")
+}

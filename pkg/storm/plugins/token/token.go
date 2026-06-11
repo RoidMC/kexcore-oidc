@@ -96,6 +96,12 @@ func (p *Plugin) Requires() []string {
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "token" }
 
+// SetDPoPNonceSender sets the DPoP nonce sender for server-provided nonces.
+// Called by the Engine during Build when both token and dpop plugins are present.
+func (p *Plugin) SetDPoPNonceSender(sender DPoPNonceSender) {
+	p.dpopNonceSender = sender
+}
+
 // Register installs the POST /token route.
 func (p *Plugin) Register(r chi.Router) {
 	r.Post("/token", p.handleToken)
@@ -254,7 +260,7 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 
 	_ = p.authStore.DeleteAuthRequest(r.Context(), authReq.GetID())
 
-	shared.JSONResponse(w, resp, http.StatusOK)
+	p.writeTokenResponse(w, r, resp)
 }
 
 // verifyDPoPCodeBinding verifies the DPoP authorization code binding (RFC 9449 §7.1).
@@ -337,7 +343,7 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shared.JSONResponse(w, resp, http.StatusOK)
+	p.writeTokenResponse(w, r, resp)
 }
 
 // --- client_credentials grant (RFC 6749 §4.4) ---
@@ -378,7 +384,7 @@ func (p *Plugin) handleClientCredentials(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	shared.JSONResponse(w, resp, http.StatusOK)
+	p.writeTokenResponse(w, r, resp)
 }
 
 // --- jwt-bearer grant (RFC 7523 §2.1) ---
@@ -521,7 +527,7 @@ func (p *Plugin) handleJWTProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shared.JSONResponse(w, resp, http.StatusOK)
+	p.writeTokenResponse(w, r, resp)
 }
 
 // --- token exchange grant (RFC 8693) ---
@@ -615,7 +621,7 @@ func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		Scopes:          teReq.scopes,
 	}
 
-	shared.JSONResponse(w, resp, http.StatusOK)
+	p.writeTokenResponse(w, r, resp)
 }
 
 // resolveExchangeToken resolves a subject_token to (subject, tokenIDOrToken).
@@ -729,7 +735,7 @@ func (p *Plugin) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shared.JSONResponse(w, resp, http.StatusOK)
+	p.writeTokenResponse(w, r, resp)
 }
 
 // --- client authentication ---
@@ -859,6 +865,15 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 
 // resolveCNF builds the cnf (confirmation) claim from mTLS and DPoP context.
 // mTLS: cnf.x5t#S256 (RFC 8705 §3.1)
+
+// writeTokenResponse writes a successful token response with optional DPoP-Nonce header.
+// RFC 9449 §8: the server MAY include a DPoP-Nonce header in 200 responses.
+func (p *Plugin) writeTokenResponse(w http.ResponseWriter, r *http.Request, resp any) {
+	if p.dpopNonceSender != nil && shared.DPoPFromContext(r.Context()) != nil {
+		p.dpopNonceSender.WriteNonceHeader(w)
+	}
+	shared.JSONResponse(w, resp, http.StatusOK)
+}
 // DPoP: cnf.jkt (RFC 9449 §7.1)
 // If both are present, both keys are included.
 func (p *Plugin) resolveCNF(ctx context.Context) map[string]any {

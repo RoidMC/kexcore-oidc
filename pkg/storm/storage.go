@@ -301,6 +301,13 @@ type TokenCNFLookup interface {
 	TokenCNF(ctx context.Context, tokenID string) (map[string]any, error)
 }
 
+// TokenClientProvider is optionally implemented by storage to return
+// the client_id that a token was issued to. Used by the UserInfo endpoint
+// to populate the "aud" claim in JWT responses (OIDC Core §5.3.2).
+type TokenClientProvider interface {
+	TokenClientID(ctx context.Context, tokenID string) (string, error)
+}
+
 // TokenRequest is the common interface for all token creation requests.
 type TokenRequest interface {
 	GetSubject() string

@@ -1,37 +1,46 @@
 // Package userinfo implements the OIDC UserInfo endpoint plugin.
 //
 // It handles GET/POST /userinfo (OIDC Core §5.3), returning claims
-// about the authenticated end-user.
+// about the authenticated end-user. Supports both JSON and JWT response
+// formats (OIDC Core §5.3.2).
 package userinfo
 
 import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
+// DefaultUserInfoJWTLifetime is the default expiration for UserInfo JWTs.
+const DefaultUserInfoJWTLifetime = 5 * time.Minute
+
 // Plugin implements the OIDC UserInfo endpoint.
 type Plugin struct {
 	store         storm.UserinfoStore
 	scopeProvider storm.TokenScopeProvider
-	cnfLookup     storm.TokenCNFLookup // optional, enables sender-constrained token verification
+	cnfLookup     storm.TokenCNFLookup      // optional, enables sender-constrained token verification
+	clientLookup  storm.TokenClientProvider // optional, enables JWT response (aud claim)
 	crypto        storm.UniCrypto
-	keyStore      protocol.KeyStore
+	keyStore      storm.KeyStore
 }
 
 // Config holds the dependencies for the UserInfo plugin.
 type Config struct {
 	Store         storm.UserinfoStore
-	ScopeProvider storm.TokenScopeProvider // optional, enables scope-based claim filtering
-	CNFLookup     storm.TokenCNFLookup     // optional, enables DPoP/mTLS token binding verification
+	ScopeProvider storm.TokenScopeProvider  // optional, enables scope-based claim filtering
+	CNFLookup     storm.TokenCNFLookup      // optional, enables DPoP/mTLS token binding verification
+	ClientLookup  storm.TokenClientProvider // optional, enables JWT response (aud claim)
 	Crypto        storm.UniCrypto
-	KeyStore      protocol.KeyStore
+	KeyStore      storm.KeyStore
 }
 
 // New creates a new UserInfo plugin from a PluginContext.
@@ -47,6 +56,9 @@ func New(ctx *storm.PluginContext) *Plugin {
 	if cl, ok := ctx.Storage.(storm.TokenCNFLookup); ok {
 		p.cnfLookup = cl
 	}
+	if cp, ok := ctx.Storage.(storm.TokenClientProvider); ok {
+		p.clientLookup = cp
+	}
 	return p
 }
 
@@ -56,6 +68,7 @@ func NewWithConfig(cfg Config) *Plugin {
 		store:         cfg.Store,
 		scopeProvider: cfg.ScopeProvider,
 		cnfLookup:     cfg.CNFLookup,
+		clientLookup:  cfg.ClientLookup,
 		crypto:        cfg.Crypto,
 		keyStore:      cfg.KeyStore,
 	}
@@ -90,6 +103,13 @@ func (p *Plugin) Register(r chi.Router) {
 // Contribute returns the discovery fields for the userinfo endpoint.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
 	cfg.UserinfoEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/userinfo"))
+
+	// OIDC Discovery §3: advertise JWT response support when signing keys are available.
+	if p.keyStore != nil {
+		if algs, err := p.keyStore.SignatureAlgorithms(ctx); err == nil && len(algs) > 0 {
+			cfg.UserinfoSigningAlgValuesSupported = algs
+		}
+	}
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +161,15 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// OIDC Core §5.3.2: If the UserInfo response is signed, it MUST be a JWT.
+	// Check Accept header for application/jwt (or application/*, */*).
+	if p.clientLookup != nil && acceptsJWT(r) {
+		if err := p.writeJWTResponse(w, r, userInfo, tokenID); err == nil {
+			return
+		}
+		// Fall through to JSON if JWT signing fails (e.g., no signing key).
+	}
+
 	// Set OIDC-required headers (OIDC Core §5.3.2, RFC 6750 §3)
 	shared.SetUserInfoHeaders(w)
 	shared.JSONResponse(w, userInfo, http.StatusOK)
@@ -160,3 +189,149 @@ func extractAccessToken(r *http.Request) string {
 	}
 	return ""
 }
+
+// acceptsJWT returns true if the request's Accept header indicates
+// preference for application/jwt (OIDC Core §5.3.2).
+func acceptsJWT(r *http.Request) bool {
+	accept := r.Header.Get("Accept")
+	if accept == "" {
+		return false
+	}
+	// Check for explicit application/jwt
+	if strings.Contains(accept, "application/jwt") {
+		return true
+	}
+	// Check for wildcard types that include JWT
+	if strings.Contains(accept, "application/*") || strings.Contains(accept, "*/*") {
+		return true
+	}
+	return false
+}
+
+// writeJWTResponse signs the UserInfo as a JWT and writes it to the response.
+// Per OIDC Core §5.3.2, the JWT contains:
+//   - iss: the issuer URL
+//   - aud: the client_id that the token was issued to
+//   - sub: the subject
+//   - exp, iat: standard time claims
+//   - All UserInfo claims
+func (p *Plugin) writeJWTResponse(w http.ResponseWriter, r *http.Request, userInfo *protocol.UserInfo, tokenID string) error {
+	issuer := shared.IssuerFromContext(r.Context())
+	if issuer == "" {
+		return ErrNoIssuer
+	}
+
+	clientID, err := p.clientLookup.TokenClientID(r.Context(), tokenID)
+	if err != nil || clientID == "" {
+		return ErrNoClientID
+	}
+
+	signingKey, err := p.keyStore.SigningKey(r.Context())
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	token := jwt.New()
+	_ = token.Set("iss", issuer)
+	_ = token.Set("aud", clientID)
+	_ = token.Set("sub", userInfo.Subject)
+	_ = token.Set("iat", now.Unix())
+	_ = token.Set("exp", now.Add(DefaultUserInfoJWTLifetime).Unix())
+
+	// Add all UserInfo claims as JWT claims
+	if userInfo.Name != "" {
+		_ = token.Set("name", userInfo.Name)
+	}
+	if userInfo.GivenName != "" {
+		_ = token.Set("given_name", userInfo.GivenName)
+	}
+	if userInfo.FamilyName != "" {
+		_ = token.Set("family_name", userInfo.FamilyName)
+	}
+	if userInfo.MiddleName != "" {
+		_ = token.Set("middle_name", userInfo.MiddleName)
+	}
+	if userInfo.Nickname != "" {
+		_ = token.Set("nickname", userInfo.Nickname)
+	}
+	if userInfo.PreferredUsername != "" {
+		_ = token.Set("preferred_username", userInfo.PreferredUsername)
+	}
+	if userInfo.Profile != "" {
+		_ = token.Set("profile", userInfo.Profile)
+	}
+	if userInfo.Picture != "" {
+		_ = token.Set("picture", userInfo.Picture)
+	}
+	if userInfo.Website != "" {
+		_ = token.Set("website", userInfo.Website)
+	}
+	if userInfo.Email != "" {
+		_ = token.Set("email", userInfo.Email)
+	}
+	if userInfo.EmailVerified {
+		_ = token.Set("email_verified", true)
+	}
+	if userInfo.Gender != "" {
+		_ = token.Set("gender", userInfo.Gender)
+	}
+	if userInfo.Birthdate != "" {
+		_ = token.Set("birthdate", userInfo.Birthdate)
+	}
+	if userInfo.Zoneinfo != "" {
+		_ = token.Set("zoneinfo", userInfo.Zoneinfo)
+	}
+	if userInfo.Locale != nil {
+		_ = token.Set("locale", userInfo.Locale.Tag().String())
+	}
+	if userInfo.PhoneNumber != "" {
+		_ = token.Set("phone_number", userInfo.PhoneNumber)
+	}
+	if userInfo.PhoneNumberVerified {
+		_ = token.Set("phone_number_verified", true)
+	}
+	if userInfo.UpdatedAt != 0 {
+		_ = token.Set("updated_at", int64(userInfo.UpdatedAt))
+	}
+	if userInfo.Address != nil {
+		_ = token.Set("address", userInfo.Address)
+	}
+
+	// Add custom claims
+	for k, v := range userInfo.Claims {
+		_ = token.Set(k, v)
+	}
+
+	alg := determineAlg(signingKey.Algorithm())
+	signed, err := jwt.Sign(token, jwt.WithKey(alg, signingKey.Key()))
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/jwt")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	_, _ = w.Write([]byte(signed))
+	return nil
+}
+
+// determineAlg maps the key algorithm string to jwa.SignatureAlgorithm.
+func determineAlg(alg string) jwa.SignatureAlgorithm {
+	if jwaAlg, ok := jwa.LookupSignatureAlgorithm(alg); ok {
+		return jwaAlg
+	}
+	return jwa.RS256()
+}
+
+// sentinel errors for JWT response fallback.
+var (
+	ErrNoIssuer   = &userInfoJWTError{"issuer not found in context"}
+	ErrNoClientID = &userInfoJWTError{"client_id not found for token"}
+)
+
+type userInfoJWTError struct {
+	msg string
+}
+
+func (e *userInfoJWTError) Error() string { return e.msg }

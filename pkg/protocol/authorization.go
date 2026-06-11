@@ -1,4 +1,4 @@
-package protocol
+﻿package protocol
 
 import "log/slog"
 
@@ -215,8 +215,11 @@ func (a *AuthRequest) GetResponseMode() ResponseMode {
 // OIDC Core 1.0 §6.1 — Passing a Request Object by Value
 // https://openid.net/specs/openid-connect-core-1_0.html#RequestObject
 type RequestObject struct {
-	Issuer   string   `json:"iss"`
-	Audience Audience `json:"aud"`
+	Issuer    string   `json:"iss"`
+	Audience  Audience `json:"aud"`
+	ExpiresAt int64    `json:"exp,omitempty"` // expiration time (seconds since epoch)
+	NotBefore int64    `json:"nbf,omitempty"` // not-valid-before time
+	IssuedAt  int64    `json:"iat,omitempty"` // issued-at time
 	AuthRequest
 }
 

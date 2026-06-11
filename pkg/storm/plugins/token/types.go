@@ -3,6 +3,7 @@ package token
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -24,9 +25,10 @@ type Plugin struct {
 	decoder             *protocol.Decoder
 	logger              *slog.Logger
 	tracer              trace.Tracer
-	devicePollInterval  time.Duration // default polling interval for device_code grant
-	requireDPoP         bool          // FAPI2: require DPoP proof for all token requests
-	requireMtls         bool          // FAPI2: require mTLS client certificate for all token requests
+	devicePollInterval  time.Duration   // default polling interval for device_code grant
+	requireDPoP         bool            // FAPI2: require DPoP proof for all token requests
+	requireMtls         bool            // FAPI2: require mTLS client certificate for all token requests
+	dpopNonceSender     DPoPNonceSender // optional, set via SetDPoPNonceSender
 }
 
 // Config holds the dependencies for the Token plugin.
@@ -48,6 +50,16 @@ type Config struct {
 	// Requests without a client certificate are rejected with invalid_request.
 	// Use this for FAPI 2.0 compliance (sender-constrained tokens via mTLS).
 	RequireMtls bool
+}
+
+// DPoPNonceSender is optionally implemented by a plugin to provide
+// DPoP server-provided nonce support (RFC 9449 §8).
+//
+// When implemented, the token endpoint includes a DPoP-Nonce header
+// in successful token responses, allowing the server to rotate nonces.
+type DPoPNonceSender interface {
+	// WriteNonceHeader writes the DPoP-Nonce HTTP header to the response.
+	WriteNonceHeader(w http.ResponseWriter)
 }
 
 // --- internal request types ---

@@ -52,6 +52,7 @@ type Plugin struct {
 	tokenStore      storm.TokenStore
 	decoder         *protocol.Decoder
 	enableImplicit  bool
+	allowPlainPKCE  bool
 	parStore        storm.PARStore
 	sessionProvider SessionProvider
 	jarmSigner      JARMSigner // optional, set via SetJARMSigner
@@ -91,6 +92,11 @@ type Config struct {
 	// id_token token). Disabled by default per OAuth 2.1.
 	EnableImplicit bool
 
+	// AllowPlainPKCE enables the "plain" code_challenge_method (RFC 7636).
+	// Disabled by default per OAuth 2.1 §4.1.1. Clients must explicitly
+	// opt-in by setting this to true. When false, only S256 is accepted.
+	AllowPlainPKCE bool
+
 	// PARStore enables Pushed Authorization Requests (RFC 9101).
 	// When set, request_uri references are resolved from this store.
 	PARStore storm.PARStore
@@ -119,6 +125,7 @@ func New(ctx *storm.PluginContext) *Plugin {
 		keyStore:       ctx.Storage.(storm.KeyStore),
 		decoder:        ctx.Decoder,
 		enableImplicit: ctx.EnableImplicit,
+		allowPlainPKCE: ctx.AllowPlainPKCE,
 		tracer:         ctx.Tracer,
 	}
 	// Register custom parser for OIDC §5.5 claims parameter (JSON object).
@@ -159,6 +166,7 @@ func NewWithConfig(cfg Config) *Plugin {
 		tokenStore:      cfg.TokenStore,
 		decoder:         cfg.Decoder,
 		enableImplicit:  cfg.EnableImplicit,
+		allowPlainPKCE:  cfg.AllowPlainPKCE,
 		parStore:        cfg.PARStore,
 		sessionProvider: cfg.SessionProvider,
 		createAuthCode:  cfg.CreateAuthCode,
@@ -217,6 +225,9 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 	)
 	cfg.GrantTypesSupported = append(cfg.GrantTypesSupported, "authorization_code")
 	cfg.CodeChallengeMethodsSupported = append(cfg.CodeChallengeMethodsSupported, "S256")
+	if p.allowPlainPKCE {
+		cfg.CodeChallengeMethodsSupported = append(cfg.CodeChallengeMethodsSupported, "plain")
+	}
 
 	// Implicit/hybrid response types (only when enabled)
 	if p.enableImplicit {
@@ -323,6 +334,14 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// safely redirected to the registered URI.
 	if err := validateAuthRequestParamsExceptRedirectURI(client, authReq); err != nil {
 		writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode, err)
+		return
+	}
+
+	// Reject plain PKCE unless explicitly allowed (OAuth 2.1 §4.1.1).
+	// S256 is always accepted; plain requires the server to opt in.
+	if !p.allowPlainPKCE && authReq.CodeChallengeMethod == protocol.CodeChallengeMethodPlain {
+		writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
+			protocol.ErrInvalidRequest().WithDescription("plain code_challenge_method is not allowed; use S256"))
 		return
 	}
 
@@ -588,8 +607,9 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 
 	// Build response payload.
 	resp := &codeResponse{
-		Code:  code,
-		State: authReq.GetState(),
+		Code:   code,
+		State:  authReq.GetState(),
+		Issuer: shared.IssuerFromContext(r.Context()), // RFC 9207
 	}
 
 	// Include session_state if client supports it.
@@ -607,6 +627,11 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 		}
 		if resp.SessionState != "" {
 			params["session_state"] = resp.SessionState
+		}
+		// RFC 9207: iss parameter (JARM JWT already contains iss via issuer claim,
+		// but we include it explicitly for consistency)
+		if resp.Issuer != "" {
+			params["iss"] = resp.Issuer
 		}
 
 		jwt, err := p.jarmSigner.SignAuthResponse(r.Context(), params, authReq.GetClientID())
@@ -642,6 +667,10 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 	}
 	if resp.SessionState != "" {
 		params.Set("session_state", resp.SessionState)
+	}
+	// RFC 9207: iss parameter in authorization response
+	if resp.Issuer != "" {
+		params.Set("iss", resp.Issuer)
 	}
 
 	// Determine where to place parameters based on response_mode.
@@ -679,6 +708,10 @@ func writeFormPostResponse(w http.ResponseWriter, redirectURI string, response *
 	}
 	if response.SessionState != "" {
 		values["session_state"] = []string{response.SessionState}
+	}
+	// RFC 9207: iss parameter in authorization response
+	if response.Issuer != "" {
+		values["iss"] = []string{response.Issuer}
 	}
 
 	params := &struct {
@@ -731,6 +764,11 @@ func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, au
 
 	fragment := url.Values{}
 	fragment.Set("state", authReq.GetState())
+
+	// RFC 9207: iss parameter in authorization response
+	if iss := shared.IssuerFromContext(r.Context()); iss != "" {
+		fragment.Set("iss", iss)
+	}
 
 	// Per OIDC Core §3.2.2.5: access_token is returned when response_type is "id_token token"
 	// We create it first so we can pass it to createImplicitIDToken for at_hash computation.
@@ -894,6 +932,11 @@ func (p *Plugin) authResponseHybrid(w http.ResponseWriter, r *http.Request, auth
 	fragment := url.Values{}
 	fragment.Set("state", authReq.GetState())
 
+	// RFC 9207: iss parameter in authorization response
+	if iss := shared.IssuerFromContext(r.Context()); iss != "" {
+		fragment.Set("iss", iss)
+	}
+
 	// Create authorization code (always present in hybrid flows).
 	createCode := createAuthRequestCode
 	if p.createAuthCode != nil {
@@ -978,6 +1021,16 @@ func (p *Plugin) applyRequestObject(ctx context.Context, authReq *protocol.AuthR
 	// Verify signature using the key store.
 	if err = protocol.CheckSignatureWithKeyStore(ctx, authReq.RequestParam, payload, requestObject, nil, p.keyStore); err != nil {
 		return protocol.ErrInvalidRequest().WithDescription("invalid request object signature").WithParent(err)
+	}
+
+	// Validate time claims (OIDC Core §6.1, FAPI 2.0 §5.3.2.2).
+	now := time.Now()
+	const clockSkew = 10 * time.Second
+	if requestObject.ExpiresAt != 0 && now.After(time.Unix(requestObject.ExpiresAt, 0).Add(clockSkew)) {
+		return protocol.ErrInvalidRequest().WithDescription("request object has expired")
+	}
+	if requestObject.NotBefore != 0 && now.Before(time.Unix(requestObject.NotBefore, 0).Add(-clockSkew)) {
+		return protocol.ErrInvalidRequest().WithDescription("request object is not yet valid (nbf)")
 	}
 
 	// Copy request object values into the auth request.

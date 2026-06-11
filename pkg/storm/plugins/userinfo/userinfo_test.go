@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -125,7 +126,7 @@ func (f *fakeCNFLookup) TokenCNF(ctx context.Context, tokenID string) (map[strin
 
 var _ storm.TokenCNFLookup = (*fakeCNFLookup)(nil)
 
-func newTestPlugin(store storm.UserinfoStore, crypto storm.UniCrypto, keyStore protocol.KeyStore) *Plugin {
+func newTestPlugin(store storm.UserinfoStore, crypto storm.UniCrypto, keyStore storm.KeyStore) *Plugin {
 	return &Plugin{
 		store:    store,
 		crypto:   crypto,
@@ -133,7 +134,7 @@ func newTestPlugin(store storm.UserinfoStore, crypto storm.UniCrypto, keyStore p
 	}
 }
 
-func newTestPluginWithScopeProvider(store storm.UserinfoStore, crypto storm.UniCrypto, keyStore protocol.KeyStore, sp storm.TokenScopeProvider) *Plugin {
+func newTestPluginWithScopeProvider(store storm.UserinfoStore, crypto storm.UniCrypto, keyStore storm.KeyStore, sp storm.TokenScopeProvider) *Plugin {
 	return &Plugin{
 		store:         store,
 		scopeProvider: sp,
@@ -1157,3 +1158,176 @@ func generateSelfSignedCert(t *testing.T) *x509.Certificate {
 	require.NoError(t, err)
 	return cert
 }
+
+// --- UserInfo JWT response tests ---
+
+type fakeTokenClientProvider struct {
+	clientID string
+	err      error
+}
+
+func (p *fakeTokenClientProvider) TokenClientID(_ context.Context, _ string) (string, error) {
+	return p.clientID, p.err
+}
+
+var _ storm.TokenClientProvider = (*fakeTokenClientProvider)(nil)
+
+func TestUserInfo_JWTResponse_Success(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "user-jwt"
+			info.Name = "JWT User"
+			info.Email = "jwt@example.com"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:user-jwt"), nil
+		},
+	}
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	jwkKey, _ := jwk.Import[jwk.Key](key)
+	_ = jwkKey.Set(jwk.AlgorithmKey, "ES256")
+	_ = jwkKey.Set(jwk.KeyIDKey, "test-key")
+	signingKey := &fakeSigningKey{id: "test-key", alg: "ES256", key: jwkKey}
+
+	plugin := &Plugin{
+		store:        store,
+		crypto:       crypto,
+		keyStore:     &fakeKeyStoreWithSigning{signingKey: signingKey},
+		clientLookup: &fakeTokenClientProvider{clientID: "test-client"},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer test-token")
+	r.Header.Set("Accept", "application/jwt")
+	w := serveRequest(plugin, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/jwt", w.Header().Get("Content-Type"))
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+
+	// Verify it's a valid JWT
+	tokenBytes := w.Body.Bytes()
+	assert.NotEmpty(t, tokenBytes)
+	assert.Contains(t, string(tokenBytes), ".") // JWT has dots
+}
+
+func TestUserInfo_JWTResponse_NoAccept_FallbackToJSON(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "user-json"
+			info.Name = "JSON User"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:user-json"), nil
+		},
+	}
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	jwkKey, _ := jwk.Import[jwk.Key](key)
+	_ = jwkKey.Set(jwk.AlgorithmKey, "ES256")
+	_ = jwkKey.Set(jwk.KeyIDKey, "test-key")
+	signingKey := &fakeSigningKey{id: "test-key", alg: "ES256", key: jwkKey}
+
+	plugin := &Plugin{
+		store:        store,
+		crypto:       crypto,
+		keyStore:     &fakeKeyStoreWithSigning{signingKey: signingKey},
+		clientLookup: &fakeTokenClientProvider{clientID: "test-client"},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer test-token")
+	// No Accept header — should return JSON
+	w := serveRequest(plugin, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+
+	var info protocol.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &info)
+	require.NoError(t, err)
+	assert.Equal(t, "user-json", info.Subject)
+}
+
+func TestUserInfo_JWTResponse_NoClientLookup_FallbackToJSON(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(ctx context.Context, info *protocol.UserInfo, tokenID, subject, origin string) error {
+			info.Subject = "user-no-jwt"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(ctx context.Context, ciphertext []byte) ([]byte, error) {
+			return []byte("tokenID:user-no-jwt"), nil
+		},
+	}
+
+	// No clientLookup — should fallback to JSON
+	plugin := &Plugin{
+		store:    store,
+		crypto:   crypto,
+		keyStore: &fakeKeyStore{},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer test-token")
+	r.Header.Set("Accept", "application/jwt")
+	w := serveRequest(plugin, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+}
+
+func TestUserInfo_Contribute_WithSigningAlgs(t *testing.T) {
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	jwkKey, _ := jwk.Import[jwk.Key](key)
+	_ = jwkKey.Set(jwk.AlgorithmKey, "ES256")
+	_ = jwkKey.Set(jwk.KeyIDKey, "test-key")
+	signingKey := &fakeSigningKey{id: "test-key", alg: "ES256", key: jwkKey}
+
+	plugin := &Plugin{
+		keyStore: &fakeKeyStoreWithSigning{signingKey: signingKey, algs: []string{"ES256", "RS256"}},
+	}
+
+	ctx := shared.ContextWithIssuer(context.Background(), testIssuer)
+	cfg := &protocol.DiscoveryConfiguration{}
+	plugin.Contribute(ctx, cfg)
+
+	assert.Equal(t, testIssuer+"/userinfo", cfg.UserinfoEndpoint)
+	assert.Contains(t, cfg.UserinfoSigningAlgValuesSupported, "ES256")
+	assert.Contains(t, cfg.UserinfoSigningAlgValuesSupported, "RS256")
+}
+
+// fakeKeyStoreWithSigning extends fakeKeyStore with a real signing key.
+type fakeKeyStoreWithSigning struct {
+	signingKey storm.SigningKey
+	algs       []string
+}
+
+func (s *fakeKeyStoreWithSigning) KeySet(_ context.Context) ([]protocol.Key, error) {
+	return nil, nil
+}
+func (s *fakeKeyStoreWithSigning) SignatureAlgorithms(_ context.Context) ([]string, error) {
+	if s.algs != nil {
+		return s.algs, nil
+	}
+	return []string{s.signingKey.Algorithm()}, nil
+}
+func (s *fakeKeyStoreWithSigning) SigningKey(_ context.Context) (storm.SigningKey, error) {
+	return s.signingKey, nil
+}
+
+type fakeSigningKey struct {
+	id  string
+	alg string
+	key jwk.Key
+}
+
+func (k *fakeSigningKey) ID() string        { return k.id }
+func (k *fakeSigningKey) Algorithm() string { return k.alg }
+func (k *fakeSigningKey) Key() jwk.Key      { return k.key }

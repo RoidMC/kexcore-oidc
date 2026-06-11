@@ -44,6 +44,7 @@ type Engine struct {
 	crypto            UniCrypto         // optional, for token encryption/signing
 	decoder           *protocol.Decoder // optional, for form parsing
 	enableImplicit    bool              // enable implicit/hybrid flows
+	allowPlainPKCE    bool              // allow plain code_challenge_method
 }
 
 // DiscoveryConfig holds extra fields injected into the discovery document.
@@ -58,6 +59,7 @@ type PluginContext struct {
 	Crypto         UniCrypto // may be nil if not configured
 	Decoder        *protocol.Decoder
 	EnableImplicit bool                     // enable implicit/hybrid flows (disabled by default per OAuth 2.1)
+	AllowPlainPKCE bool                     // allow plain code_challenge_method (disabled by default per OAuth 2.1)
 	IssuerFn       shared.IssuerFromRequest // issuer URL function
 	Tracer         trace.Tracer             // otel tracer for plugins
 }
@@ -197,6 +199,15 @@ func WithImplicit() EngineOption {
 	}
 }
 
+// WithPlainPKCE enables the "plain" code_challenge_method (RFC 7636).
+// Disabled by default per OAuth 2.1 §4.1.1. Call this to allow clients
+// to use code_challenge_method=plain when they explicitly opt in.
+func WithPlainPKCE() EngineOption {
+	return func(e *Engine) {
+		e.allowPlainPKCE = true
+	}
+}
+
 // New creates a new Engine with the given storage and issuer function.
 //
 // The issuerFn is used to inject the issuer into the request context
@@ -234,6 +245,7 @@ func (e *Engine) autoRegisterPlugins() {
 		Crypto:         e.crypto,
 		Decoder:        e.decoder,
 		EnableImplicit: e.enableImplicit,
+		AllowPlainPKCE: e.allowPlainPKCE,
 		IssuerFn:       e.issuerFn,
 		Tracer:         e.tracer,
 	}
@@ -343,6 +355,10 @@ func (e *Engine) Build() http.Handler {
 	// Auto-connect Authorization and JARM plugins if both exist.
 	// JARM implements JARMSigner, so Authorization can sign responses.
 	e.connectJARMSigner()
+
+	// Auto-connect Token and DPoP plugins if both exist.
+	// DPoP implements DPoPNonceSender, so Token can include DPoP-Nonce headers.
+	e.connectDPoPNonceSender()
 
 	// Discovery aggregation
 	e.installDiscovery()
@@ -517,6 +533,42 @@ func (e *Engine) connectJARMSigner() {
 	if authorization != nil && jarmPlugin != nil {
 		authorization.SetJARMSigner(jarmPlugin)
 		e.logger.Info("connected JARM signer to authorization")
+	}
+}
+
+// connectDPoPNonceSender auto-connects Token and DPoP plugins.
+// If both plugins are registered and DPoP implements DPoPNonceSender,
+// it is automatically set as Token's DPoP nonce sender (RFC 9449 §8).
+func (e *Engine) connectDPoPNonceSender() {
+	type dpopNonceSetter interface {
+		SetDPoPNonceSender(sender interface {
+			WriteNonceHeader(w http.ResponseWriter)
+		})
+	}
+
+	var tokenPlugin dpopNonceSetter
+	var dpopPlugin interface {
+		WriteNonceHeader(w http.ResponseWriter)
+	}
+
+	for _, p := range e.plugins {
+		switch p.Name() {
+		case "token":
+			if setter, ok := p.(dpopNonceSetter); ok {
+				tokenPlugin = setter
+			}
+		case "dpop":
+			if sender, ok := p.(interface {
+				WriteNonceHeader(w http.ResponseWriter)
+			}); ok {
+				dpopPlugin = sender
+			}
+		}
+	}
+
+	if tokenPlugin != nil && dpopPlugin != nil {
+		tokenPlugin.SetDPoPNonceSender(dpopPlugin)
+		e.logger.Info("connected DPoP nonce sender to token")
 	}
 }
 

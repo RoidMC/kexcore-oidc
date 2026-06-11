@@ -13,6 +13,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,7 +100,8 @@ func DPoPFromContext(ctx context.Context) *Proof {
 
 // Middleware parses the DPoP header from the request and stores the
 // proof in the request context. If no DPoP header is present, the
-// context value is nil.
+// context value is nil. If a DPoP header is present but invalid,
+// the request is rejected with HTTP 400 (RFC 9449 §4.3).
 func (p *Plugin) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		dpopHeader := r.Header.Get(Header)
@@ -109,7 +112,9 @@ func (p *Plugin) Middleware(next http.Handler) http.Handler {
 
 		proof, err := ParseProof(dpopHeader, r.Method, r.URL.String())
 		if err != nil {
-			next.ServeHTTP(w, r)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_dpop_proof","error_description":"` + escapeJSON(err.Error()) + `"}`))
 			return
 		}
 
@@ -117,7 +122,9 @@ func (p *Plugin) Middleware(next http.Handler) http.Handler {
 		p.mu.Lock()
 		if _, exists := p.usedNonces[proof.UniqueID]; exists {
 			p.mu.Unlock()
-			next.ServeHTTP(w, r)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_dpop_proof","error_description":"DPoP proof jti replay detected"}`))
 			return
 		}
 		// Evict oldest entries if cache is at capacity
@@ -290,4 +297,11 @@ func (p *Plugin) Stop() {
 	default:
 		close(p.stopCh)
 	}
+}
+
+// escapeJSON escapes a string for safe inclusion in a JSON string value.
+func escapeJSON(s string) string {
+	s = strconv.Quote(s)
+	// strconv.Quote wraps in double quotes; strip them for embedding.
+	return strings.TrimPrefix(strings.TrimSuffix(s, "\""), "\"")
 }

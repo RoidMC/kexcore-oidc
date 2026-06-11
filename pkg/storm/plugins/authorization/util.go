@@ -186,6 +186,10 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, redirectURI, state s
 	if state != "" {
 		params.Set("state", state)
 	}
+	// RFC 9207: iss parameter in authorization error response
+	if iss := shared.IssuerFromContext(r.Context()); iss != "" {
+		params.Set("iss", iss)
+	}
 
 	switch responseMode {
 	case protocol.ResponseModeFragment:
