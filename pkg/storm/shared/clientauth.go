@@ -9,6 +9,10 @@ import (
 )
 
 // ClientStore is the minimal interface needed for client authentication.
+//
+// Security: AuthorizeClientIDSecret MUST use constant-time comparison
+// (crypto/subtle.ConstantTimeCompare or bcrypt.CompareHashAndPassword)
+// to prevent timing attacks that could reveal secret validity.
 type ClientStore interface {
 	GetClientByClientID(ctx context.Context, clientID string) (Client, error)
 	AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string) error

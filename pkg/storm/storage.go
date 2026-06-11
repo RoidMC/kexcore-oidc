@@ -106,6 +106,12 @@ type Storage interface {
 //     like ScopeValidationClient, RedirectURIClient, etc.
 //   - AuthorizeClientIDSecret: verify client_secret for confidential clients.
 //     Return nil if valid, error if invalid. Used for client_secret_basic and client_secret_post.
+//
+// Security considerations:
+//   - AuthorizeClientIDSecret: secret comparison MUST use constant-time comparison
+//     (e.g., crypto/subtle.ConstantTimeCompare or bcrypt.CompareHashAndPassword)
+//     to prevent timing-based side-channel attacks that could leak secret validity.
+//     NEVER use == or strings.Compare for secret verification.
 type ClientStore interface {
 	GetClientByClientID(ctx context.Context, clientID string) (Client, error)
 	AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string) error
@@ -141,6 +147,13 @@ type ScopeValidationClient interface {
 //   - SigningKey: return the current signing key + algorithm for token signing.
 //     The SDK uses this to sign ID tokens and access tokens (if JWT).
 //     Rotate keys by changing what this returns — old keys stay in KeySet for verification.
+//
+// Security considerations:
+//   - Key rotation: when rotating signing keys, KeySet MUST continue to return
+//     old keys until all tokens signed with them have expired. Removing old keys
+//     prematurely will cause signature verification failures for existing tokens.
+//   - KeySet should return keys with explicit "kid" and "alg" to prevent
+//     algorithm confusion attacks (RFC 7517 §4.4).
 type KeyStore interface {
 	KeySet(ctx context.Context) ([]protocol.Key, error)
 	SignatureAlgorithms(ctx context.Context) ([]string, error)
@@ -388,6 +401,13 @@ type TokenScopeProvider interface {
 }
 
 // RevocationStore is required by the Revocation plugin.
+//
+// Security considerations:
+//   - RevokeToken: when revoking a refresh token, you MUST also revoke all associated
+//     access tokens (RFC 7009 §2.1). Implementations should perform cascade revocation
+//     within a single transaction to avoid partial revocation states.
+//   - GetRefreshTokenInfo: the returned tokenID should be the same identifier used
+//     in TokenStore, so that Revocation can invalidate all related tokens atomically.
 type RevocationStore interface {
 	RevokeToken(ctx context.Context, tokenOrTokenID, userID, clientID string) *protocol.Error
 	GetRefreshTokenInfo(ctx context.Context, clientID, token string) (userID, tokenID string, err error)
