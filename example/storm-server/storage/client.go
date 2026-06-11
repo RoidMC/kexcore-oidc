@@ -37,8 +37,13 @@ type Client struct {
 	idTokenEncryptionAlg           string
 	idTokenEncryptionEnc           string
 	backChannelLogoutURI           string
+	logoURI                        string
+	policyURI                      string
+	tosURI                         string
+	sectorIdentifierURI            string
 	clientEncryptionKey            interface{} // public key for ID token encryption (RSA, ECDH, or symmetric)
 	clientJWKS                     []jwk.Key   // client's public keys for JWT bearer grant verification
+	jwksURI                        string      // client's jwks_uri for fetching fresh keys
 }
 
 func (c *Client) GetID() string                          { return c.id }
@@ -56,8 +61,12 @@ func (c *Client) IsScopeAllowed(scope string) bool       { return scope == Custo
 func (c *Client) IDTokenEncryptionAlg() string           { return c.idTokenEncryptionAlg }
 func (c *Client) IDTokenEncryptionEnc() string           { return c.idTokenEncryptionEnc }
 func (c *Client) BackChannelLogoutURI() string           { return c.backChannelLogoutURI }
+func (c *Client) LogoURI() string                        { return c.logoURI }
+func (c *Client) PolicyURI() string                      { return c.policyURI }
+func (c *Client) TOSURI() string                         { return c.tosURI }
 func (c *Client) ClientEncryptionKey() interface{}       { return c.clientEncryptionKey }
 func (c *Client) ClientJWKS() []jwk.Key                  { return c.clientJWKS }
+func (c *Client) ClientJWKSURI() string                  { return c.jwksURI }
 
 func (s *Storage) RegisterClients(registerClients ...*Client) {
 	s.lock.Lock()

@@ -119,6 +119,19 @@ func (s *Storage) TokenCNF(_ context.Context, tokenID string) (map[string]any, e
 	return token.CNF, nil
 }
 
+// TokenClientID returns the client_id that the token was issued to.
+// Implements storm.TokenClientProvider for UserInfo JWT response (OIDC Core §5.3.2).
+func (s *Storage) TokenClientID(_ context.Context, tokenID string) (string, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	token, ok := s.tokens[tokenID]
+	if !ok {
+		return "", fmt.Errorf("token not found: %s", tokenID)
+	}
+	return token.ApplicationID, nil
+}
+
 func (s *Storage) createRefreshToken(_ context.Context, accessTokenID string, req storm.TokenRequest) (string, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()

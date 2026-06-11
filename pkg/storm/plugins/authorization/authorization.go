@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -292,15 +294,24 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Resolve Pushed Authorization Request (RFC 9101 §5.2)
+	// Resolve request_uri (OIDC Core §6.1, RFC 9101 §5.2)
 	if authReq.RequestURI != "" {
-		if p.parStore == nil {
-			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("request_uri not supported"), nil)
-			return
-		}
-		if err := p.applyPARRequest(r.Context(), authReq); err != nil {
-			shared.WriteError(w, r, err, nil)
-			return
+		if strings.HasPrefix(authReq.RequestURI, "http://") || strings.HasPrefix(authReq.RequestURI, "https://") {
+			// request_uri is a URL pointing to a signed JWT request object (OIDC Core §6.1)
+			if err := p.applyRequestURI(r.Context(), authReq); err != nil {
+				shared.WriteError(w, r, err, nil)
+				return
+			}
+		} else {
+			// request_uri is a PAR reference (RFC 9101 §5.2)
+			if p.parStore == nil {
+				shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("request_uri not supported"), nil)
+				return
+			}
+			if err := p.applyPARRequest(r.Context(), authReq); err != nil {
+				shared.WriteError(w, r, err, nil)
+				return
+			}
 		}
 	}
 
@@ -794,7 +805,7 @@ func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, au
 		if c, err := p.clientStore.GetClientByClientID(r.Context(), authReq.GetClientID()); err == nil {
 			client = c
 		}
-		idToken, err := p.createImplicitIDToken(r.Context(), authReq, accessToken, client)
+		idToken, err := p.createImplicitIDToken(r.Context(), authReq, accessToken, "", client)
 		if err == nil && idToken != "" {
 			fragment.Set("id_token", idToken)
 		}
@@ -846,7 +857,7 @@ func (p *Plugin) createImplicitAccessToken(ctx context.Context, authReq storm.Au
 // hash of the octets of the ASCII representation of the access_token value,
 // where the hash algorithm used is the hash algorithm used in the alg Header
 // Parameter of the ID Token's JOSE Header (OIDC Core §2).
-func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRequest, accessToken string, client storm.Client) (string, error) {
+func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRequest, accessToken, code string, client storm.Client) (string, error) {
 	if p.keyStore == nil {
 		return "", nil
 	}
@@ -881,8 +892,12 @@ func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRe
 	if accessToken != "" {
 		claims["at_hash"] = hashTokenForIDToken(accessToken, signingKey.Algorithm(), p.crypto)
 	}
+	// OIDC Core §3.3.2.11: c_hash is REQUIRED when code is returned in hybrid flow
+	if code != "" {
+		claims["c_hash"] = hashTokenForIDToken(code, signingKey.Algorithm(), p.crypto)
+	}
 
-	// Merge extra claims from auth request (e.g. acr, amr, c_hash).
+	// Merge extra claims from auth request (e.g. acr, amr).
 	// Standard claims set above take precedence and cannot be overridden.
 	if ext, ok := authReq.(IDTokenClaimsExtender); ok {
 		for k, v := range ext.ExtraIDTokenClaims() {
@@ -972,7 +987,7 @@ func (p *Plugin) authResponseHybrid(w http.ResponseWriter, r *http.Request, auth
 		if c, err := p.clientStore.GetClientByClientID(r.Context(), authReq.GetClientID()); err == nil {
 			client = c
 		}
-		idToken, err := p.createImplicitIDToken(r.Context(), authReq, accessToken, client)
+		idToken, err := p.createImplicitIDToken(r.Context(), authReq, accessToken, code, client)
 		if err == nil && idToken != "" {
 			fragment.Set("id_token", idToken)
 		}
@@ -993,22 +1008,15 @@ func (p *Plugin) authResponseHybrid(w http.ResponseWriter, r *http.Request, auth
 
 // applyRequestObject parses and validates a JWT request object (OIDC Core §6.1).
 func (p *Plugin) applyRequestObject(ctx context.Context, authReq *protocol.AuthRequest) error {
-	if p.keyStore == nil {
-		return protocol.ErrInvalidRequest().WithDescription("request object not supported")
-	}
-
 	requestObject := new(protocol.RequestObject)
 	payload, err := protocol.ParseToken(authReq.RequestParam, requestObject)
 	if err != nil {
 		return protocol.ErrInvalidRequest().WithDescription("invalid request object").WithParent(err)
 	}
 
-	// Validate request object claims against the auth request.
-	if requestObject.ClientID != "" && requestObject.ClientID != authReq.ClientID {
-		return protocol.ErrInvalidRequest().WithDescription("missing or wrong client id in request object")
-	}
-	if requestObject.ResponseType != "" && requestObject.ResponseType != authReq.ResponseType {
-		return protocol.ErrInvalidRequest().WithDescription("missing or wrong response type in request object")
+	// Validate request object claims
+	if requestObject.Issuer == "" {
+		return protocol.ErrInvalidRequest().WithDescription("request object missing iss claim")
 	}
 	if requestObject.Issuer != requestObject.ClientID {
 		return protocol.ErrInvalidRequest().WithDescription("missing or wrong issuer in request object")
@@ -1018,8 +1026,30 @@ func (p *Plugin) applyRequestObject(ctx context.Context, authReq *protocol.AuthR
 		return protocol.ErrInvalidRequest().WithDescription("issuer missing in request object audience")
 	}
 
-	// Verify signature using the key store.
-	if err = protocol.CheckSignatureWithKeyStore(ctx, authReq.RequestParam, payload, requestObject, nil, p.keyStore); err != nil {
+	// Look up the client and verify signature using client's JWKS
+	oidcClient, err := p.clientStore.GetClientByClientID(ctx, requestObject.Issuer)
+	if err != nil {
+		return protocol.ErrInvalidRequest().WithDescription("client not found for request object issuer")
+	}
+	if requestObject.ClientID != "" && requestObject.ClientID != authReq.ClientID && authReq.ClientID != "" {
+		return protocol.ErrInvalidRequest().WithDescription("missing or wrong client id in request object")
+	}
+	if requestObject.ResponseType != "" && requestObject.ResponseType != authReq.ResponseType && authReq.ResponseType != "" {
+		return protocol.ErrInvalidRequest().WithDescription("missing or wrong response type in request object")
+	}
+
+	// Get client's JWKS for signature verification
+	clientJWKSProvider, ok := oidcClient.(storm.ClientJWKSProvider)
+	if !ok {
+		return protocol.ErrInvalidRequest().WithDescription("client does not support request object verification")
+	}
+	clientKeys := clientJWKSProvider.ClientJWKS()
+	if len(clientKeys) == 0 {
+		return protocol.ErrInvalidRequest().WithDescription("client has no registered keys")
+	}
+
+	// Verify signature using client's keys
+	if err := verifyRequestObjectSignature(ctx, authReq.RequestParam, payload, requestObject, clientKeys); err != nil {
 		return protocol.ErrInvalidRequest().WithDescription("invalid request object signature").WithParent(err)
 	}
 
@@ -1036,6 +1066,100 @@ func (p *Plugin) applyRequestObject(ctx context.Context, authReq *protocol.AuthR
 	// Copy request object values into the auth request.
 	copyRequestObjectToAuthRequest(authReq, requestObject)
 	return nil
+}
+
+// applyRequestURI fetches and validates a signed JWT request object from a URL (OIDC Core §6.1).
+func (p *Plugin) applyRequestURI(ctx context.Context, authReq *protocol.AuthRequest) error {
+	// Fetch the JWT from the URL
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(authReq.RequestURI)
+	if err != nil {
+		return protocol.ErrInvalidRequest().WithDescription("failed to fetch request_uri: %s", authReq.RequestURI).WithParent(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return protocol.ErrInvalidRequest().WithDescription("request_uri returned HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return protocol.ErrInvalidRequest().WithDescription("failed to read request_uri response").WithParent(err)
+	}
+	jwtString := strings.TrimSpace(string(body))
+
+	// Parse the JWT request object
+	requestObject := new(protocol.RequestObject)
+	payload, err := protocol.ParseToken(jwtString, requestObject)
+	if err != nil {
+		return protocol.ErrInvalidRequest().WithDescription("invalid request object from request_uri").WithParent(err)
+	}
+
+	// Validate request object claims
+	if requestObject.Issuer == "" {
+		return protocol.ErrInvalidRequest().WithDescription("request object missing iss claim")
+	}
+	if requestObject.Issuer != requestObject.ClientID {
+		return protocol.ErrInvalidRequest().WithDescription("missing or wrong issuer in request object")
+	}
+	issuer := shared.IssuerFromContext(ctx)
+	if !slices.Contains(requestObject.Audience, issuer) {
+		return protocol.ErrInvalidRequest().WithDescription("issuer missing in request object audience")
+	}
+
+	// Look up the client and verify signature using client's JWKS
+	oidcClient, err := p.clientStore.GetClientByClientID(ctx, requestObject.Issuer)
+	if err != nil {
+		return protocol.ErrInvalidRequest().WithDescription("client not found for request object issuer")
+	}
+	if requestObject.ClientID != "" && requestObject.ClientID != authReq.ClientID && authReq.ClientID != "" {
+		return protocol.ErrInvalidRequest().WithDescription("missing or wrong client id in request object")
+	}
+	if requestObject.ResponseType != "" && requestObject.ResponseType != authReq.ResponseType && authReq.ResponseType != "" {
+		return protocol.ErrInvalidRequest().WithDescription("missing or wrong response type in request object")
+	}
+
+	// Get client's JWKS for signature verification
+	clientJWKSProvider, ok := oidcClient.(storm.ClientJWKSProvider)
+	if !ok {
+		return protocol.ErrInvalidRequest().WithDescription("client does not support request object verification")
+	}
+	clientKeys := clientJWKSProvider.ClientJWKS()
+	if len(clientKeys) == 0 {
+		return protocol.ErrInvalidRequest().WithDescription("client has no registered keys")
+	}
+
+	// Verify signature using client's keys
+	if err := verifyRequestObjectSignature(ctx, jwtString, payload, requestObject, clientKeys); err != nil {
+		return protocol.ErrInvalidRequest().WithDescription("invalid request object signature").WithParent(err)
+	}
+
+	// Validate time claims (OIDC Core §6.1, FAPI 2.0 §5.3.2.2).
+	now := time.Now()
+	const clockSkew = 10 * time.Second
+	if requestObject.ExpiresAt != 0 && now.After(time.Unix(requestObject.ExpiresAt, 0).Add(clockSkew)) {
+		return protocol.ErrInvalidRequest().WithDescription("request object has expired")
+	}
+	if requestObject.NotBefore != 0 && now.Before(time.Unix(requestObject.NotBefore, 0).Add(-clockSkew)) {
+		return protocol.ErrInvalidRequest().WithDescription("request object is not yet valid (nbf)")
+	}
+
+	// Copy request object values into the auth request.
+	copyRequestObjectToAuthRequest(authReq, requestObject)
+	return nil
+}
+
+// verifyRequestObjectSignature verifies a JWT signature using the client's JWKS keys.
+func verifyRequestObjectSignature(ctx context.Context, token string, payload []byte, claims protocol.ClaimsSignature, keys []jwk.Key) error {
+	parsed, err := jws.Parse([]byte(token))
+	if err != nil {
+		return fmt.Errorf("error parsing token: %w", err)
+	}
+	keyID, alg := protocol.GetKeyIDAndAlg(parsed)
+	matchingKey, err := protocol.FindMatchingKey(keyID, protocol.KeyUseSignature, alg, keys...)
+	if err != nil {
+		return fmt.Errorf("no matching key found: %w", err)
+	}
+	_, err = protocol.VerifySignature(ctx, parsed, []byte(token), matchingKey, alg)
+	return err
 }
 
 // applyPARRequest resolves a Pushed Authorization Request (RFC 9101 §5.2).

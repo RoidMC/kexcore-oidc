@@ -59,6 +59,28 @@ func CertThumbprint(cert *x509.Certificate) string {
 	return base64.RawURLEncoding.EncodeToString(hash[:])
 }
 
+// --- Pre-authenticated client context (for private_key_jwt / client_secret_jwt) ---
+
+// AuthenticatedClient is the minimal interface for a client that has already
+// been authenticated by an assertion-based method (RFC 7523 §2.2, OIDC Core §9).
+type AuthenticatedClient interface {
+	GetID() string
+}
+
+type authenticatedClientKey struct{}
+
+// ContextWithAuthenticatedClient stores a pre-authenticated client in the context.
+func ContextWithAuthenticatedClient(ctx context.Context, client AuthenticatedClient) context.Context {
+	return context.WithValue(ctx, authenticatedClientKey{}, client)
+}
+
+// AuthenticatedClientFromContext retrieves a pre-authenticated client from the context.
+// Returns nil if no client was pre-authenticated.
+func AuthenticatedClientFromContext(ctx context.Context) AuthenticatedClient {
+	c, _ := ctx.Value(authenticatedClientKey{}).(AuthenticatedClient)
+	return c
+}
+
 // VerifyTokenBinding verifies that the current request proves possession
 // of the key bound to the token via cnf claim (RFC 8705 §5, RFC 9449 §7.2).
 //

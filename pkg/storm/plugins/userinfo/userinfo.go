@@ -7,6 +7,7 @@ package userinfo
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -58,6 +59,9 @@ func New(ctx *storm.PluginContext) *Plugin {
 	}
 	if cp, ok := ctx.Storage.(storm.TokenClientProvider); ok {
 		p.clientLookup = cp
+		slog.Default().Debug("userinfo: clientLookup enabled (TokenClientProvider detected)")
+	} else {
+		slog.Default().Warn("userinfo: clientLookup NOT available — JWT responses disabled, storage does not implement TokenClientProvider")
 	}
 	return p
 }
@@ -161,16 +165,17 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// OIDC Core §5.3.2: If the UserInfo response is signed, it MUST be a JWT.
-	// Check Accept header for application/jwt (or application/*, */*).
-	if p.clientLookup != nil && acceptsJWT(r) {
-		if err := p.writeJWTResponse(w, r, userInfo, tokenID); err == nil {
+	// OIDC Core §5.3.2: when signing keys are available, the response MUST be a signed JWT.
+	// Accept header cannot override this — the server MAY also support JSON, but signed
+	// responses are always JWT.
+	if p.clientLookup != nil && p.keyStore != nil {
+		if err := p.writeJWTResponse(w, r, userInfo, tokenID); err != nil {
+			slog.Default().Warn("userinfo JWT response failed, falling back to JSON", "error", err)
+		} else {
 			return
 		}
-		// Fall through to JSON if JWT signing fails (e.g., no signing key).
 	}
 
-	// Set OIDC-required headers (OIDC Core §5.3.2, RFC 6750 §3)
 	shared.SetUserInfoHeaders(w)
 	shared.JSONResponse(w, userInfo, http.StatusOK)
 }
@@ -188,24 +193,6 @@ func extractAccessToken(r *http.Request) string {
 		}
 	}
 	return ""
-}
-
-// acceptsJWT returns true if the request's Accept header indicates
-// preference for application/jwt (OIDC Core §5.3.2).
-func acceptsJWT(r *http.Request) bool {
-	accept := r.Header.Get("Accept")
-	if accept == "" {
-		return false
-	}
-	// Check for explicit application/jwt
-	if strings.Contains(accept, "application/jwt") {
-		return true
-	}
-	// Check for wildcard types that include JWT
-	if strings.Contains(accept, "application/*") || strings.Contains(accept, "*/*") {
-		return true
-	}
-	return false
 }
 
 // writeJWTResponse signs the UserInfo as a JWT and writes it to the response.

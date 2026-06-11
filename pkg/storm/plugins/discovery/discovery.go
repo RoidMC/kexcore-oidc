@@ -83,6 +83,8 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 
 	// Token/response signing: non-asymmetric only (from KeyStore)
 	// Request Object signing: same as OP signing (asymmetric only).
+	// "none" is intentionally excluded — unsigned request objects are a
+	// security risk and not supported. FAPI profiles require signed objects.
 	// HS algorithms are for client_secret_jwt auth, not OP-signed objects.
 	cfg.IDTokenSigningAlgValuesSupported = signingAlgs
 	cfg.UserinfoSigningAlgValuesSupported = signingAlgs

@@ -794,7 +794,7 @@ func TestCreateImplicitIDToken_DefaultLifetime(t *testing.T) {
 		nonce:    "test-nonce",
 	}
 
-	token, err := p.createImplicitIDToken(context.Background(), authReq, "access-token-123", nil)
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "access-token-123", "", nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -824,7 +824,7 @@ func TestCreateImplicitIDToken_CustomLifetime(t *testing.T) {
 		idTokenLifetime: 2 * time.Hour,
 	}
 
-	token, err := p.createImplicitIDToken(context.Background(), authReq, "", client)
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", "", client)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -848,7 +848,7 @@ func TestCreateImplicitIDToken_ExtraClaims(t *testing.T) {
 		},
 	}
 
-	token, err := p.createImplicitIDToken(context.Background(), authReq, "", nil)
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", "", nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -875,7 +875,7 @@ func TestCreateImplicitIDToken_ExtraClaimsNoOverride(t *testing.T) {
 		},
 	}
 
-	token, err := p.createImplicitIDToken(context.Background(), authReq, "", nil)
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", "", nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -899,7 +899,7 @@ func TestCreateImplicitIDToken_NoExtraClaims(t *testing.T) {
 		extraClaims: nil,
 	}
 
-	token, err := p.createImplicitIDToken(context.Background(), authReq, "", nil)
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", "", nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -912,7 +912,7 @@ func TestCreateImplicitIDToken_NilKeyStore(t *testing.T) {
 	p := &Plugin{} // no keyStore
 	authReq := &fakeAuthRequest{clientID: "client-1", subject: "user-1"}
 
-	token, err := p.createImplicitIDToken(context.Background(), authReq, "", nil)
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", "", nil)
 	require.NoError(t, err)
 	assert.Empty(t, token, "should return empty token when keyStore is nil")
 }
@@ -928,7 +928,7 @@ func TestCreateImplicitIDToken_WithAccessToken(t *testing.T) {
 		nonce:    "n-1",
 	}
 
-	token, err := p.createImplicitIDToken(context.Background(), authReq, "my-access-token", nil)
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "my-access-token", "", nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -947,7 +947,7 @@ func TestCreateImplicitIDToken_WithoutAccessToken(t *testing.T) {
 		subject:  "user-1",
 	}
 
-	token, err := p.createImplicitIDToken(context.Background(), authReq, "", nil)
+	token, err := p.createImplicitIDToken(context.Background(), authReq, "", "", nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -980,11 +980,11 @@ func TestMultiTenant_DifferentClientsDifferentLifetime(t *testing.T) {
 	authReqB := &fakeAuthRequest{clientID: "tenant-b-client", subject: "user-2"}
 	authReqC := &fakeAuthRequest{clientID: "tenant-c-client", subject: "user-3"}
 
-	tokenA, err := p.createImplicitIDToken(context.Background(), authReqA, "", clientA)
+	tokenA, err := p.createImplicitIDToken(context.Background(), authReqA, "", "", clientA)
 	require.NoError(t, err)
-	tokenB, err := p.createImplicitIDToken(context.Background(), authReqB, "", clientB)
+	tokenB, err := p.createImplicitIDToken(context.Background(), authReqB, "", "", clientB)
 	require.NoError(t, err)
-	tokenC, err := p.createImplicitIDToken(context.Background(), authReqC, "", clientC)
+	tokenC, err := p.createImplicitIDToken(context.Background(), authReqC, "", "", clientC)
 	require.NoError(t, err)
 
 	claimsA := parseIDTokenClaims(t, tokenA)
@@ -1021,9 +1021,9 @@ func TestMultiTenant_DifferentClientsDifferentExtraClaims(t *testing.T) {
 		extraClaims: nil,
 	}
 
-	tokenA, err := p.createImplicitIDToken(context.Background(), authReqA, "", nil)
+	tokenA, err := p.createImplicitIDToken(context.Background(), authReqA, "", "", nil)
 	require.NoError(t, err)
-	tokenB, err := p.createImplicitIDToken(context.Background(), authReqB, "", nil)
+	tokenB, err := p.createImplicitIDToken(context.Background(), authReqB, "", "", nil)
 	require.NoError(t, err)
 
 	claimsA := parseIDTokenClaims(t, tokenA)
@@ -1068,9 +1068,9 @@ func TestMultiTenant_SamePluginDifferentClientConfigs(t *testing.T) {
 		subject:  "blog-user",
 	}
 
-	tokenA, err := p.createImplicitIDToken(context.Background(), authReqA, "at-1", clientA)
+	tokenA, err := p.createImplicitIDToken(context.Background(), authReqA, "at-1", "", clientA)
 	require.NoError(t, err)
-	tokenB, err := p.createImplicitIDToken(context.Background(), authReqB, "", clientB)
+	tokenB, err := p.createImplicitIDToken(context.Background(), authReqB, "", "", clientB)
 	require.NoError(t, err)
 
 	claimsA := parseIDTokenClaims(t, tokenA)

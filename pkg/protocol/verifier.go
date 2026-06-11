@@ -351,12 +351,21 @@ func CheckIssuer(claims Claims, issuer string) error {
 	return nil
 }
 
-func CheckAudience(claims Claims, clientID string) error {
-	if !slices.Contains(claims.GetAudience(), clientID) {
-		return fmt.Errorf("%w: Audience must contain client_id %q", ErrAudience, clientID)
+// CheckAudience checks that the audience contains the expected value.
+func CheckAudience(claims Claims, expected string) error {
+	return CheckAudienceAny(claims, []string{expected})
+}
+
+// CheckAudienceAny checks that the audience contains at least one of the allowed values.
+// For ID Token validation, pass a single client_id.
+// For client_assertion validation, pass both the issuer and token endpoint URL.
+func CheckAudienceAny(claims Claims, allowed []string) error {
+	for _, a := range allowed {
+		if slices.Contains(claims.GetAudience(), a) {
+			return nil
+		}
 	}
-	// TODO: check aud trusted
-	return nil
+	return fmt.Errorf("%w: Audience must contain one of %v", ErrAudience, allowed)
 }
 
 // CheckAuthorizedParty checks azp (authorized party) claim requirements.
@@ -609,26 +618,34 @@ func VerifyIDTokenHintGeneric[C Claims](ctx context.Context, token string, v *ID
 	return claims, nil
 }
 
-func VerifyJWTAssertion(ctx context.Context, assertion string, issuer string, ks KeyStore, offset time.Duration) (*JWTTokenRequest, error) {
+// VerifyJWTAssertion verifies a JWT client assertion per RFC 7523 §2.2 / OIDC Core §9.
+// For private_key_jwt / client_secret_jwt, pass the client's registered public keys.
+// allowedAudiences contains the accepted aud values (typically the issuer and/or token endpoint URL).
+func VerifyJWTAssertion(ctx context.Context, assertion string, allowedAudiences []string, keys []jwk.Key, offset time.Duration) error {
 	request := new(JWTTokenRequest)
-	payload, err := ParseToken(assertion, request)
-	if err != nil {
-		return nil, err
+	if _, err := ParseToken(assertion, request); err != nil {
+		return err
 	}
-	if err := CheckAudience(request, issuer); err != nil {
-		return nil, err
+	if err := CheckAudienceAny(request, allowedAudiences); err != nil {
+		return err
 	}
 	if err := CheckExpiration(request, offset); err != nil {
-		return nil, err
+		return err
 	}
 	if request.Issuer != request.Subject {
-		return nil, ErrSubjectInvalid
+		return ErrSubjectInvalid
 	}
-	keySet := &keyStoreAdapter{store: ks}
-	if err := CheckSignature(ctx, assertion, payload, request, nil, keySet); err != nil {
-		return nil, err
+	jwsMsg, err := jws.Parse([]byte(assertion))
+	if err != nil {
+		return fmt.Errorf("error parsing token: %w", err)
 	}
-	return request, nil
+	keyID, alg := GetKeyIDAndAlg(jwsMsg)
+	key, err := FindMatchingKey(keyID, KeyUseSignature, alg, keys...)
+	if err != nil {
+		return fmt.Errorf("invalid signature: %w", err)
+	}
+	_, err = VerifySignature(ctx, jwsMsg, []byte(assertion), key, alg)
+	return err
 }
 
 // CheckSignatureWithKeyStore verifies a JWT signature using a KeyStore.

@@ -360,6 +360,16 @@ type ClientJWKSProvider interface {
 	ClientJWKS() []jwk.Key
 }
 
+// ClientJWKSURIProvider is optionally implemented by Client to provide
+// the client's jwks_uri for fetching fresh keys.
+//
+// When the RP rotates its keys, the OP should fetch fresh keys from
+// the jwks_uri instead of using cached keys from registration.
+type ClientJWKSURIProvider interface {
+	// ClientJWKSURI returns the client's jwks_uri endpoint.
+	ClientJWKSURI() string
+}
+
 // RefreshTokenRequest extends TokenRequest for refresh token operations.
 type RefreshTokenRequest interface {
 	TokenRequest
@@ -510,6 +520,8 @@ type RegistrationRequest struct {
 	SoftwareVersion             string          `json:"software_version"`
 	PostLogoutRedirectURIs      []string        `json:"post_logout_redirect_uris"`
 	BackChannelLogoutURI        string          `json:"backchannel_logout_uri"`
+	SectorIdentifierURI         string          `json:"sector_identifier_uri,omitempty"`
+	InitiateLoginURI            string          `json:"initiate_login_uri"`
 	IDTokenEncryptedResponseAlg string          `json:"id_token_encrypted_response_alg,omitempty"`
 	IDTokenEncryptedResponseEnc string          `json:"id_token_encrypted_response_enc,omitempty"`
 }
@@ -540,6 +552,8 @@ type ClientRegistration struct {
 	SoftwareVersion             string          `json:"software_version,omitempty"`
 	PostLogoutRedirectURIs      []string        `json:"post_logout_redirect_uris,omitempty"`
 	BackChannelLogoutURI        string          `json:"backchannel_logout_uri,omitempty"`
+	SectorIdentifierURI         string          `json:"sector_identifier_uri,omitempty"`
+	InitiateLoginURI            string          `json:"initiate_login_uri,omitempty"`
 	IDTokenEncryptedResponseAlg string          `json:"id_token_encrypted_response_alg,omitempty"`
 	IDTokenEncryptedResponseEnc string          `json:"id_token_encrypted_response_enc,omitempty"`
 }

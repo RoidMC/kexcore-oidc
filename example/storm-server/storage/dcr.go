@@ -77,20 +77,32 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 		}
 	}
 
+	// Determine client authentication method from registration request.
+	// Default to client_secret_basic per RFC 7591 §2.
+	authMethod := protocol.AuthMethodBasic
+	if req.TokenEndpointAuthMethod != "" {
+		authMethod = protocol.AuthMethod(req.TokenEndpointAuthMethod)
+	}
+
 	client := &Client{
 		id:                     clientID,
 		secret:                 clientSecret,
 		redirectURIs:           req.RedirectURIs,
-		authMethod:             protocol.AuthMethodBasic,
+		authMethod:             authMethod,
 		loginURLFn:             defaultLoginURL,
 		responseTypes:          responseTypes,
 		grantTypes:             grantTypes,
 		postLogoutRedirectURIs: req.PostLogoutRedirectURIs,
 		backChannelLogoutURI:   req.BackChannelLogoutURI,
+		logoURI:                req.LogoURI,
+		policyURI:              req.PolicyURI,
+		tosURI:                 req.TOSURI,
+		sectorIdentifierURI:    req.SectorIdentifierURI,
 		idTokenEncryptionAlg:   req.IDTokenEncryptedResponseAlg,
 		idTokenEncryptionEnc:   req.IDTokenEncryptedResponseEnc,
 		clientEncryptionKey:    encKey,
 		clientJWKS:             sigKeys,
+		jwksURI:                req.JWKSURI,
 	}
 	s.clients[clientID] = client
 
@@ -118,6 +130,11 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 		JWKS:                        req.JWKS,
 		PostLogoutRedirectURIs:      req.PostLogoutRedirectURIs,
 		BackChannelLogoutURI:        req.BackChannelLogoutURI,
+		LogoURI:                     req.LogoURI,
+		PolicyURI:                   req.PolicyURI,
+		TOSURI:                      req.TOSURI,
+		SectorIdentifierURI:         req.SectorIdentifierURI,
+		InitiateLoginURI:            req.InitiateLoginURI,
 		IDTokenEncryptedResponseAlg: req.IDTokenEncryptedResponseAlg,
 		IDTokenEncryptedResponseEnc: req.IDTokenEncryptedResponseEnc,
 	}
@@ -175,6 +192,9 @@ func (s *Storage) UpdateClientRegistration(_ context.Context, clientID string, u
 	if len(update.RedirectURIs) > 0 {
 		client.redirectURIs = update.RedirectURIs
 		reg.RedirectURIs = update.RedirectURIs
+	}
+	if update.InitiateLoginURI != "" {
+		reg.InitiateLoginURI = update.InitiateLoginURI
 	}
 
 	return reg, nil

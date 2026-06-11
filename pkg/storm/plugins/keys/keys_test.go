@@ -296,3 +296,45 @@ func TestKeys_ValidJSONResponse(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
 	assert.Contains(t, raw, "keys")
 }
+
+// Private key JWK must preserve use/kid/alg after PublicKey() extraction.
+// This is the root cause of oidcc-server-rotate-keys failure:
+// jwx PublicKey() drops non-intrinsic fields, so JWKS lacked "use":"sig".
+func TestKeys_PrivateKeyPreservesUseField(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	// Import the PRIVATE key (like storage.signingKey.Key() does)
+	jwkKey, err := jwk.Import[jwk.Key](privKey)
+	require.NoError(t, err)
+	_ = jwkKey.Set(jwk.KeyIDKey, "test-kid")
+	_ = jwkKey.Set(jwk.AlgorithmKey, "ES256")
+	_ = jwkKey.Set(jwk.KeyUsageKey, "sig")
+
+	store := &fakeKeyStore{
+		keys: []protocol.Key{
+			&fakeKey{id: "test-kid", alg: "ES256", use: "sig", key: jwkKey},
+		},
+	}
+	p := newTestPlugin(store)
+
+	r := httptest.NewRequest(http.MethodGet, "/.well-known/jwks.json", nil)
+	ctx := shared.ContextWithIssuer(r.Context(), "https://op.example.com")
+	r = r.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	p.handle(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Keys []map[string]interface{} `json:"keys"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Keys, 1)
+
+	key := resp.Keys[0]
+	assert.Equal(t, "sig", key["use"], "JWKS must include use:sig after PublicKey() extraction")
+	assert.Equal(t, "test-kid", key["kid"], "JWKS must preserve kid after PublicKey() extraction")
+	assert.Equal(t, "ES256", key["alg"], "JWKS must preserve alg after PublicKey() extraction")
+}

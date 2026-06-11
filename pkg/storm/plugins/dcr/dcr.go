@@ -9,8 +9,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -71,6 +73,38 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding request body").WithParent(err), nil)
 		return
+	}
+
+	// RFC 6749 §3.1.2: redirect URIs must not contain a fragment component.
+	for _, redirectURI := range req.RedirectURIs {
+		if u, err := url.Parse(redirectURI); err == nil && u.Fragment != "" {
+			shared.WriteError(w, r,
+				protocol.ErrInvalidClientMetadata().WithDescription("redirect_uri must not contain a fragment: %s", redirectURI),
+				nil)
+			return
+		}
+	}
+
+	// OIDC Core §4: initiate_login_uri MUST use HTTPS.
+	if req.InitiateLoginURI != "" {
+		if u, err := url.Parse(req.InitiateLoginURI); err != nil || u.Scheme != "https" {
+			shared.WriteError(w, r,
+				protocol.ErrInvalidClientMetadata().WithDescription("initiate_login_uri must use https scheme"),
+				nil)
+			return
+		}
+	}
+
+	// OIDC Core §8.1: sector_identifier_uri validation.
+	// Must be a valid HTTPS URI, fetchable, returning a JSON array of redirect_uri values.
+	// All registered redirect_uris must be contained in that array.
+	if req.SectorIdentifierURI != "" {
+		if err := validateSectorIdentifierURI(req.SectorIdentifierURI, req.RedirectURIs); err != nil {
+			shared.WriteError(w, r,
+				protocol.ErrInvalidClientMetadata().WithDescription("invalid sector_identifier_uri: %s", err.Error()),
+				nil)
+			return
+		}
 	}
 
 	// If jwks_uri specified but jwks not, fetch the key set and populate jwks
@@ -204,4 +238,50 @@ func randomHex(n int) string {
 		panic("crypto/rand.Read failed: " + err.Error())
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// validateSectorIdentifierURI implements OIDC Core §8.1 validation.
+// The sector_identifier_uri must be a valid HTTPS URL, fetchable, returning
+// a JSON array of redirect_uri values. All registered redirect_uris must be
+// contained in that array.
+func validateSectorIdentifierURI(sectorURI string, redirectURIs []string) error {
+	u, err := url.Parse(sectorURI)
+	if err != nil || u.Scheme != "https" {
+		return fmt.Errorf("sector_identifier_uri must use https scheme")
+	}
+
+	if err := shared.ValidateRemoteURL(sectorURI); err != nil {
+		return fmt.Errorf("sector_identifier_uri is not reachable: %w", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(sectorURI)
+	if err != nil {
+		return fmt.Errorf("failed to fetch sector_identifier_uri: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("sector_identifier_uri returned HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read sector_identifier_uri response: %w", err)
+	}
+
+	var allowedURIs []string
+	if err := json.Unmarshal(body, &allowedURIs); err != nil {
+		return fmt.Errorf("sector_identifier_uri response is not a JSON array of strings")
+	}
+
+	allowedSet := make(map[string]struct{}, len(allowedURIs))
+	for _, u := range allowedURIs {
+		allowedSet[u] = struct{}{}
+	}
+	for _, redirectURI := range redirectURIs {
+		if _, ok := allowedSet[redirectURI]; !ok {
+			return fmt.Errorf("redirect_uri %q is not listed in sector_identifier_uri response", redirectURI)
+		}
+	}
+	return nil
 }

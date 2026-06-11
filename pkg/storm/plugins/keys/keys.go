@@ -1,4 +1,4 @@
-// Package keys implements the JWKS (JSON Web Key Set) endpoint plugin.
+﻿// Package keys implements the JWKS (JSON Web Key Set) endpoint plugin.
 package keys
 
 import (
@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
@@ -145,6 +146,17 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			shared.WriteError(w, r, err, nil)
 			return
+		}
+		// PublicKey() in jwx does not preserve non-intrinsic fields (use, kid, alg).
+		// Copy them from the original key so the JWKS response includes "use":"sig" etc.
+		if v, ok := jwkKey.KeyUsage(); ok {
+			_ = pubKey.Set(jwk.KeyUsageKey, v)
+		}
+		if v, ok := jwkKey.KeyID(); ok {
+			_ = pubKey.Set(jwk.KeyIDKey, v)
+		}
+		if v, ok := jwkKey.Algorithm(); ok {
+			_ = pubKey.Set(jwk.AlgorithmKey, v)
 		}
 		raw, err := json.Marshal(pubKey)
 		if err != nil {

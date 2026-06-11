@@ -21,8 +21,8 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
 	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
 )
 
@@ -120,11 +120,71 @@ func main() {
 		urlOptions...,
 	))
 
+	// OIDC Core Section 4: Initiating Login from a Third Party
+	//
+	// A third party (e.g. another website, a mobile app deep link) initiates
+	// a login by redirecting the user to this RP with query parameters:
+	//
+	//   GET /login/initiate?iss=<issuer>&login_hint=<hint>&target_link_uri=<uri>
+	//
+	// Parameters (per OIDC Core §4):
+	//   iss             REQUIRED. The OP issuer identifier.
+	//   login_hint      OPTIONAL. Hint to the OP about the user's identifier.
+	//   target_link_uri OPTIONAL. URI to redirect to after successful login.
+	//
+	// Example:
+	//   https://my-rp.example.com/login/initiate?iss=https://op.example.com&login_hint=user@example.com&target_link_uri=https://my-rp.example.com/dashboard
+	http.HandleFunc("/login/initiate", func(w http.ResponseWriter, r *http.Request) {
+		iss := r.URL.Query().Get("iss")
+		if iss == "" {
+			http.Error(w, "missing required parameter: iss", http.StatusBadRequest)
+			return
+		}
+
+		// Validate iss matches the configured OP issuer.
+		// In production you may support multiple issuers by dynamically
+		// creating a RelyingParty via rp.NewRelyingPartyOIDC(ctx, iss, ...).
+		if iss != provider.Issuer() {
+			http.Error(w, fmt.Sprintf("unknown issuer: %s", iss), http.StatusBadRequest)
+			return
+		}
+
+		loginHint := r.URL.Query().Get("login_hint")
+		targetLinkURI := r.URL.Query().Get("target_link_uri")
+
+		// Build auth URL options, forwarding login_hint to the OP.
+		authOpts := make([]rp.AuthURLOpt, 0, len(urlOptions)+2)
+		for _, o := range urlOptions {
+			authOpts = append(authOpts, rp.AuthURLOpt(o))
+		}
+		if loginHint != "" {
+			authOpts = append(authOpts, rp.AuthURLOpt(rp.WithURLParam("login_hint", loginHint)))
+		}
+
+		// Store target_link_uri in a cookie so the callback handler can
+		// redirect the user there after a successful login.
+		if targetLinkURI != "" {
+			cookieHandler.SetCookie(w, "target_link_uri", targetLinkURI)
+		}
+
+		// Generate state and redirect to the OP.
+		authURL := rp.AuthURL(state(), provider, authOpts...)
+		http.Redirect(w, r, authURL, http.StatusFound)
+	})
+
 	// for demonstration purposes the returned userinfo response is written as JSON object onto response
 	marshalUserinfo := func(w http.ResponseWriter, r *http.Request, tokens *protocol.Tokens[*protocol.IDTokenClaims], state string, rp rp.RelyingParty, info *protocol.UserInfo) {
 		fmt.Println("access token", tokens.AccessToken)
 		fmt.Println("refresh token", tokens.RefreshToken)
 		fmt.Println("id token", tokens.IDToken)
+
+		// Check if this login was initiated by a third party with target_link_uri.
+		// If so, redirect the user to that URI after successful authentication.
+		if targetURI, err := cookieHandler.CheckCookie(r, "target_link_uri"); err == nil && targetURI != "" {
+			cookieHandler.DeleteCookie(w, "target_link_uri")
+			http.Redirect(w, r, targetURI, http.StatusFound)
+			return
+		}
 
 		data, err := json.Marshal(info)
 		if err != nil {

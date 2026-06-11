@@ -115,21 +115,25 @@ func (k *signingKey) Key() jwk.Key {
 		jk, _ := jwk.Import[jwk.Key](k.rsaKey)
 		_ = jk.Set(jwk.AlgorithmKey, k.algorithm)
 		_ = jk.Set(jwk.KeyIDKey, k.id)
+		_ = jk.Set(jwk.KeyUsageKey, k.use)
 		return jk
 	case k.ecdsaKey != nil:
 		jk, _ := jwk.Import[jwk.Key](k.ecdsaKey)
 		_ = jk.Set(jwk.AlgorithmKey, k.algorithm)
 		_ = jk.Set(jwk.KeyIDKey, k.id)
+		_ = jk.Set(jwk.KeyUsageKey, k.use)
 		return jk
 	case k.ed25519Key != nil:
 		jk, _ := jwk.Import[jwk.Key](k.ed25519Key)
 		_ = jk.Set(jwk.AlgorithmKey, k.algorithm)
 		_ = jk.Set(jwk.KeyIDKey, k.id)
+		_ = jk.Set(jwk.KeyUsageKey, k.use)
 		return jk
 	case k.sm2Key != nil:
 		jk, _ := jwk.Import[jwk.Key](k.sm2Key)
 		_ = jk.Set(jwk.AlgorithmKey, k.algorithm)
 		_ = jk.Set(jwk.KeyIDKey, k.id)
+		_ = jk.Set(jwk.KeyUsageKey, k.use)
 		return jk
 	case k.sm9UserKey != nil:
 		return nil
@@ -412,6 +416,34 @@ func (s *Storage) SigningKey(_ context.Context) (storm.SigningKey, error) {
 // =================================================================
 // Storm compatibility assertions
 // =================================================================
+
+// RotateSigningKey generates a new RSA-2048/RS256 signing key and prepends it
+// to the key set. Old keys remain in KeySet() for token verification.
+// Note: this is an example server that restarts between test sessions, so
+// unbounded key accumulation is not a concern in practice.
+func (s *Storage) RotateSigningKey() error {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return err
+	}
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	sk := signingKey{
+		id:        uuid.NewString(),
+		algorithm: "RS256",
+		use:       "sig",
+		rsaKey:    key,
+	}
+	s.signingKeys = append([]signingKey{sk}, s.signingKeys...)
+	return nil
+}
+
+// SigningKeyCount returns the number of signing keys.
+func (s *Storage) SigningKeyCount() int {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return len(s.signingKeys)
+}
 
 var (
 	_ storm.Storage                = (*Storage)(nil)

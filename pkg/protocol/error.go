@@ -223,6 +223,13 @@ const (
 	// the audience parameter for the token being exchanged is not accepted.
 	// RFC 8693 §2.2.2 (OAuth 2.0 Token Exchange)
 	InvalidTarget errorType = "invalid_target"
+
+	// ---- RFC 7591 OAuth 2.0 Dynamic Client Registration (§3.2.2) ----
+
+	// InvalidClientMetadata: The value of one of the client metadata fields
+	// is invalid or the server rejects this metadata for other reasons.
+	// RFC 7591 §3.2.2
+	InvalidClientMetadata errorType = "invalid_client_metadata"
 )
 
 // ---------------------------------------------------------------------------
@@ -330,6 +337,12 @@ var (
 			ErrorType:   InvalidTarget,
 			Description: "The requested audience or target is invalid.",
 		}
+	}
+
+	// ---- RFC 7591 Dynamic Client Registration (§3.2.2) ----
+
+	ErrInvalidClientMetadata = func() *Error {
+		return &Error{ErrorType: InvalidClientMetadata}
 	}
 )
 

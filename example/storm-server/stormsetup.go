@@ -8,7 +8,10 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
+	"embed"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -45,6 +48,7 @@ import (
 func defaultGrantTypes() []string {
 	return []string{
 		"authorization_code",
+		"implicit",
 		"client_credentials",
 		"refresh_token",
 		"urn:ietf:params:oauth:grant-type:jwt-bearer",
@@ -165,6 +169,18 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 	engineHandler := engine.Build()
 
 	router := chi.NewRouter()
+	router.Post("/admin/rotate-keys", func(w http.ResponseWriter, r *http.Request) {
+		before := stor.SigningKeyCount()
+		if err := stor.RotateSigningKey(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		after := stor.SigningKeyCount()
+		slog.Default().Info("key rotation completed", "before", before, "after", after)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"status":"ok","keys_before":%d,"keys_after":%d}`, before, after)
+	})
 	router.Mount("/login/", http.StripPrefix("/login", loginHandler(stor, cfg.Issuer)))
 	router.Mount("/", engineHandler)
 	return router
@@ -173,7 +189,8 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 func loginHandler(stor *storage.Storage, issuer string) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/username", func(w http.ResponseWriter, r *http.Request) {
-		renderLogin(w, r.URL.Query().Get("authRequestID"), issuer, "")
+		id := r.URL.Query().Get("authRequestID")
+		renderLogin(w, id, issuer, "", getClientUIInfo(stor, id))
 	})
 	r.Post("/username", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -182,7 +199,7 @@ func loginHandler(stor *storage.Storage, issuer string) http.Handler {
 		}
 		id := r.FormValue("id")
 		if err := stor.CheckUsernamePassword(r.FormValue("username"), r.FormValue("password"), id); err != nil {
-			renderLogin(w, id, issuer, err.Error())
+			renderLogin(w, id, issuer, err.Error(), getClientUIInfo(stor, id))
 			return
 		}
 		// Set session_id cookie after successful login
@@ -199,31 +216,64 @@ func loginHandler(stor *storage.Storage, issuer string) http.Handler {
 	return r
 }
 
-var loginTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
-<html><head><title>Login — {{.Issuer}}</title></head>
-<body style="display:flex;align-items:center;justify-content:center;height:100vh">
-<div>
-<h2>{{.Issuer}}</h2>
-{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
-<form method="POST" action="/login/username">
-<input type="hidden" name="id" value="{{.ID}}">
-<p><label>Username: <input name="username" value="test-user@{{.Domain}}"></label></p>
-<p><label>Password: <input name="password" type="password" value="verysecure"></label></p>
-<p><button type="submit">Login</button></p>
-</form>
-</div>
-</body></html>`))
+//go:embed template
+var templateFS embed.FS
 
-func renderLogin(w http.ResponseWriter, id, issuer, errMsg string) {
+var loginTmpl = template.Must(template.ParseFS(templateFS, "template/login.html"))
+
+type clientUIInfo struct {
+	LogoURI   string
+	PolicyURI string
+	TOSURI    string
+}
+
+func getClientUIInfo(stor *storage.Storage, authRequestID string) clientUIInfo {
+	if authRequestID == "" {
+		return clientUIInfo{}
+	}
+	ar, err := stor.AuthRequestByID(context.Background(), authRequestID)
+	if err != nil {
+		return clientUIInfo{}
+	}
+	client, err := stor.GetClientByClientID(context.Background(), ar.GetClientID())
+	if err != nil {
+		return clientUIInfo{}
+	}
+	info := clientUIInfo{}
+	type logoProvider interface {
+		LogoURI() string
+	}
+	type policyProvider interface {
+		PolicyURI() string
+	}
+	type tosProvider interface {
+		TOSURI() string
+	}
+	if lp, ok := client.(logoProvider); ok {
+		info.LogoURI = lp.LogoURI()
+	}
+	if pp, ok := client.(policyProvider); ok {
+		info.PolicyURI = pp.PolicyURI()
+	}
+	if tp, ok := client.(tosProvider); ok {
+		info.TOSURI = tp.TOSURI()
+	}
+	return info
+}
+
+func renderLogin(w http.ResponseWriter, id, issuer, errMsg string, uiInfo clientUIInfo) {
 	trimmed := strings.TrimRight(issuer, "/")
 	domain := trimmed
 	if u, err := url.Parse(trimmed); err == nil && u.Host != "" {
 		domain = u.Hostname()
 	}
 	loginTmpl.Execute(w, map[string]string{
-		"ID":     id,
-		"Issuer": trimmed,
-		"Domain": domain,
-		"Error":  errMsg,
+		"ID":        id,
+		"Issuer":    trimmed,
+		"Domain":    domain,
+		"Error":     errMsg,
+		"LogoURI":   uiInfo.LogoURI,
+		"PolicyURI": uiInfo.PolicyURI,
+		"TOSURI":    uiInfo.TOSURI,
 	})
 }

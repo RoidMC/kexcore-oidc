@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -148,10 +150,12 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 			tokenError(w, r, protocol.ErrInvalidClient().WithDescription("client_assertion is missing"))
 			return
 		}
-		if _, err := p.authenticatePrivateKeyJWT(r, assertion); err != nil {
+		client, err := p.authenticatePrivateKeyJWT(r, assertion)
+		if err != nil {
 			tokenError(w, r, err)
 			return
 		}
+		r = r.WithContext(shared.ContextWithAuthenticatedClient(r.Context(), client))
 	}
 
 	grantType := r.Form.Get("grant_type")
@@ -748,6 +752,12 @@ func (p *Plugin) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 // --- client authentication ---
 
 func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSecret string) (storm.Client, error) {
+	// If the client was already authenticated via client_assertion (private_key_jwt),
+	// return it directly — no need to re-authenticate.
+	if c := shared.AuthenticatedClientFromContext(r.Context()); c != nil {
+		return p.clientStore.GetClientByClientID(r.Context(), c.GetID())
+	}
+
 	clientID, clientSecret := formClientID, formClientSecret
 
 	if id, secret, ok := r.BasicAuth(); ok {
@@ -783,27 +793,85 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 // authenticatePrivateKeyJWT authenticates the client using a JWT assertion
 // signed with the client's private key (RFC 7523 §2.2, OIDC Core §9).
 func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (storm.Client, error) {
-	issuer := shared.IssuerFromContext(r.Context())
-	request, err := protocol.VerifyJWTAssertion(r.Context(), assertion, issuer, p.keyStore, 10*time.Second)
-	if err != nil {
+	// Step 1: Parse the unverified JWT to extract iss (client_id).
+	request := new(protocol.JWTTokenRequest)
+	if _, err := protocol.ParseToken(assertion, request); err != nil {
 		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
 	}
-
-	clientID := request.Issuer
-	if clientID == "" {
+	if request.Issuer == "" {
 		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion missing iss claim")
 	}
 
-	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
+	// Step 2: Look up the client and verify it's configured for private_key_jwt.
+	client, err := p.clientStore.GetClientByClientID(r.Context(), request.Issuer)
 	if err != nil {
 		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
-
 	if client.AuthMethod() != protocol.AuthMethodPrivateKeyJWT {
 		return nil, protocol.ErrInvalidClient().WithDescription("client not configured for private_key_jwt")
 	}
 
+	// Step 3: Get the client's keys for signature verification.
+	// Prefer fetching fresh keys from jwks_uri if available (supports RP key rotation).
+	clientKS, ok := client.(storm.ClientJWKSProvider)
+	if !ok {
+		return nil, protocol.ErrInvalidClient().WithDescription("client does not support private_key_jwt")
+	}
+
+	var clientKeys []jwk.Key
+	if uriProvider, ok := client.(storm.ClientJWKSURIProvider); ok && uriProvider.ClientJWKSURI() != "" {
+		// Fetch fresh keys from the client's jwks_uri
+		fetchedKeys, err := fetchJWKSFromURI(uriProvider.ClientJWKSURI())
+		if err != nil {
+			slog.Default().Warn("failed to fetch client jwks_uri, falling back to cached keys", "error", err, "uri", uriProvider.ClientJWKSURI())
+			clientKeys = clientKS.ClientJWKS()
+		} else {
+			clientKeys = fetchedKeys
+		}
+	} else {
+		clientKeys = clientKS.ClientJWKS()
+	}
+
+	if len(clientKeys) == 0 {
+		return nil, protocol.ErrInvalidClient().WithDescription("client has no registered keys")
+	}
+
+	// Step 4: Verify the assertion with the client's keys (not the OP's keyStore).
+	issuer := shared.IssuerFromContext(r.Context())
+	tokenEndpoint := shared.EndpointURL(r.Context(), protocol.NewEndpoint("/token"))
+	allowedAudiences := []string{issuer, tokenEndpoint}
+	if err := protocol.VerifyJWTAssertion(r.Context(), assertion, allowedAudiences, clientKeys, 10*time.Second); err != nil {
+		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
+	}
+
 	return client, nil
+}
+
+// fetchJWKSFromURI fetches and parses a JWKS from a remote URI.
+func fetchJWKSFromURI(uri string) ([]jwk.Key, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(uri)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch jwks_uri: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("jwks_uri returned HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read jwks_uri response: %w", err)
+	}
+	set, err := jwk.Parse(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse jwks_uri response: %w", err)
+	}
+	var keys []jwk.Key
+	for i := range set.Len() {
+		key, _ := set.Key(i)
+		keys = append(keys, key)
+	}
+	return keys, nil
 }
 
 // --- token creation ---
@@ -881,6 +949,7 @@ func (p *Plugin) writeTokenResponse(w http.ResponseWriter, r *http.Request, resp
 	}
 	shared.JSONResponse(w, resp, http.StatusOK)
 }
+
 // DPoP: cnf.jkt (RFC 9449 §7.1)
 // If both are present, both keys are included.
 func (p *Plugin) resolveCNF(ctx context.Context) map[string]any {
