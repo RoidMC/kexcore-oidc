@@ -25,6 +25,8 @@ type Plugin struct {
 	logger              *slog.Logger
 	tracer              trace.Tracer
 	devicePollInterval  time.Duration // default polling interval for device_code grant
+	requireDPoP         bool          // FAPI2: require DPoP proof for all token requests
+	requireMtls         bool          // FAPI2: require mTLS client certificate for all token requests
 }
 
 // Config holds the dependencies for the Token plugin.
@@ -38,6 +40,14 @@ type Config struct {
 	Logger      *slog.Logger
 	// DevicePollInterval is the default polling interval for device_code grant (default: 5s).
 	DevicePollInterval time.Duration
+	// RequireDPoP when true requires a valid DPoP proof for all token requests.
+	// Requests without a DPoP proof are rejected with invalid_request.
+	// Use this for FAPI 2.0 compliance (sender-constrained tokens via DPoP).
+	RequireDPoP bool
+	// RequireMtls when true requires a valid mTLS client certificate for all token requests.
+	// Requests without a client certificate are rejected with invalid_request.
+	// Use this for FAPI 2.0 compliance (sender-constrained tokens via mTLS).
+	RequireMtls bool
 }
 
 // --- internal request types ---

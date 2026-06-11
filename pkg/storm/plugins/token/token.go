@@ -73,6 +73,8 @@ func NewWithConfig(cfg Config) *Plugin {
 		decoder:            cfg.Decoder,
 		logger:             cfg.Logger,
 		devicePollInterval: cfg.DevicePollInterval,
+		requireDPoP:        cfg.RequireDPoP,
+		requireMtls:        cfg.RequireMtls,
 	}
 }
 
@@ -809,6 +811,15 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 	accessToken, tokenID, refreshToken, validity, err := p.createAccessToken(ctx, request, client, opts.IssueRefresh, opts.CurrentRefreshToken)
 	if err != nil {
 		return nil, "", err
+	}
+
+	// FAPI 2.0: reject requests without sender-constrained proof when required.
+	// Must check before resolveCNF so we fail fast without issuing tokens.
+	if p.requireDPoP && shared.DPoPFromContext(ctx) == nil {
+		return nil, "", protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)")
+	}
+	if p.requireMtls && shared.ClientCertFromContext(ctx) == nil {
+		return nil, "", protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
 	}
 
 	// Resolve cnf claim from mTLS certificate and/or DPoP proof

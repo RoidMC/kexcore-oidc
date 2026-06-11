@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
 // --- fake implementations ---
@@ -869,6 +871,226 @@ func TestHandleAuthorizationCode_GrantTypeNotAllowed(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	errResp := decodeError(t, w)
 	assert.Equal(t, "unauthorized_client", errResp["error"])
+}
+
+// --- sender-constrained token tests (FAPI 2.0) ---
+
+func newTestPluginWithSenderConstraint(t *testing.T, cs *fakeClientStore, as *fakeAuthStore, ts *fakeTokenStore, requireDPoP, requireMtls bool) *Plugin {
+	t.Helper()
+	p := newTestPlugin(t, cs, as, ts)
+	p.requireDPoP = requireDPoP
+	p.requireMtls = requireMtls
+	return p
+}
+
+type fakeDPoPProof struct{ thumbprint string }
+
+func (f *fakeDPoPProof) JWKThumbprint() string { return f.thumbprint }
+
+func TestCreateTokenResponse_RequireDPoP_Rejected(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"client1": {id: "client1", authMethod: protocol.AuthMethodBasic, grantTypes: []protocol.GrantType{protocol.GrantTypeCode}},
+		},
+	}
+	as := newFakeAuthStore()
+	as.byCode["test-code"] = &fakeAuthRequest{
+		id:           "auth-req-1",
+		clientID:     "client1",
+		subject:      "user1",
+		redirectURI:  "https://example.com/callback",
+		scopes:       []string{"openid"},
+		responseType: protocol.ResponseTypeCode,
+	}
+	ts := newFakeTokenStore()
+	p := newTestPluginWithSenderConstraint(t, cs, as, ts, true, false)
+
+	form := newTokenForm("authorization_code", url.Values{
+		"code":         {"test-code"},
+		"redirect_uri": {"https://example.com/callback"},
+	})
+	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
+	w := httptest.NewRecorder()
+
+	p.handleAuthorizationCode(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	errResp := decodeError(t, w)
+	assert.Equal(t, "invalid_request", errResp["error"])
+	assert.Contains(t, errResp["error_description"], "DPoP proof required")
+}
+
+func TestCreateTokenResponse_RequireDPoP_Accepted(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"client1": {id: "client1", authMethod: protocol.AuthMethodBasic, grantTypes: []protocol.GrantType{protocol.GrantTypeCode}},
+		},
+	}
+	as := newFakeAuthStore()
+	as.byCode["test-code"] = &fakeAuthRequest{
+		id:           "auth-req-1",
+		clientID:     "client1",
+		subject:      "user1",
+		redirectURI:  "https://example.com/callback",
+		scopes:       []string{"openid"},
+		responseType: protocol.ResponseTypeCode,
+	}
+	ts := newFakeTokenStore()
+	p := newTestPluginWithSenderConstraint(t, cs, as, ts, true, false)
+
+	form := newTokenForm("authorization_code", url.Values{
+		"code":         {"test-code"},
+		"redirect_uri": {"https://example.com/callback"},
+	})
+	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
+	// Inject DPoP proof into context
+	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{thumbprint: "abc123"})
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	p.handleAuthorizationCode(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	resp := decodeTokenResponse(t, w)
+	assert.NotEmpty(t, resp.AccessToken)
+	assert.Equal(t, "DPoP", resp.TokenType)
+}
+
+func TestCreateTokenResponse_RequireMtls_Rejected(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"client1": {id: "client1", authMethod: protocol.AuthMethodBasic, grantTypes: []protocol.GrantType{protocol.GrantTypeCode}},
+		},
+	}
+	as := newFakeAuthStore()
+	as.byCode["test-code"] = &fakeAuthRequest{
+		id:           "auth-req-1",
+		clientID:     "client1",
+		subject:      "user1",
+		redirectURI:  "https://example.com/callback",
+		scopes:       []string{"openid"},
+		responseType: protocol.ResponseTypeCode,
+	}
+	ts := newFakeTokenStore()
+	p := newTestPluginWithSenderConstraint(t, cs, as, ts, false, true)
+
+	form := newTokenForm("authorization_code", url.Values{
+		"code":         {"test-code"},
+		"redirect_uri": {"https://example.com/callback"},
+	})
+	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
+	w := httptest.NewRecorder()
+
+	p.handleAuthorizationCode(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	errResp := decodeError(t, w)
+	assert.Equal(t, "invalid_request", errResp["error"])
+	assert.Contains(t, errResp["error_description"], "mTLS client certificate required")
+}
+
+func TestCreateTokenResponse_RequireMtls_Accepted(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"client1": {id: "client1", authMethod: protocol.AuthMethodBasic, grantTypes: []protocol.GrantType{protocol.GrantTypeCode}},
+		},
+	}
+	as := newFakeAuthStore()
+	as.byCode["test-code"] = &fakeAuthRequest{
+		id:           "auth-req-1",
+		clientID:     "client1",
+		subject:      "user1",
+		redirectURI:  "https://example.com/callback",
+		scopes:       []string{"openid"},
+		responseType: protocol.ResponseTypeCode,
+	}
+	ts := newFakeTokenStore()
+	p := newTestPluginWithSenderConstraint(t, cs, as, ts, false, true)
+
+	form := newTokenForm("authorization_code", url.Values{
+		"code":         {"test-code"},
+		"redirect_uri": {"https://example.com/callback"},
+	})
+	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
+	// Inject a fake mTLS client certificate into context
+	cert := &x509.Certificate{Raw: []byte("fake-cert-der")}
+	ctx := shared.ContextWithClientCert(r.Context(), cert)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	p.handleAuthorizationCode(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	resp := decodeTokenResponse(t, w)
+	assert.NotEmpty(t, resp.AccessToken)
+}
+
+func TestCreateTokenResponse_RequireDPoPAndMtls_EitherAccepted(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"client1": {id: "client1", authMethod: protocol.AuthMethodBasic, grantTypes: []protocol.GrantType{protocol.GrantTypeCode}},
+		},
+	}
+	as := newFakeAuthStore()
+	ts := newFakeTokenStore()
+
+	// Both required — DPoP alone should satisfy requireDPoP, but requireMtls still rejects
+	as.byCode["code-dpop"] = &fakeAuthRequest{
+		id: "auth-1", clientID: "client1", subject: "user1",
+		redirectURI: "https://example.com/callback", scopes: []string{"openid"}, responseType: protocol.ResponseTypeCode,
+	}
+	p := newTestPluginWithSenderConstraint(t, cs, as, ts, true, true)
+
+	form := newTokenForm("authorization_code", url.Values{
+		"code":         {"code-dpop"},
+		"redirect_uri": {"https://example.com/callback"},
+	})
+	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
+	// Only DPoP, no mTLS — requireMtls should reject
+	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{thumbprint: "abc"})
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	p.handleAuthorizationCode(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	errResp := decodeError(t, w)
+	assert.Equal(t, "invalid_request", errResp["error"])
+	assert.Contains(t, errResp["error_description"], "mTLS client certificate required")
+}
+
+func TestCreateTokenResponse_NoSenderConstraint_DefaultBehavior(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"client1": {id: "client1", authMethod: protocol.AuthMethodBasic, grantTypes: []protocol.GrantType{protocol.GrantTypeCode}},
+		},
+	}
+	as := newFakeAuthStore()
+	as.byCode["test-code"] = &fakeAuthRequest{
+		id:           "auth-req-1",
+		clientID:     "client1",
+		subject:      "user1",
+		redirectURI:  "https://example.com/callback",
+		scopes:       []string{"openid"},
+		responseType: protocol.ResponseTypeCode,
+	}
+	ts := newFakeTokenStore()
+	// Both false (default) — plain Bearer token should be issued
+	p := newTestPluginWithSenderConstraint(t, cs, as, ts, false, false)
+
+	form := newTokenForm("authorization_code", url.Values{
+		"code":         {"test-code"},
+		"redirect_uri": {"https://example.com/callback"},
+	})
+	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
+	w := httptest.NewRecorder()
+
+	p.handleAuthorizationCode(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	resp := decodeTokenResponse(t, w)
+	assert.NotEmpty(t, resp.AccessToken)
+	assert.Equal(t, protocol.BearerToken, resp.TokenType)
 }
 
 // --- refresh_token grant tests ---
