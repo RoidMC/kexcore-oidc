@@ -135,10 +135,10 @@ Plugin-based OIDC server framework.
 | Refresh Token + Rotation | `token` | OpenID Connect Core 1.0, [Section 12][5] + OAuth 2.1 §6.1 | ✅ |
 | Client Credentials | `token` | OpenID Connect Core 1.0, [Section 9][4] | ✅ |
 | JWT Bearer Grant | `token` | [RFC 7523][7] | ✅ |
-| PKCE (S256) | `token` | [RFC 7636][8] | ✅ |
+| PKCE (S256, plain opt-in) | `token` | [RFC 7636][8] + OAuth 2.1 §4.1.1 | ✅ plain 默认拒绝，需 `WithPlainPKCE()` 启用 |
 | Token Introspection | `introspection` | [RFC 7662][16] | ✅ |
 | Token Revocation | `revocation` | [RFC 7009][17] | ✅ |
-| UserInfo Endpoint | `userinfo` | OpenID Connect Core 1.0, [Section 5.6][18] | ✅ |
+| UserInfo Endpoint (JSON + JWT) | `userinfo` | OpenID Connect Core 1.0, [Section 5.3][18] | ✅ `Accept: application/jwt` 返回签名 JWT |
 | Discovery Document | `discovery` | OpenID Connect [Discovery][6] 1.0 | ✅ |
 | JWKS Endpoint | `keys` | OpenID Connect Core 1.0, [Section 7.3][19] | ✅ |
 | Dynamic Client Registration | `dcr` | [RFC 7591][20] | ✅ |
@@ -147,9 +147,11 @@ Plugin-based OIDC server framework.
 | Token Exchange | `token` | [RFC 8693][9] | ✅ |
 | PAR (Pushed Auth Request) | `par` | [RFC 9126][15] | ✅ |
 | mTLS Client Auth + Cert-Bound | `mtls` | [RFC 8705][11] | ✅ |
-| DPoP Proof Validation | `dpop` | [RFC 9449][14] | ✅ |
+| DPoP Proof Validation + Nonce | `dpop` | [RFC 9449][14] §4.3, §8 | ✅ 无效 proof 返回 400；server-provided nonce 自动下发 |
+| JARM (JWT Secured Auth Response) | `jarm` | [RFC 9101][28] | ✅ query.jwt / fragment.jwt / form_post.jwt |
+| iss in Auth Response (Mix-Up Defense) | `authorization` | [RFC 9207][29] | ✅ 所有响应路径返回 iss 参数 |
 | Private Key JWT Auth | `token` | [RFC 7523][7] §2.2, OIDC Core §9 | ✅ |
-| Request Object (JWT) | `authorization` | OpenID Connect Core 1.0, [Section 6.1][22] | ✅ |
+| Request Object (JWT, 含时间验证) | `authorization` | OpenID Connect Core 1.0, [Section 6.1][22] | ✅ exp/nbf 验证，10s clock skew |
 | id_token_hint Validation | `authorization` | OpenID Connect Core 1.0, [Section 3.1.2.2][23] | ✅ |
 | Implicit Flow (可选) | `authorization` | OpenID Connect Core 1.0, [Section 3.2][2] | ✅ 默认关闭 |
 | Hybrid Flow (可选) | `authorization` | OpenID Connect Core 1.0, [Section 3.3][3] | ✅ 默认关闭 |
@@ -211,6 +213,8 @@ Plugin-based OIDC server framework.
 [25]: https://openid.net/specs/openid-connect-core-1_0.html#HTTPSRequirements "15.6.3. TLS Requirements"
 [26]: https://openid.net/specs/openid-connect-core-1_0.html#SubjectIDTypes "8.1. Pairwise Identifier Algorithm"
 [27]: https://www.rfc-editor.org/rfc/rfc7515.html "JSON Web Signature (JWS)"
+[28]: https://www.rfc-editor.org/rfc/rfc9101.html "JWT Secured Authorization Response Mode for OAuth 2.0 (JARM)"
+[29]: https://www.rfc-editor.org/rfc/rfc9207.html "OAuth 2.0 Authorization Server Issuer Identification"
 
 ## Contributors
 
@@ -250,13 +254,13 @@ RP client based on [zitadel/oidc]. OP entirely self-developed with StormEngine p
 
 ### Other Go OpenID Connect libraries
 
-| Library | OP | RP | Plugin-based | GM/T | DPoP | mTLS | PAR |
-|---|---|---|---|---|---|---|---|
-| [coreos/go-oidc](https://github.com/coreos/go-oidc) | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| [ory/fosite](https://github.com/ory/fosite) | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| [ory/hydra](https://github.com/ory/hydra) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| [zitadel/oidc](https://github.com/zitadel/oidc) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **kexcore-oidc** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** |
+| Library | OP | RP | Plugin-based | GM/T | DPoP | mTLS | PAR | JARM |
+|---|---|---|---|---|---|---|---|---|
+| [coreos/go-oidc](https://github.com/coreos/go-oidc) | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| [ory/fosite](https://github.com/ory/fosite) | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| [ory/hydra](https://github.com/ory/hydra) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| [zitadel/oidc](https://github.com/zitadel/oidc) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **kexcore-oidc** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** |
 
 ## License
 
