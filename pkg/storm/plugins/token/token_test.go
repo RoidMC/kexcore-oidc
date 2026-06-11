@@ -327,20 +327,6 @@ func newTestPlugin(t *testing.T, clientStore *fakeClientStore, authStore *fakeAu
 	}
 }
 
-// newTestPluginNoKeyStore creates a plugin without a keyStore (no ID token signing).
-func newTestPluginNoKeyStore(t *testing.T, clientStore *fakeClientStore, authStore *fakeAuthStore, tokenStore *fakeTokenStore) *Plugin {
-	t.Helper()
-	decoder := protocol.NewDecoder()
-	return &Plugin{
-		tokenStore:  tokenStore,
-		clientStore: clientStore,
-		authStore:   authStore,
-		crypto:      &fakeCrypto{},
-		decoder:     decoder,
-		logger:      slog.Default(),
-	}
-}
-
 func newTokenForm(grantType string, extra url.Values) url.Values {
 	form := url.Values{}
 	form.Set("grant_type", grantType)

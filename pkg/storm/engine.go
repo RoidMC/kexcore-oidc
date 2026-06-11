@@ -10,7 +10,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/cors"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
+	"github.com/roidmc/kexcore-oidc/internal/otel"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
@@ -28,6 +32,7 @@ type Engine struct {
 	middleware []func(http.Handler) http.Handler
 	corsOpts   *cors.Options
 	logger     *slog.Logger
+	tracer     trace.Tracer
 
 	storage      Storage
 	issuerFn     shared.IssuerFromRequest
@@ -52,7 +57,9 @@ type PluginContext struct {
 	Storage        Storage
 	Crypto         UniCrypto // may be nil if not configured
 	Decoder        *protocol.Decoder
-	EnableImplicit bool // enable implicit/hybrid flows (disabled by default per OAuth 2.1)
+	EnableImplicit bool                     // enable implicit/hybrid flows (disabled by default per OAuth 2.1)
+	IssuerFn       shared.IssuerFromRequest // issuer URL function
+	Tracer         trace.Tracer             // otel tracer for plugins
 }
 
 // PluginFactory creates a plugin from a PluginContext.
@@ -83,6 +90,7 @@ const (
 	PriorityPAR           = 950
 	PriorityDPoP          = 960
 	PriorityMTLS          = 970
+	PriorityJARM          = 975
 	PriorityDCR           = 1000
 )
 
@@ -203,6 +211,7 @@ func New(storage Storage, issuerFn shared.IssuerFromRequest, opts ...EngineOptio
 	e := &Engine{
 		router:            chi.NewRouter(),
 		logger:            slog.Default(),
+		tracer:            otel.Tracer("github.com/roidmc/kexcore-oidc/pkg/storm"),
 		storage:           storage,
 		issuerFn:          issuerFn,
 		disabled:          make(map[string]bool),
@@ -225,6 +234,8 @@ func (e *Engine) autoRegisterPlugins() {
 		Crypto:         e.crypto,
 		Decoder:        e.decoder,
 		EnableImplicit: e.enableImplicit,
+		IssuerFn:       e.issuerFn,
+		Tracer:         e.tracer,
 	}
 	if pctx.Decoder == nil {
 		pctx.Decoder = protocol.NewDecoder()
@@ -329,6 +340,10 @@ func (e *Engine) Build() http.Handler {
 	// BackChannel implements LogoutHook, so EndSession can trigger it.
 	e.connectLogoutHooks()
 
+	// Auto-connect Authorization and JARM plugins if both exist.
+	// JARM implements JARMSigner, so Authorization can sign responses.
+	e.connectJARMSigner()
+
 	// Discovery aggregation
 	e.installDiscovery()
 
@@ -343,11 +358,12 @@ func (e *Engine) Build() http.Handler {
 
 	e.logPluginInfo()
 
-	// Apply middleware (CORS first, then user middleware)
+	// Apply middleware (CORS first, then otel, then user middleware)
 	var h http.Handler = e.router
 	if e.corsOpts != nil {
 		h = cors.New(*e.corsOpts).Handler(h)
 	}
+	h = e.otelMiddleware(h)
 	for _, mw := range e.middleware {
 		h = mw(h)
 	}
@@ -377,6 +393,46 @@ func (e *Engine) Storage() Storage {
 }
 
 // --- internal ---
+
+// otelMiddleware creates an HTTP middleware that adds OpenTelemetry tracing.
+func (e *Engine) otelMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := e.tracer.Start(r.Context(), r.Method+" "+r.URL.Path,
+			trace.WithAttributes(
+				attribute.String("http.method", r.Method),
+				attribute.String("http.url", r.URL.String()),
+				attribute.String("http.user_agent", r.UserAgent()),
+				attribute.String("http.remote_addr", r.RemoteAddr),
+			),
+		)
+		defer span.End()
+
+		r = r.WithContext(ctx)
+
+		// Wrap response writer to capture status code
+		ww := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(ww, r)
+
+		span.SetAttributes(
+			attribute.Int("http.status_code", ww.statusCode),
+		)
+
+		if ww.statusCode >= 400 {
+			span.SetStatus(codes.Error, http.StatusText(ww.statusCode))
+		}
+	})
+}
+
+// responseWriter wraps http.ResponseWriter to capture the status code.
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
 
 func (e *Engine) healthHandler(w http.ResponseWriter, r *http.Request) {
 	shared.JSONResponse(w, map[string]string{"status": "ok"}, http.StatusOK)
@@ -423,6 +479,44 @@ func (e *Engine) connectLogoutHooks() {
 			endSession.SetLogoutHook(provider)
 			e.logger.Info("connected backchannel logout hook to endsession")
 		}
+	}
+}
+
+// connectJARMSigner auto-connects Authorization and JARM plugins.
+// If both plugins are registered and JARM implements JARMSigner,
+// it is automatically set as Authorization's JARM signer.
+func (e *Engine) connectJARMSigner() {
+	// Type for checking if a plugin can set a JARM signer
+	type jarmSignerSetter interface {
+		SetJARMSigner(signer interface {
+			SignAuthResponse(ctx context.Context, params map[string]string, clientID string) (string, error)
+		})
+	}
+
+	var authorization jarmSignerSetter
+	var jarmPlugin interface {
+		SignAuthResponse(ctx context.Context, params map[string]string, clientID string) (string, error)
+	}
+
+	for _, p := range e.plugins {
+		switch p.Name() {
+		case "authorization":
+			if setter, ok := p.(jarmSignerSetter); ok {
+				authorization = setter
+			}
+		case "jarm":
+			if signer, ok := p.(interface {
+				SignAuthResponse(ctx context.Context, params map[string]string, clientID string) (string, error)
+			}); ok {
+				jarmPlugin = signer
+			}
+		}
+	}
+
+	// If both exist, connect them
+	if authorization != nil && jarmPlugin != nil {
+		authorization.SetJARMSigner(jarmPlugin)
+		e.logger.Info("connected JARM signer to authorization")
 	}
 }
 

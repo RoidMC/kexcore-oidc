@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // --- DPoP context ---
@@ -95,4 +96,16 @@ func VerifyTokenBinding(ctx context.Context, cnf map[string]any) error {
 	}
 
 	return nil
+}
+
+// --- OpenTelemetry helpers ---
+
+// TracerSpan starts a span from a trace.Tracer. If the tracer is nil,
+// it returns a no-op span from the context. This is the recommended
+// way to start spans in plugins to avoid nil-pointer panics in tests.
+func TracerSpan(ctx context.Context, tracer trace.Tracer, name string) (context.Context, trace.Span) {
+	if tracer != nil {
+		return tracer.Start(ctx, name)
+	}
+	return ctx, trace.SpanFromContext(ctx)
 }

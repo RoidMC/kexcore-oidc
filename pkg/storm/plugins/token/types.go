@@ -7,6 +7,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const validIDTokenLifetime = 1 * time.Hour
@@ -22,6 +23,7 @@ type Plugin struct {
 	keyStore            storm.KeyStore
 	decoder             *protocol.Decoder
 	logger              *slog.Logger
+	tracer              trace.Tracer
 	devicePollInterval  time.Duration // default polling interval for device_code grant
 }
 

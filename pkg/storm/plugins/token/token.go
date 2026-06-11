@@ -25,6 +25,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"github.com/roidmc/kexcore-oidc/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -42,6 +44,7 @@ func New(ctx *storm.PluginContext) *Plugin {
 		keyStore:           ctx.Storage.(storm.KeyStore),
 		decoder:            ctx.Decoder,
 		logger:             slog.Default(),
+		tracer:             ctx.Tracer,
 		devicePollInterval: 5 * time.Second,
 	}
 	if das, ok := ctx.Storage.(storm.DeviceAuthStore); ok {
@@ -170,16 +173,28 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 // --- authorization_code grant (RFC 6749 §4.1.3, OIDC Core §3.1.3.1) ---
 
 func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request) {
+	ctx, span := shared.TracerSpan(r.Context(), p.tracer, "token.authorization_code")
+	defer span.End()
+	r = r.WithContext(ctx)
+
 	tokenReq, err := parseAccessTokenRequest(r.Form, p.decoder)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "cannot parse token request")
 		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("cannot parse token request").WithParent(err))
 		return
 	}
 
 	if tokenReq.Code == "" {
+		span.SetStatus(codes.Error, "code is missing")
 		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("code is missing"))
 		return
 	}
+
+	span.SetAttributes(
+		attribute.String("client_id", tokenReq.ClientID),
+		attribute.String("grant_type", "authorization_code"),
+	)
 
 	authReq, err := p.authStore.AuthRequestByCode(r.Context(), tokenReq.Code)
 	if err != nil {
@@ -216,6 +231,12 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// DPoP authorization code binding (RFC 9449 §7.1)
+	if err := verifyDPoPCodeBinding(r.Context(), p.authStore, authReq.GetID(), r); err != nil {
+		tokenError(w, r, err)
+		return
+	}
+
 	resp, tokenID, err := p.createTokenResponseFromTokenRequest(r.Context(), authReq, client, tokenResponseOpts{
 		IssueRefresh: true,
 		Code:         tokenReq.Code,
@@ -232,6 +253,36 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 	_ = p.authStore.DeleteAuthRequest(r.Context(), authReq.GetID())
 
 	shared.JSONResponse(w, resp, http.StatusOK)
+}
+
+// verifyDPoPCodeBinding verifies the DPoP authorization code binding (RFC 9449 §7.1).
+// If the authorization request included a dpop_jkt parameter, the token request
+// must include a DPoP proof with a matching JWK thumbprint.
+func verifyDPoPCodeBinding(ctx context.Context, authStore storm.AuthStore, authRequestID string, r *http.Request) error {
+	// Check if auth store supports DPoP code binding
+	bindingStore, ok := authStore.(storm.DPoPCodeBindingStore)
+	if !ok {
+		return nil // no binding support
+	}
+
+	// Get stored JKT for this auth request
+	storedJKT, err := bindingStore.GetAuthRequestDPoPJKT(ctx, authRequestID)
+	if err != nil || storedJKT == "" {
+		return nil // no binding required
+	}
+
+	// Get DPoP proof from context
+	proof := shared.DPoPFromContext(ctx)
+	if proof == nil {
+		return protocol.ErrInvalidGrant().WithDescription("DPoP proof required for code binding")
+	}
+
+	// Verify JKT matches
+	if proof.JWKThumbprint() != storedJKT {
+		return protocol.ErrInvalidGrant().WithDescription("DPoP proof does not match code binding")
+	}
+
+	return nil
 }
 
 // --- refresh_token grant (RFC 6749 §6) ---

@@ -5,10 +5,13 @@
 //   - DPoP proof validation (Section 4.1, 4.2, 4.3)
 //   - DPoP-bound access token creation (Section 7.1, cnf.jkt)
 //   - DPoP proof verification for resource server introspection (Section 10.1)
+//   - Server-provided nonce support (Section 8.1)
 package dpop
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"net/http"
 	"sync"
 	"time"
@@ -25,10 +28,17 @@ import (
 // When exceeded, the oldest entries are evicted.
 const maxNonceCacheSize = 10000
 
+// NonceLifetime is the lifetime of a server-provided nonce (RFC 9449 §8.1).
+const NonceLifetime = 5 * time.Minute
+
+// NonceHeader is the HTTP header name for the DPoP nonce.
+const NonceHeader = "DPoP-Nonce"
+
 // Plugin implements DPoP proof validation and token binding.
 type Plugin struct {
 	mu         sync.Mutex
 	usedNonces map[string]time.Time // jti replay detection
+	nonces     map[string]time.Time // server-provided nonces
 	stopCh     chan struct{}        // signals cleanup goroutine to stop
 }
 
@@ -36,6 +46,7 @@ type Plugin struct {
 func NewWithConfig() *Plugin {
 	p := &Plugin{
 		usedNonces: make(map[string]time.Time, maxNonceCacheSize),
+		nonces:     make(map[string]time.Time, maxNonceCacheSize),
 		stopCh:     make(chan struct{}),
 	}
 	go p.cleanupLoop()
@@ -166,6 +177,96 @@ func (p *Plugin) CleanupNonceCache() {
 			delete(p.usedNonces, jti)
 		}
 	}
+	// Also cleanup expired server-provided nonces
+	nonceCutoff := time.Now().Add(-NonceLifetime)
+	for nonce, t := range p.nonces {
+		if t.Before(nonceCutoff) {
+			delete(p.nonces, nonce)
+		}
+	}
+}
+
+// GenerateNonce creates a new server-provided nonce (RFC 9449 §8.1).
+// The nonce is cached and can be validated later.
+func (p *Plugin) GenerateNonce() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	nonce := base64.RawURLEncoding.EncodeToString(b)
+
+	p.mu.Lock()
+	// Evict oldest if at capacity
+	if len(p.nonces) >= maxNonceCacheSize {
+		p.evictNoncesLocked()
+	}
+	p.nonces[nonce] = time.Now()
+	p.mu.Unlock()
+
+	return nonce
+}
+
+// ValidateNonce validates a server-provided nonce (RFC 9449 §8.1).
+// Returns true if the nonce is valid and not expired.
+// The nonce is consumed (deleted) after validation.
+func (p *Plugin) ValidateNonce(nonce string) bool {
+	if nonce == "" {
+		return false
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	t, exists := p.nonces[nonce]
+	if !exists {
+		return false
+	}
+
+	// Check if expired
+	if time.Since(t) > NonceLifetime {
+		delete(p.nonces, nonce)
+		return false
+	}
+
+	// Consume the nonce
+	delete(p.nonces, nonce)
+	return true
+}
+
+// evictNoncesLocked removes the oldest ~25% of nonces.
+// Must be called with p.mu held.
+func (p *Plugin) evictNoncesLocked() {
+	target := maxNonceCacheSize / 4
+	if target == 0 {
+		target = 1
+	}
+
+	oldest := make([]time.Time, 0, len(p.nonces))
+	for _, t := range p.nonces {
+		oldest = append(oldest, t)
+	}
+	if len(oldest) < target {
+		return
+	}
+
+	for i := 0; i < target; i++ {
+		for j := i + 1; j < len(oldest); j++ {
+			if oldest[j].Before(oldest[i]) {
+				oldest[i], oldest[j] = oldest[j], oldest[i]
+			}
+		}
+	}
+	cutoff := oldest[target-1]
+
+	for nonce, t := range p.nonces {
+		if !t.After(cutoff) {
+			delete(p.nonces, nonce)
+		}
+	}
+}
+
+// WriteNonceHeader writes the DPoP-Nonce header to the response.
+func (p *Plugin) WriteNonceHeader(w http.ResponseWriter) {
+	nonce := p.GenerateNonce()
+	w.Header().Set(NonceHeader, nonce)
 }
 
 // cleanupLoop runs periodic nonce cache cleanup.

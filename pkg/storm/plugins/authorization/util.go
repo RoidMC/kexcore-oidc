@@ -286,6 +286,60 @@ func resolveResponseMode(explicit protocol.ResponseMode, rt protocol.ResponseTyp
 	return protocol.ResponseModeQuery
 }
 
+// isJARMResponseMode returns true if the response mode is a JARM mode
+// (query.jwt, fragment.jwt, or form_post.jwt).
+func isJARMResponseMode(rm protocol.ResponseMode) bool {
+	return rm == protocol.ResponseModeQueryJWT ||
+		rm == protocol.ResponseModeFragmentJWT ||
+		rm == protocol.ResponseModeFormPostJWT
+}
+
+// writeJARMResponse writes a JARM (JWT Secured Authorization Response Mode) response.
+// Per RFC 9101 §5.1, the JWT is returned as the "response" parameter.
+func writeJARMResponse(w http.ResponseWriter, r *http.Request, redirectURI, jwt string, responseMode protocol.ResponseMode) {
+	u, err := url.Parse(redirectURI)
+	if err != nil {
+		shared.WriteError(w, r, protocol.ErrServerError().WithParent(err), nil)
+		return
+	}
+
+	params := url.Values{}
+	params.Set("response", jwt)
+
+	switch responseMode {
+	case protocol.ResponseModeFragmentJWT:
+		u.Fragment = params.Encode()
+	case protocol.ResponseModeQueryJWT:
+		u.RawQuery = params.Encode()
+	case protocol.ResponseModeFormPostJWT:
+		// Form post with JWT
+		values := map[string][]string{
+			"response": {jwt},
+		}
+		tmplParams := &struct {
+			RedirectURI string
+			Params      map[string][]string
+		}{
+			RedirectURI: redirectURI,
+			Params:      values,
+		}
+		var buf bytes.Buffer
+		if err := formPostTmpl.Execute(&buf, tmplParams); err != nil {
+			shared.WriteError(w, r, protocol.ErrServerError().WithParent(err), nil)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_, _ = buf.WriteTo(w)
+		return
+	default:
+		// Default to query
+		u.RawQuery = params.Encode()
+	}
+
+	http.Redirect(w, r, u.String(), http.StatusFound)
+}
+
 // --- request object helpers ---
 
 // copyRequestObjectToAuthRequest overwrites present values from the Request Object

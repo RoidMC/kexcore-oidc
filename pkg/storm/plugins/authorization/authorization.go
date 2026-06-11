@@ -30,6 +30,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jws"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
@@ -51,6 +54,8 @@ type Plugin struct {
 	enableImplicit  bool
 	parStore        storm.PARStore
 	sessionProvider SessionProvider
+	jarmSigner      JARMSigner // optional, set via SetJARMSigner
+	tracer          trace.Tracer
 	createAuthCode  func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
 }
 
@@ -114,6 +119,7 @@ func New(ctx *storm.PluginContext) *Plugin {
 		keyStore:       ctx.Storage.(storm.KeyStore),
 		decoder:        ctx.Decoder,
 		enableImplicit: ctx.EnableImplicit,
+		tracer:         ctx.Tracer,
 	}
 	// Register custom parser for OIDC §5.5 claims parameter (JSON object).
 	ctx.Decoder.RegisterParser(
@@ -177,6 +183,12 @@ func (p *Plugin) Requires() []string {
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "authorization" }
 
+// SetJARMSigner sets the JARM signer for JWT-secured authorization responses.
+// Called by the Engine during Build when both authorization and jarm plugins are present.
+func (p *Plugin) SetJARMSigner(signer JARMSigner) {
+	p.jarmSigner = signer
+}
+
 // Register installs the authorization routes.
 //
 // OIDC standard endpoint: GET /authorize (RFC 6749 §3.1, OIDC Core §3.1.1)
@@ -221,16 +233,31 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 // --- authorize handler ---
 
 func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
+	ctx, span := shared.TracerSpan(r.Context(), p.tracer, "authorization.authorize")
+	defer span.End()
+	r = r.WithContext(ctx)
+
 	if err := r.ParseForm(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "cannot parse form")
 		writeAuthError(w, r, "", "", "", protocol.ErrInvalidRequest().WithDescription("cannot parse form").WithParent(err))
 		return
 	}
 
 	authReq, err := parseAuthorizeRequest(r.Form, p.decoder)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "cannot parse auth request")
 		writeAuthError(w, r, "", "", "", protocol.ErrInvalidRequest().WithDescription("cannot parse auth request").WithParent(err))
 		return
 	}
+
+	span.SetAttributes(
+		attribute.String("client_id", authReq.ClientID),
+		attribute.String("response_type", string(authReq.ResponseType)),
+		attribute.String("redirect_uri", authReq.RedirectURI),
+		attribute.StringSlice("scopes", []string(authReq.Scopes)),
+	)
 
 	// Resolve effective response mode: explicit > implicit default from response_type.
 	// Per OAuth 2.0 Multiple Response Types §2.1, hybrid/implicit flows default to fragment.
@@ -408,6 +435,8 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 				protocol.DefaultToServerError(err, "unable to save auth request"))
 			return
 		}
+		// Store DPoP code binding if present (RFC 9449 §7.1)
+		p.storeDPoPCodeBinding(r.Context(), req.GetID(), authReq.DPoPJKT)
 		if err := completer.CompleteAuthRequest(r.Context(), req.GetID(), subject, authTime, sid); err != nil {
 			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 				protocol.DefaultToServerError(err, "unable to complete auth request"))
@@ -444,6 +473,8 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 						protocol.DefaultToServerError(err, "unable to save auth request"))
 					return
 				}
+				// Store DPoP code binding if present (RFC 9449 §7.1)
+				p.storeDPoPCodeBinding(r.Context(), req.GetID(), authReq.DPoPJKT)
 				if err := completer.CompleteAuthRequest(r.Context(), req.GetID(), subject, authTime, sid); err != nil {
 					writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
 						protocol.DefaultToServerError(err, "unable to complete auth request"))
@@ -469,9 +500,21 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 			protocol.DefaultToServerError(err, "unable to save auth request"))
 		return
 	}
+	// Store DPoP code binding if present (RFC 9449 §7.1)
+	p.storeDPoPCodeBinding(r.Context(), req.GetID(), authReq.DPoPJKT)
 
 	loginURL := client.LoginURL(req.GetID())
 	http.Redirect(w, r, loginURL, http.StatusFound)
+}
+
+// storeDPoPCodeBinding stores the DPoP JWK thumbprint for code binding (RFC 9449 §7.1).
+func (p *Plugin) storeDPoPCodeBinding(ctx context.Context, authRequestID string, jkt string) {
+	if jkt == "" {
+		return
+	}
+	if bindingStore, ok := p.authStore.(storm.DPoPCodeBindingStore); ok {
+		bindingStore.SetAuthRequestDPoPJKT(ctx, authRequestID, jkt)
+	}
 }
 
 // --- callback handler ---
@@ -552,6 +595,29 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 	// Include session_state if client supports it.
 	if ssc, ok := authReq.(SessionStateClient); ok {
 		resp.SessionState = ssc.GetSessionState()
+	}
+
+	// JARM response modes (RFC 9101)
+	if isJARMResponseMode(responseMode) && p.jarmSigner != nil {
+		params := map[string]string{
+			"code": resp.Code,
+		}
+		if resp.State != "" {
+			params["state"] = resp.State
+		}
+		if resp.SessionState != "" {
+			params["session_state"] = resp.SessionState
+		}
+
+		jwt, err := p.jarmSigner.SignAuthResponse(r.Context(), params, authReq.GetClientID())
+		if err != nil {
+			writeAuthError(w, r, redirectURI, authReq.GetState(), responseMode,
+				protocol.DefaultToServerError(err, "failed to sign JARM response"))
+			return
+		}
+
+		writeJARMResponse(w, r, redirectURI, jwt, responseMode)
+		return
 	}
 
 	// Form Post response mode (OIDC Core §3.1.2.5 / §3.3.2.5)

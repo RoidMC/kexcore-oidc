@@ -1,4 +1,4 @@
-package protocol
+﻿package protocol
 
 import "log/slog"
 
@@ -65,6 +65,20 @@ const (
 	// ResponseModeFormPost returns parameters via auto-submitting a form.
 	// OAuth 2.0 Form Post Response Mode §2.1
 	ResponseModeFormPost ResponseMode = "form_post"
+)
+
+// JARM (JWT Secured Authorization Response Mode) — RFC 9101
+//
+//	https://datatracker.ietf.org/doc/html/rfc9101
+const (
+	// ResponseModeQueryJWT returns the authorization response as a JWT in the query string.
+	ResponseModeQueryJWT ResponseMode = "query.jwt"
+
+	// ResponseModeFragmentJWT returns the authorization response as a JWT in the fragment.
+	ResponseModeFragmentJWT ResponseMode = "fragment.jwt"
+
+	// ResponseModeFormPostJWT returns the authorization response as a JWT via form post.
+	ResponseModeFormPostJWT ResponseMode = "form_post.jwt"
 )
 
 // OIDC Core 1.0 §3.1.2.1 — Authentication Request (prompt parameter)
@@ -153,6 +167,10 @@ type AuthRequest struct {
 	RequestParam string         `schema:"request"`
 	RequestURI   string         `schema:"request_uri"`
 	Claims       *ClaimsRequest `json:"claims" schema:"claims"`
+
+	// DPoP JWK Thumbprint for authorization code binding (RFC 9449 §7.1).
+	// When present, the token endpoint must verify the DPoP proof matches this thumbprint.
+	DPoPJKT string `json:"dpop_jkt" schema:"dpop_jkt"`
 }
 
 // PushedAuthRequest represents the parameters sent to the Pushed Authorization Request endpoint.

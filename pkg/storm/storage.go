@@ -270,6 +270,20 @@ type TokenStore interface {
 	TokenRequestByRefreshToken(ctx context.Context, refreshToken string) (RefreshTokenRequest, error)
 }
 
+// DPoPCodeBindingStore is optionally implemented by AuthStore to support
+// DPoP authorization code binding (RFC 9449 §7.1).
+//
+// When the authorization request includes a DPoP proof (dpop_jkt parameter),
+// the authorization plugin stores the JWK thumbprint. The token plugin then
+// verifies that the DPoP proof presented during token exchange matches the
+// stored thumbprint.
+type DPoPCodeBindingStore interface {
+	// SetAuthRequestDPoPJKT stores the DPoP JWK thumbprint for an authorization request.
+	SetAuthRequestDPoPJKT(ctx context.Context, authRequestID string, jkt string) error
+	// GetAuthRequestDPoPJKT retrieves the DPoP JWK thumbprint for an authorization request.
+	GetAuthRequestDPoPJKT(ctx context.Context, authRequestID string) (string, error)
+}
+
 // TokenCNFStore is an optional extension of TokenStore that supports
 // storing the cnf (confirmation) claim for certificate-bound or
 // DPoP-bound access tokens (RFC 8705 §3.1, RFC 9449 §7.1).
