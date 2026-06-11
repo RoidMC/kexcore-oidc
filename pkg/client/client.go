@@ -308,9 +308,8 @@ func PollDeviceAccessTokenEndpoint(ctx context.Context, interval time.Duration, 
 		}
 
 		ctx, cancel := context.WithTimeout(ctx, interval)
-		defer cancel()
-
 		resp, err := CallDeviceAccessTokenEndpoint(ctx, request, caller)
+		cancel()
 		if err == nil {
 			return resp, nil
 		}

@@ -233,6 +233,13 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("redirect_uri does not correspond"))
 		return
 	}
+	// RFC 6749 §4.1.3: redirect_uri is REQUIRED in the token request if it was
+	// included in the authorization request. This prevents an attacker who obtains
+	// an authorization code from redeeming it at a different redirect_uri.
+	if authReq.GetRedirectURI() != "" && tokenReq.RedirectURI == "" {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("redirect_uri required (was present in authorization request)"))
+		return
+	}
 
 	if err := verifyPKCE(authReq, tokenReq.CodeVerifier); err != nil {
 		tokenError(w, r, err)
