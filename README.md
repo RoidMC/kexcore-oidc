@@ -35,14 +35,14 @@ The most important packages of the library:
 /pkg
     /protocol          OAuth 2.1 / OIDC types, errors, verifiers (zero dependency)
     /storm             Plugin-based OIDC server engine
-        /plugins       Individual RFC endpoint plugins
+        /plugins       Individual RFC endpoint plugins (14 plugins)
     /client            RP client (based on zitadel/oidc)
         /rp            OIDC Relying Party
         /rs            OAuth Resource Server
     /crypto            SM2/SM3/SM4/SM9 + HSM/KMS provider registry
 
 /example
-    /storm-server      StormEngine-based OP
+    /storm-server      StormEngine-based OP (recommended)
     /client/app        RP web app (authorization code flow)
     /client/api        Resource server with token introspection
 </pre>
@@ -56,9 +56,9 @@ This package uses [semver](https://semver.org/) for [releases](https://github.co
 Check the `/example` folder where example code for different scenarios is located.
 
 ```bash
-# start oidc op server
+# start oidc op server (StormEngine)
 # oidc discovery http://localhost:9998/.well-known/openid-configuration
-go run github.com/roidmc/kexcore-oidc/example/server
+go run github.com/roidmc/kexcore-oidc/example/storm-server
 # start oidc web client (in a new terminal)
 CLIENT_ID=web CLIENT_SECRET=secret ISSUER=http://localhost:9998/ SCOPES="openid profile" PORT=9999 go run github.com/roidmc/kexcore-oidc/example/client/app
 ```
@@ -152,6 +152,7 @@ Plugin-based OIDC server framework.
 | Request Object (JWT) | `authorization` | OpenID Connect Core 1.0, [Section 6.1][22] | ✅ |
 | id_token_hint Validation | `authorization` | OpenID Connect Core 1.0, [Section 3.1.2.2][23] | ✅ |
 | Implicit Flow (可选) | `authorization` | OpenID Connect Core 1.0, [Section 3.2][2] | ✅ 默认关闭 |
+| Hybrid Flow (可选) | `authorization` | OpenID Connect Core 1.0, [Section 3.3][3] | ✅ 默认关闭 |
 | Back-Channel Logout | `backchannel` | OpenID Connect [Back-Channel Logout][12] 1.0 | ✅ |
 | Resource Indicators | `token` | [RFC 8707][24] | ✅ |
 | HTTPS redirect_uri 强制 | `authorization` | OpenID Connect Core 1.0, [Section 15.6.3][25] | ✅ (localhost 豁免) |
@@ -162,22 +163,23 @@ Plugin-based OIDC server framework.
 | OAuth 2.1 合规 Discovery | `discovery` | OAuth 2.1 | ✅ |
 | Front-Channel Logout | — | OIDC Front-Channel | ❌ 不实现（纯后端 API 不需要） |
 | Session Management (iframe) | — | OIDC Session Management §3 | ❌ 不实现（纯后端 API 不需要） |
-| Hybrid Flow | — | OpenID Connect Core 1.0, [Section 3.3][3] | ❌ 不实现（OAuth 2.1 已移除） |
 
 ### Relying Party (`/pkg/client`)
 
-| Feature | Specification |
-|---|---|
-| Code Flow | OpenID Connect Core 1.0, [Section 3.1][1] |
-| Client Credentials | OpenID Connect Core 1.0, [Section 9][4] |
-| Refresh Token | OpenID Connect Core 1.0, [Section 12][5] |
-| Discovery | OpenID Connect [Discovery][6] 1.0 |
-| JWT Profile | [RFC 7523][7] |
-| PKCE | [RFC 7636][8] |
-| Token Exchange | [RFC 8693][9] |
-| Device Authorization | [RFC 8628][10] |
-| JWE ID Token Encryption | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022] (dir mode) |
-| Back-Channel Logout | OpenID Connect [Back-Channel Logout][12] 1.0 |
+| Feature | Specification | Status |
+|---|---|---|
+| Code Flow | OpenID Connect Core 1.0, [Section 3.1][1] | ✅ |
+| Client Credentials | OpenID Connect Core 1.0, [Section 9][4] | ✅ |
+| Refresh Token | OpenID Connect Core 1.0, [Section 12][5] | ✅ |
+| Discovery | OpenID Connect [Discovery][6] 1.0 | ✅ |
+| JWT Profile | [RFC 7523][7] | ✅ |
+| PKCE | [RFC 7636][8] | ✅ |
+| Token Exchange | [RFC 8693][9] | ✅ |
+| Device Authorization | [RFC 8628][10] | ✅ |
+| JWE ID Token Encryption | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022] (dir mode) | ✅ |
+| Back-Channel Logout | OpenID Connect [Back-Channel Logout][12] 1.0 | ✅ |
+| DPoP | [RFC 9449][14] | planned |
+| Auto-refresh | Token lifecycle management | planned |
 
 > **Note on Chinese Commercial Cryptography (国密):** This library supports SM2, SM3, SM4, and SM9 algorithms via the `SGD_SM3_SM2`, `SGD_SM3_SM9`, and `SM4` identifiers. These are **not defined in RFC 7518** and therefore are **not recognized by the OpenID Foundation (OIDF) Conformance Test Suite**. When running OIDF certification tests, disable national-crypto algorithms by setting the environment variable `SIGNING_ALGORITHMS=RS256,RS384,RS512,EdDSA` so that the JWKS endpoint only returns standard JWKs.
 
@@ -242,16 +244,19 @@ RP client based on [zitadel/oidc]. OP entirely self-developed with StormEngine p
 ### Goals
 
 - [Certify this library as OP](https://openid.net/certification/#OPs)
+- Provide the **most RFC-complete** embeddable Go OIDC SDK
+- **First-class Chinese national standards** (GM/T 0125) alongside international standards
+- **Storage-agnostic** — never lock into a specific database
 
 ### Other Go OpenID Connect libraries
 
-| Library | OP | RP | Plugin-based | GM/T |
-|---|---|---|---|---|
-| [coreos/go-oidc](https://github.com/coreos/go-oidc) | ❌ | ✅ | ❌ | ❌ |
-| [ory/fosite](https://github.com/ory/fosite) | ✅ | ❌ | ❌ | ❌ |
-| [ory/hydra](https://github.com/ory/hydra) | ✅ | ❌ | ❌ | ❌ |
-| [zitadel/oidc](https://github.com/zitadel/oidc) | ✅ | ✅ | ❌ | ❌ |
-| **kexcore-oidc** | **✅** | **✅** | **✅** | **✅** |
+| Library | OP | RP | Plugin-based | GM/T | DPoP | mTLS | PAR |
+|---|---|---|---|---|---|---|---|
+| [coreos/go-oidc](https://github.com/coreos/go-oidc) | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| [ory/fosite](https://github.com/ory/fosite) | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| [ory/hydra](https://github.com/ory/hydra) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| [zitadel/oidc](https://github.com/zitadel/oidc) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **kexcore-oidc** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** |
 
 ## License
 
@@ -268,6 +273,7 @@ language governing permissions and limitations under the License.
 [^1]: https://github.com/zitadel/oidc/issues/135#issuecomment-950563892
 
 [oidf-basic]: https://www.certification.openid.net/log-detail.html?log=SpSbfydiglCBorB&public=true
-[oidf-config]: https://www.certification.openid.net/log-detail.html?log=ONiasADvOhTyslW&public=true
+[oidf-basic-dynamic]: https://www.certification.openid.net/plan-detail.html?plan=sF23YfvEbhrKt&public=true
+[oidf-config]: https://www.certification.openid.net/plan-detail.html?plan=IpAOg0FjFhnGQ&public=true
 [oidf-backchannel]: https://www.certification.openid.net/plan-detail.html?plan=eD4txBOvstik4&public=true
 [oidf-backchannel-dynamic]: https://www.certification.openid.net/log-detail.html?log=kXMjAHzAHyqaItK&public=true
