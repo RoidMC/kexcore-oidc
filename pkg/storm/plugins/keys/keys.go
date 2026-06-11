@@ -1,4 +1,4 @@
-﻿// Package keys implements the JWKS (JSON Web Key Set) endpoint plugin.
+// Package keys implements the JWKS (JSON Web Key Set) endpoint plugin.
 package keys
 
 import (
