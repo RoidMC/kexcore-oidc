@@ -1233,16 +1233,16 @@ func TestUserInfo_JWTResponse_NoAccept_FallbackToJSON(t *testing.T) {
 	_ = jwkKey.Set(jwk.KeyIDKey, "test-key")
 	signingKey := &fakeSigningKey{id: "test-key", alg: "ES256", key: jwkKey}
 
+	// No clientLookup — when clientLookup is nil, should fallback to JSON
 	plugin := &Plugin{
-		store:        store,
-		crypto:       crypto,
-		keyStore:     &fakeKeyStoreWithSigning{signingKey: signingKey},
-		clientLookup: &fakeTokenClientProvider{clientID: "test-client"},
+		store:    store,
+		crypto:   crypto,
+		keyStore: &fakeKeyStoreWithSigning{signingKey: signingKey},
 	}
 
 	r := newRequest("GET", "/userinfo")
 	r.Header.Set("Authorization", "Bearer test-token")
-	// No Accept header — should return JSON
+	// No Accept header — should return JSON because clientLookup is nil
 	w := serveRequest(plugin, r)
 
 	require.Equal(t, http.StatusOK, w.Code)
