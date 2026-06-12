@@ -502,60 +502,74 @@ type DCRStore interface {
 
 // RegistrationRequest represents a dynamic client registration request.
 type RegistrationRequest struct {
-	ApplicationType             string          `json:"application_type"`
-	ClientName                  string          `json:"client_name"`
-	ClientURI                   string          `json:"client_uri"`
-	LogoURI                     string          `json:"logo_uri"`
-	RedirectURIs                []string        `json:"redirect_uris"`
-	ResponseTypes               []string        `json:"response_types"`
-	GrantTypes                  []string        `json:"grant_types"`
-	TokenEndpointAuthMethod     string          `json:"token_endpoint_auth_method"`
-	Scope                       string          `json:"scope"`
-	Contacts                    []string        `json:"contacts"`
-	JWKSURI                     string          `json:"jwks_uri"`
-	JWKS                        json.RawMessage `json:"jwks"`
-	PolicyURI                   string          `json:"policy_uri"`
-	TOSURI                      string          `json:"tos_uri"`
-	SoftwareID                  string          `json:"software_id"`
-	SoftwareVersion             string          `json:"software_version"`
-	PostLogoutRedirectURIs      []string        `json:"post_logout_redirect_uris"`
-	BackChannelLogoutURI        string          `json:"backchannel_logout_uri"`
-	SectorIdentifierURI         string          `json:"sector_identifier_uri,omitempty"`
-	InitiateLoginURI            string          `json:"initiate_login_uri"`
-	IDTokenEncryptedResponseAlg string          `json:"id_token_encrypted_response_alg,omitempty"`
-	IDTokenEncryptedResponseEnc string          `json:"id_token_encrypted_response_enc,omitempty"`
+	ApplicationType              string          `json:"application_type"`
+	ClientName                   string          `json:"client_name"`
+	ClientURI                    string          `json:"client_uri"`
+	LogoURI                      string          `json:"logo_uri"`
+	RedirectURIs                 []string        `json:"redirect_uris"`
+	ResponseTypes                []string        `json:"response_types"`
+	GrantTypes                   []string        `json:"grant_types"`
+	TokenEndpointAuthMethod      string          `json:"token_endpoint_auth_method"`
+	Scope                        string          `json:"scope"`
+	Contacts                     []string        `json:"contacts"`
+	JWKSURI                      string          `json:"jwks_uri"`
+	JWKS                         json.RawMessage `json:"jwks"`
+	PolicyURI                    string          `json:"policy_uri"`
+	TOSURI                       string          `json:"tos_uri"`
+	SoftwareID                   string          `json:"software_id"`
+	SoftwareVersion              string          `json:"software_version"`
+	PostLogoutRedirectURIs       []string        `json:"post_logout_redirect_uris"`
+	BackChannelLogoutURI         string          `json:"backchannel_logout_uri"`
+	SectorIdentifierURI          string          `json:"sector_identifier_uri,omitempty"`
+	InitiateLoginURI             string          `json:"initiate_login_uri"`
+	IDTokenEncryptedResponseAlg  string          `json:"id_token_encrypted_response_alg,omitempty"`
+	IDTokenEncryptedResponseEnc  string          `json:"id_token_encrypted_response_enc,omitempty"`
+	UserInfoSignedResponseAlg    string          `json:"userinfo_signed_response_alg,omitempty"`
+	UserInfoEncryptedResponseAlg string          `json:"userinfo_encrypted_response_alg,omitempty"`
+	UserInfoEncryptedResponseEnc string          `json:"userinfo_encrypted_response_enc,omitempty"`
 }
 
 // ClientRegistration represents a registered client.
 type ClientRegistration struct {
-	ClientID                    string          `json:"client_id"`
-	ClientSecret                string          `json:"client_secret,omitempty"`
-	RegistrationAccessToken     string          `json:"registration_access_token,omitempty"`
-	RegistrationClientURI       string          `json:"registration_client_uri,omitempty"`
-	ClientIDIssuedAt            int64           `json:"client_id_issued_at"`
-	ClientSecretExpiresAt       int64           `json:"client_secret_expires_at"`
-	ApplicationType             string          `json:"application_type,omitempty"`
-	ClientName                  string          `json:"client_name,omitempty"`
-	ClientURI                   string          `json:"client_uri,omitempty"`
-	LogoURI                     string          `json:"logo_uri,omitempty"`
-	RedirectURIs                []string        `json:"redirect_uris"`
-	ResponseTypes               []string        `json:"response_types,omitempty"`
-	GrantTypes                  []string        `json:"grant_types,omitempty"`
-	TokenEndpointAuthMethod     string          `json:"token_endpoint_auth_method,omitempty"`
-	Scope                       string          `json:"scope,omitempty"`
-	Contacts                    []string        `json:"contacts,omitempty"`
-	JWKSURI                     string          `json:"jwks_uri,omitempty"`
-	JWKS                        json.RawMessage `json:"jwks,omitempty"`
-	PolicyURI                   string          `json:"policy_uri,omitempty"`
-	TOSURI                      string          `json:"tos_uri,omitempty"`
-	SoftwareID                  string          `json:"software_id,omitempty"`
-	SoftwareVersion             string          `json:"software_version,omitempty"`
-	PostLogoutRedirectURIs      []string        `json:"post_logout_redirect_uris,omitempty"`
-	BackChannelLogoutURI        string          `json:"backchannel_logout_uri,omitempty"`
-	SectorIdentifierURI         string          `json:"sector_identifier_uri,omitempty"`
-	InitiateLoginURI            string          `json:"initiate_login_uri,omitempty"`
-	IDTokenEncryptedResponseAlg string          `json:"id_token_encrypted_response_alg,omitempty"`
-	IDTokenEncryptedResponseEnc string          `json:"id_token_encrypted_response_enc,omitempty"`
+	ClientID                     string          `json:"client_id"`
+	ClientSecret                 string          `json:"client_secret,omitempty"`
+	RegistrationAccessToken      string          `json:"registration_access_token,omitempty"`
+	RegistrationClientURI        string          `json:"registration_client_uri,omitempty"`
+	ClientIDIssuedAt             int64           `json:"client_id_issued_at"`
+	ClientSecretExpiresAt        int64           `json:"client_secret_expires_at"`
+	ApplicationType              string          `json:"application_type,omitempty"`
+	ClientName                   string          `json:"client_name,omitempty"`
+	ClientURI                    string          `json:"client_uri,omitempty"`
+	LogoURI                      string          `json:"logo_uri,omitempty"`
+	RedirectURIs                 []string        `json:"redirect_uris"`
+	ResponseTypes                []string        `json:"response_types,omitempty"`
+	GrantTypes                   []string        `json:"grant_types,omitempty"`
+	TokenEndpointAuthMethod      string          `json:"token_endpoint_auth_method,omitempty"`
+	Scope                        string          `json:"scope,omitempty"`
+	Contacts                     []string        `json:"contacts,omitempty"`
+	JWKSURI                      string          `json:"jwks_uri,omitempty"`
+	JWKS                         json.RawMessage `json:"jwks,omitempty"`
+	PolicyURI                    string          `json:"policy_uri,omitempty"`
+	TOSURI                       string          `json:"tos_uri,omitempty"`
+	SoftwareID                   string          `json:"software_id,omitempty"`
+	SoftwareVersion              string          `json:"software_version,omitempty"`
+	PostLogoutRedirectURIs       []string        `json:"post_logout_redirect_uris,omitempty"`
+	BackChannelLogoutURI         string          `json:"backchannel_logout_uri,omitempty"`
+	SectorIdentifierURI          string          `json:"sector_identifier_uri,omitempty"`
+	InitiateLoginURI             string          `json:"initiate_login_uri,omitempty"`
+	IDTokenEncryptedResponseAlg  string          `json:"id_token_encrypted_response_alg,omitempty"`
+	IDTokenEncryptedResponseEnc  string          `json:"id_token_encrypted_response_enc,omitempty"`
+	UserInfoSignedResponseAlg    string          `json:"userinfo_signed_response_alg,omitempty"`
+	UserInfoEncryptedResponseAlg string          `json:"userinfo_encrypted_response_alg,omitempty"`
+	UserInfoEncryptedResponseEnc string          `json:"userinfo_encrypted_response_enc,omitempty"`
+}
+
+// UserInfoResponseAlgProvider is an optional interface that returns the
+// client's registered userinfo_signed_response_alg value.
+// When the storage implements this interface and returns a non-empty algorithm,
+// the UserInfo endpoint MUST return a signed JWT (OIDC Core §5.3.2).
+type UserInfoResponseAlgProvider interface {
+	UserInfoResponseAlg(ctx context.Context, clientID string) (string, error)
 }
 
 // BackChannelStore is required by the Back Channel Logout plugin.

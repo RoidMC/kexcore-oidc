@@ -44,6 +44,7 @@ type Client struct {
 	clientEncryptionKey            interface{} // public key for ID token encryption (RSA, ECDH, or symmetric)
 	clientJWKS                     []jwk.Key   // client's public keys for JWT bearer grant verification
 	jwksURI                        string      // client's jwks_uri for fetching fresh keys
+	userInfoSignedResponseAlg      string      // userinfo_signed_response_alg from DCR
 }
 
 func (c *Client) GetID() string                          { return c.id }

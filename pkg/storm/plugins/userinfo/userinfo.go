@@ -26,12 +26,13 @@ const DefaultUserInfoJWTLifetime = 5 * time.Minute
 
 // Plugin implements the OIDC UserInfo endpoint.
 type Plugin struct {
-	store         storm.UserinfoStore
-	scopeProvider storm.TokenScopeProvider
-	cnfLookup     storm.TokenCNFLookup      // optional, enables sender-constrained token verification
-	clientLookup  storm.TokenClientProvider // optional, enables JWT response (aud claim)
-	crypto        storm.UniCrypto
-	keyStore      storm.KeyStore
+	store             storm.UserinfoStore
+	scopeProvider     storm.TokenScopeProvider
+	cnfLookup         storm.TokenCNFLookup              // optional, enables sender-constrained token verification
+	clientLookup      storm.TokenClientProvider         // optional, enables JWT response (aud claim)
+	responseAlgLookup storm.UserInfoResponseAlgProvider // optional, per-client userinfo_signed_response_alg
+	crypto            storm.UniCrypto
+	keyStore          storm.KeyStore
 }
 
 // Config holds the dependencies for the UserInfo plugin.
@@ -62,6 +63,10 @@ func New(ctx *storm.PluginContext) *Plugin {
 		slog.Default().Debug("userinfo: clientLookup enabled (TokenClientProvider detected)")
 	} else {
 		slog.Default().Warn("userinfo: clientLookup NOT available — JWT responses disabled, storage does not implement TokenClientProvider")
+	}
+	if ra, ok := ctx.Storage.(storm.UserInfoResponseAlgProvider); ok {
+		p.responseAlgLookup = ra
+		slog.Default().Debug("userinfo: responseAlgLookup enabled (UserInfoResponseAlgProvider detected)")
 	}
 	return p
 }
@@ -165,10 +170,25 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// OIDC Core §5.3.2: when signing keys are available, the response MUST be a signed JWT.
-	// Accept header cannot override this — the server MAY also support JSON, but signed
-	// responses are always JWT.
+	// OIDC Core §5.3.2: return signed JWT when:
+	// 1. Client registered userinfo_signed_response_alg (MUST), OR
+	// 2. Accept header requests application/jwt (MAY)
+	// AND signing keys + client lookup are available.
+	shouldReturnJWT := false
 	if p.clientLookup != nil && p.keyStore != nil {
+		clientID, _ := p.clientLookup.TokenClientID(r.Context(), tokenID)
+		// Check client's registered algorithm
+		if clientID != "" && p.responseAlgLookup != nil {
+			if alg, err := p.responseAlgLookup.UserInfoResponseAlg(r.Context(), clientID); err == nil && alg != "" {
+				shouldReturnJWT = true
+			}
+		}
+		// Check Accept header
+		if !shouldReturnJWT && strings.Contains(r.Header.Get("Accept"), "application/jwt") {
+			shouldReturnJWT = true
+		}
+	}
+	if shouldReturnJWT {
 		if err := p.writeJWTResponse(w, r, userInfo, tokenID); err != nil {
 			slog.Default().Warn("userinfo JWT response failed, falling back to JSON", "error", err)
 		} else {

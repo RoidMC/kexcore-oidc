@@ -132,6 +132,19 @@ func (s *Storage) TokenClientID(_ context.Context, tokenID string) (string, erro
 	return token.ApplicationID, nil
 }
 
+// UserInfoResponseAlg returns the client's registered userinfo_signed_response_alg.
+// Implements storm.UserInfoResponseAlgProvider for OIDC Core §5.3.2.
+func (s *Storage) UserInfoResponseAlg(_ context.Context, clientID string) (string, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	c, ok := s.clients[clientID]
+	if !ok {
+		return "", nil
+	}
+	return c.userInfoSignedResponseAlg, nil
+}
+
 func (s *Storage) createRefreshToken(_ context.Context, accessTokenID string, req storm.TokenRequest) (string, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
