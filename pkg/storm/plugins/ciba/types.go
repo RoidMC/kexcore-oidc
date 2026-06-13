@@ -22,8 +22,6 @@ var cibaTmpl = template.Must(template.New("ciba").Parse(cibaHtmlTemplate))
 type Plugin struct {
 	store       storm.CIBAStore
 	clientStore storm.ClientStore
-	tokenStore  storm.TokenStore
-	uniCrypto   storm.UniCrypto
 	notifier    storm.CIBANotificationCallback // optional, for ping delivery mode
 	lifetime    time.Duration
 	interval    time.Duration
@@ -37,10 +35,6 @@ type Config struct {
 	Store storm.CIBAStore
 	// ClientStore is the client storage (required).
 	ClientStore storm.ClientStore
-	// TokenStore is the token storage (required).
-	TokenStore storm.TokenStore
-	// UniCrypto provides encryption for opaque tokens (required).
-	UniCrypto storm.UniCrypto
 	// Lifetime is the auth_req_id expiration duration (default: 5m).
 	Lifetime time.Duration
 	// Interval is the minimum polling interval in seconds (default: 5).
@@ -70,8 +64,6 @@ func NewWithConfig(cfg Config) *Plugin {
 	p := &Plugin{
 		store:       cfg.Store,
 		clientStore: cfg.ClientStore,
-		tokenStore:  cfg.TokenStore,
-		uniCrypto:   cfg.UniCrypto,
 		notifier:    cfg.Notifier,
 		lifetime:    cfg.Lifetime,
 		interval:    cfg.Interval,
