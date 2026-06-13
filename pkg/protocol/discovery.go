@@ -98,6 +98,10 @@ type DiscoveryConfiguration struct {
 	// RFC 8628 §4 (OAuth 2.0 Device Authorization Grant)
 	DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint,omitempty"`
 
+	// Backchannel Authentication Endpoint URL for Client-Initiated Backchannel Authentication.
+	// CIBA Core 1.0 §4 (OpenID Connect Client-Initiated Backchannel Authentication)
+	BackchannelAuthenticationEndpoint string `json:"backchannel_authentication_endpoint,omitempty"`
+
 	// Pushed Authorization Request Endpoint URL.
 	// RFC 9126 §4 (OAuth 2.0 Pushed Authorization Requests)
 	PushedAuthorizationRequestEndpoint string `json:"pushed_authorization_request_endpoint,omitempty"`

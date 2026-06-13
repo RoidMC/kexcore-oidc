@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIBA Authentication Request</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 32px;
+    max-width: 480px;
+    width: 100%;
+    margin: 16px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: 24px;
+    color: #1a1a1a;
+  }
+  .info { margin-bottom: 24px; }
+  .info p {
+    margin-bottom: 8px;
+    color: #555;
+    font-size: 0.95rem;
+  }
+  .info strong { color: #1a1a1a; }
+  .binding-message {
+    background: #f0f4ff;
+    border-left: 3px solid #4a90d9;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 24px;
+    font-size: 0.95rem;
+    color: #333;
+  }
+  .error {
+    background: #fff0f0;
+    border-left: 3px solid #e74c3c;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 24px;
+    color: #c0392b;
+    font-size: 0.95rem;
+  }
+  .actions {
+    display: flex;
+    gap: 12px;
+  }
+  .actions button {
+    flex: 1;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn-approve {
+    background: #27ae60;
+    color: #fff;
+  }
+  .btn-approve:hover { background: #219a52; }
+  .btn-deny {
+    background: #e74c3c;
+    color: #fff;
+  }
+  .btn-deny:hover { background: #c0392b; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Authentication Request</h1>
+
+  {{if .Error}}
+  <div class="error">{{.Error}}</div>
+  {{end}}
+
+  {{if .AuthReqID}}
+  <div class="info">
+    <p>A service is requesting your authentication.</p>
+    {{if .ClientID}}<p><strong>Client:</strong> {{.ClientID}}</p>{{end}}
+    {{if .Scope}}<p><strong>Scopes:</strong> {{.Scope}}</p>{{end}}
+    {{if .UserCode}}<p><strong>Verification Code:</strong> <code>{{.UserCode}}</code></p>{{end}}
+  </div>
+
+  {{if .BindingMessage}}
+  <div class="binding-message">
+    <strong>Message:</strong> {{.BindingMessage}}
+  </div>
+  {{end}}
+
+  <form method="POST" action="/ciba">
+    <input type="hidden" name="auth_req_id" value="{{.AuthReqID}}">
+    {{if .CSRFToken}}<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">{{end}}
+    <div class="actions">
+      <button type="submit" name="action" value="approve" class="btn-approve">Approve</button>
+      <button type="submit" name="action" value="deny" class="btn-deny">Deny</button>
+    </div>
+  </form>
+  {{else}}
+  <p>No pending authentication request.</p>
+  {{end}}
+</div>
+</body>
+</html>

@@ -52,6 +52,9 @@ func New(ctx *storm.PluginContext) *Plugin {
 	if das, ok := ctx.Storage.(storm.DeviceAuthStore); ok {
 		p.deviceAuthStore = das
 	}
+	if cs, ok := ctx.Storage.(storm.CIBAStore); ok {
+		p.cibaStore = cs
+	}
 	if pt, ok := ctx.Storage.(storm.PairwiseTransformer); ok {
 		p.pairwiseTransformer = pt
 	}
@@ -70,6 +73,7 @@ func NewWithConfig(cfg Config) *Plugin {
 		tokenStore:         cfg.TokenStore,
 		clientStore:        cfg.ClientStore,
 		authStore:          cfg.AuthStore,
+		cibaStore:          cfg.CIBAStore,
 		crypto:             cfg.Crypto,
 		keyStore:           cfg.KeyStore,
 		decoder:            cfg.Decoder,
@@ -177,6 +181,8 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 		p.handleTokenExchange(w, r)
 	case protocol.GrantTypeDeviceCode:
 		p.handleDeviceCode(w, r)
+	case protocol.GrantTypeCIBA:
+		p.handleCIBA(w, r)
 	default:
 		tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("unsupported grant_type: %s", grantType))
 	}
@@ -746,6 +752,113 @@ func (p *Plugin) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		subject:  state.Subject,
 		clientID: clientID,
 		scopes:   state.Scopes,
+	}
+
+	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), req, client, tokenResponseOpts{
+		IssueRefresh: true,
+	})
+	if err != nil {
+		tokenError(w, r, err)
+		return
+	}
+
+	p.writeTokenResponse(w, r, resp)
+}
+
+// --- ciba grant (CIBA Core 1.0 §8) ---
+
+func (p *Plugin) handleCIBA(w http.ResponseWriter, r *http.Request) {
+	if p.cibaStore == nil {
+		tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("ciba grant not supported by storage"))
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err))
+		return
+	}
+
+	authReqID := r.Form.Get("auth_req_id")
+	if authReqID == "" {
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("auth_req_id is required"))
+		return
+	}
+
+	client, err := p.authenticateClient(r, r.Form.Get("client_id"), r.Form.Get("client_secret"))
+	if err != nil {
+		tokenError(w, r, err)
+		return
+	}
+
+	if !validateGrantType(client, protocol.GrantTypeCIBA) {
+		tokenError(w, r, protocol.ErrUnauthorizedClient())
+		return
+	}
+
+	cibaReq, err := p.cibaStore.GetCIBARequestByAuthReqID(r.Context(), authReqID)
+	if err != nil {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("unknown auth_req_id"))
+		return
+	}
+
+	// CIBA Core 1.0 §8.1: verify the client owns this request
+	if cibaReq.ClientID != client.GetID() {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("auth_req_id does not belong to this client"))
+		return
+	}
+
+	// Check expiration
+	if time.Now().After(cibaReq.ExpiresAt) {
+		tokenError(w, r, protocol.ErrExpiredDeviceCode().WithDescription("The auth_req_id has expired."))
+		return
+	}
+
+	// CIBA Core 1.0 §10.1: slow_down detection
+	// If the client polls faster than the interval, return slow_down error
+	// and increase the interval by 5 seconds for all subsequent requests.
+	now := time.Now()
+	interval := p.devicePollInterval // reuse the same default interval
+	if cibaReq.Interval > 0 {
+		interval = time.Duration(cibaReq.Interval) * time.Second
+	}
+
+	if !cibaReq.LastPoll.IsZero() {
+		elapsed := now.Sub(cibaReq.LastPoll)
+		if elapsed < interval {
+			if err := p.cibaStore.UpdateCIBAInterval(r.Context(), authReqID, 5); err != nil {
+				p.logger.Warn("failed to increase CIBA poll interval", "error", err)
+			}
+			tokenError(w, r, protocol.ErrSlowDown())
+			return
+		}
+	}
+
+	// Update last poll time
+	if err := p.cibaStore.UpdateCIBAPoll(r.Context(), authReqID, now); err != nil {
+		p.logger.Warn("failed to update CIBA poll time", "error", err)
+	}
+
+	// Check status
+	switch cibaReq.Status {
+	case protocol.CIBAStatusPending:
+		// CIBA Core 1.0 §8.2: return authorization_pending
+		tokenError(w, r, protocol.ErrAuthorizationPending())
+		return
+	case protocol.CIBAStatusDenied:
+		// CIBA Core 1.0 §8.2: return access_denied
+		tokenError(w, r, protocol.ErrAccessDenied())
+		return
+	case protocol.CIBAStatusApproved:
+		// Continue to token creation
+	default:
+		tokenError(w, r, protocol.ErrServerError().WithDescription("unexpected CIBA request status"))
+		return
+	}
+
+	req := &cibaTokenRequest{
+		subject:  cibaReq.Subject,
+		clientID: client.GetID(),
+		scopes:   cibaReq.ApprovedScopes,
 	}
 
 	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), req, client, tokenResponseOpts{

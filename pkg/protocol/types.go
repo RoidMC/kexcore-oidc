@@ -319,12 +319,13 @@ const (
 	GrantTypeTokenExchange     GrantType = "urn:ietf:params:oauth:grant-type:token-exchange"
 	GrantTypeImplicit          GrantType = "implicit"
 	GrantTypeDeviceCode        GrantType = "urn:ietf:params:oauth:grant-type:device_code"
+	GrantTypeCIBA              GrantType = "urn:openid:params:grant-type:ciba"
 )
 
 var AllGrantTypes = []GrantType{
 	GrantTypeCode, GrantTypeRefreshToken, GrantTypeClientCredentials,
 	GrantTypeBearer, GrantTypeTokenExchange, GrantTypeImplicit,
-	GrantTypeDeviceCode,
+	GrantTypeDeviceCode, GrantTypeCIBA,
 }
 
 // ---------------------------------------------------------------------------

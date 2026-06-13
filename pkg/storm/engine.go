@@ -94,6 +94,7 @@ const (
 	PriorityMTLS          = 970
 	PriorityJARM          = 975
 	PriorityDCR           = 1000
+	PriorityCIBA          = 1050
 	PriorityWebFinger     = 1100
 )
 

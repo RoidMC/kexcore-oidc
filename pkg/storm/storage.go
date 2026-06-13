@@ -663,3 +663,82 @@ type EndSessionRequest struct {
 	UILocales          []language.Tag
 	InvalidRedirectURI bool // true when post_logout_redirect_uri was provided but not registered
 }
+
+// ---------------------------------------------------------------------------
+// CIBA (Client-Initiated Backchannel Authentication)
+// ---------------------------------------------------------------------------
+// OpenID Connect Client-Initiated Backchannel Authentication Core 1.0
+// https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html
+
+// CIBARequest represents a stored CIBA backchannel authentication request.
+type CIBARequest struct {
+	AuthReqID               string
+	ClientID                string
+	Scope                   string
+	Subject                 string
+	BindingMessage          string
+	UserCode                string
+	RequestedScopes         []string
+	ExpiresAt               time.Time
+	Status                  protocol.CIBAStatus
+	DeliveryMode            protocol.CIBADeliveryMode
+	ClientNotificationToken string
+	ApprovedScopes          []string
+	LastPoll                time.Time // last poll time for slow_down detection (CIBA Core 1.0 §10.1)
+	Interval                int       // current polling interval in seconds
+}
+
+// CIBAStore is required by the CIBA plugin.
+// It manages CIBA backchannel authentication request lifecycle.
+type CIBAStore interface {
+	// StoreCIBARequest persists a new CIBA authentication request.
+	StoreCIBARequest(ctx context.Context, req *CIBARequest) error
+
+	// GetCIBARequestByAuthReqID retrieves a CIBA request by its auth_req_id.
+	// Returns protocol.ErrAuthorizationPending if not found.
+	GetCIBARequestByAuthReqID(ctx context.Context, authReqID string) (*CIBARequest, error)
+
+	// UpdateCIBARequestStatus updates the status of a CIBA request.
+	UpdateCIBARequestStatus(ctx context.Context, authReqID string, status protocol.CIBAStatus, approvedScopes []string) error
+
+	// GetPendingCIBARequests returns all pending CIBA requests for a given subject.
+	// This is used by the approval page to show pending requests.
+	GetPendingCIBARequests(ctx context.Context, subject string) ([]*CIBARequest, error)
+
+	// UpdateCIBAPoll records the last poll time for slow_down detection.
+	// Called by the token endpoint when a client polls for the CIBA grant.
+	UpdateCIBAPoll(ctx context.Context, authReqID string, lastPoll time.Time) error
+
+	// UpdateCIBAInterval increases the polling interval for slow_down compliance.
+	// CIBA Core 1.0 §10.1: the interval MUST be increased by 5 seconds on slow_down.
+	UpdateCIBAInterval(ctx context.Context, authReqID string, increment int) error
+}
+
+// CIBANotificationCallback is optionally implemented by the storage to receive
+// notifications when a CIBA request status changes (approved/denied).
+//
+// CIBA Core 1.0 §10 — Ping and Push Notification Modes
+// When the delivery mode is "ping", the OP MUST notify the client's
+// client_notification_endpoint when the authentication completes.
+// The actual HTTP POST to the client's endpoint is the storage/implementation's
+// responsibility — the SDK only provides this callback hook.
+//
+// Implementations should:
+//  1. Send an HTTP POST to the client's client_notification_endpoint
+//  2. Include the client_notification_token as a Bearer token
+//  3. Include the auth_req_id in the request body
+//  4. Handle retries with exponential backoff
+//
+// Example usage:
+//
+//	func (s *MyStorage) OnCIBAStatusChange(ctx context.Context, req *CIBARequest) error {
+//	    if req.DeliveryMode != protocol.CIBAModePing {
+//	        return nil
+//	    }
+//	    client, _ := s.GetClientByClientID(ctx, req.ClientID)
+//	    endpoint := client.NotificationEndpoint()
+//	    return httpPost(ctx, endpoint, req.ClientNotificationToken, req.AuthReqID)
+//	}
+type CIBANotificationCallback interface {
+	OnCIBAStatusChange(ctx context.Context, req *CIBARequest) error
+}

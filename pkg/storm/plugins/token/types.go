@@ -19,6 +19,7 @@ type Plugin struct {
 	clientStore         storm.ClientStore
 	authStore           storm.AuthStore
 	deviceAuthStore     storm.DeviceAuthStore     // optional, for device_code grant
+	cibaStore           storm.CIBAStore           // optional, for ciba grant
 	pairwiseTransformer storm.PairwiseTransformer // optional, for pairwise sub
 	crypto              storm.UniCrypto
 	keyStore            storm.KeyStore
@@ -36,6 +37,7 @@ type Config struct {
 	TokenStore  storm.TokenStore
 	ClientStore storm.ClientStore
 	AuthStore   storm.AuthStore
+	CIBAStore   storm.CIBAStore // optional, for CIBA grant type
 	Crypto      storm.UniCrypto
 	KeyStore    storm.KeyStore
 	Decoder     *protocol.Decoder
@@ -120,6 +122,18 @@ func (r *jwtBearerTokenRequest) GetSubject() string    { return r.subject }
 func (r *jwtBearerTokenRequest) GetClientID() string   { return r.clientID }
 func (r *jwtBearerTokenRequest) GetScopes() []string   { return r.scopes }
 func (r *jwtBearerTokenRequest) GetAudience() []string { return r.audience }
+
+// cibaTokenRequest implements storm.TokenRequest for CIBA grant type.
+type cibaTokenRequest struct {
+	subject  string
+	clientID string
+	scopes   []string
+}
+
+func (r *cibaTokenRequest) GetSubject() string    { return r.subject }
+func (r *cibaTokenRequest) GetClientID() string   { return r.clientID }
+func (r *cibaTokenRequest) GetScopes() []string   { return r.scopes }
+func (r *cibaTokenRequest) GetAudience() []string { return []string{r.clientID} }
 
 // --- internal interfaces (capability detection) ---
 
