@@ -263,6 +263,13 @@ type AuthRequest interface {
 	Done() bool
 }
 
+// ResourceIndicator is optionally implemented by AuthRequest to expose
+// the resource indicator values from the authorization request (RFC 8707).
+// When present, the Token plugin merges these into the access token's audience.
+type ResourceIndicator interface {
+	GetResources() []string
+}
+
 // TokenStore is required by the Token, UserInfo, Introspection, and Revocation plugins.
 // It manages access token and refresh token creation and lookup.
 //

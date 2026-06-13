@@ -15,14 +15,16 @@ const (
 type TokenRequestType GrantType
 
 type AccessTokenRequest struct {
-	GrantType           string `schema:"grant_type,omitempty"`
-	Code                string `schema:"code"`
-	RedirectURI         string `schema:"redirect_uri"`
-	ClientID            string `schema:"client_id"`
-	ClientSecret        string `schema:"client_secret,omitempty"`
-	CodeVerifier        string `schema:"code_verifier,omitempty"`
-	ClientAssertion     string `schema:"client_assertion,omitempty"`
-	ClientAssertionType string `schema:"client_assertion_type,omitempty"`
+	GrantType            string               `schema:"grant_type,omitempty"`
+	Code                 string               `schema:"code"`
+	RedirectURI          string               `schema:"redirect_uri"`
+	ClientID             string               `schema:"client_id"`
+	ClientSecret         string               `schema:"client_secret,omitempty"`
+	CodeVerifier         string               `schema:"code_verifier,omitempty"`
+	ClientAssertion      string               `schema:"client_assertion,omitempty"`
+	ClientAssertionType  string               `schema:"client_assertion_type,omitempty"`
+	Resource             Audience             `schema:"resource"`
+	AuthorizationDetails AuthorizationDetails `schema:"authorization_details"`
 }
 
 func (a *AccessTokenRequest) SetClientID(clientID string) {
@@ -159,12 +161,14 @@ type TokenExchangeRequest struct {
 }
 
 type ClientCredentialsRequest struct {
-	GrantType           GrantType           `schema:"grant_type,omitempty"`
-	Scope               SpaceDelimitedArray `schema:"scope"`
-	ClientID            string              `schema:"client_id"`
-	ClientSecret        string              `schema:"client_secret"`
-	ClientAssertion     string              `schema:"client_assertion,omitempty"`
-	ClientAssertionType string              `schema:"client_assertion_type,omitempty"`
+	GrantType            GrantType            `schema:"grant_type,omitempty"`
+	Scope                SpaceDelimitedArray  `schema:"scope"`
+	ClientID             string               `schema:"client_id"`
+	ClientSecret         string               `schema:"client_secret"`
+	ClientAssertion      string               `schema:"client_assertion,omitempty"`
+	ClientAssertionType  string               `schema:"client_assertion_type,omitempty"`
+	Resource             Audience             `schema:"resource"`
+	AuthorizationDetails AuthorizationDetails `schema:"authorization_details"`
 }
 
 func (r *ClientCredentialsRequest) Auth(req *http.Request) {

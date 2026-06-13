@@ -1,6 +1,10 @@
 package protocol
 
-import "log/slog"
+import (
+	"encoding/json"
+	"log/slog"
+	"strings"
+)
 
 // OIDC Core 1.0 §5.4 — Scope Claims
 //
@@ -171,6 +175,54 @@ type AuthRequest struct {
 	// DPoP JWK Thumbprint for authorization code binding (RFC 9449 §7.1).
 	// When present, the token endpoint must verify the DPoP proof matches this thumbprint.
 	DPoPJKT string `json:"dpop_jkt" schema:"dpop_jkt"`
+
+	// Resource Indicators (RFC 8707 §2).
+	// One or more resource server URIs that the client is requesting access to.
+	// The authorization server SHOULD populate the "aud" claim of the access token
+	// with these values when issuing JWT access tokens.
+	Resource Audience `json:"resource" schema:"resource"`
+
+	// Rich Authorization Requests (RFC 9396 §2).
+	// Structured authorization details that express fine-grained access requirements.
+	AuthorizationDetails AuthorizationDetails `json:"authorization_details" schema:"authorization_details"`
+}
+
+// AuthorizationDetails represents a single element in the authorization_details array.
+// RFC 9396 §2 — Authorization Details
+// https://datatracker.ietf.org/doc/html/rfc9396#section-2
+type AuthorizationDetails []AuthorizationDetail
+
+// UnmarshalText implements encoding.TextUnmarshaler so the form decoder
+// can parse the JSON-encoded authorization_details field from OAuth requests.
+func (ad *AuthorizationDetails) UnmarshalText(text []byte) error {
+	s := strings.TrimSpace(string(text))
+	if s == "" {
+		return nil
+	}
+	return json.Unmarshal([]byte(s), ad)
+}
+
+// AuthorizationDetail represents a single authorization detail element.
+// RFC 9396 §2 — Authorization Details Type
+// https://datatracker.ietf.org/doc/html/rfc9396#section-2
+type AuthorizationDetail struct {
+	// REQUIRED. Type of the authorization details (e.g., "payment_initiation").
+	Type string `json:"type"`
+
+	// OPTIONAL. Array of strings representing the locations of the resource servers.
+	Locations Audience `json:"locations,omitempty"`
+
+	// OPTIONAL. Array of strings representing the actions the client intends to perform.
+	Actions []string `json:"actions,omitempty"`
+
+	// OPTIONAL. Array of strings representing the kinds of data being processed.
+	DataTypes []string `json:"datatypes,omitempty"`
+
+	// OPTIONAL. Identifier string for a specific resource instance.
+	Identifier string `json:"identifier,omitempty"`
+
+	// OPTIONAL. Array of strings representing the privileges conferred on the client.
+	Privileges []string `json:"privileges,omitempty"`
 }
 
 // PushedAuthRequest represents the parameters sent to the Pushed Authorization Request endpoint.

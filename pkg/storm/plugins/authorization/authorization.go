@@ -47,19 +47,20 @@ const defaultIDTokenLifetime = 1 * time.Hour
 
 // Plugin implements the OIDC Authorization endpoint.
 type Plugin struct {
-	authStore       storm.AuthStore
-	clientStore     storm.ClientStore
-	crypto          storm.UniCrypto
-	keyStore        storm.KeyStore
-	tokenStore      storm.TokenStore
-	decoder         *protocol.Decoder
-	enableImplicit  bool
-	allowPlainPKCE  bool
-	parStore        storm.PARStore
-	sessionProvider SessionProvider
-	jarmSigner      JARMSigner // optional, set via SetJARMSigner
-	tracer          trace.Tracer
-	createAuthCode  func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
+	authStore                 storm.AuthStore
+	clientStore               storm.ClientStore
+	crypto                    storm.UniCrypto
+	keyStore                  storm.KeyStore
+	tokenStore                storm.TokenStore
+	decoder                   *protocol.Decoder
+	enableImplicit            bool
+	allowPlainPKCE            bool
+	parStore                  storm.PARStore
+	sessionProvider           SessionProvider
+	jarmSigner                JARMSigner // optional, set via SetJARMSigner
+	tracer                    trace.Tracer
+	createAuthCode            func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
+	authorizationDetailsTypes []string // RFC 9396 supported types
 }
 
 //go:embed template/form_post.html.tmpl
@@ -112,6 +113,12 @@ type Config struct {
 	// enforcement. When nil, prompt=none is not enforced at the
 	// authorization endpoint (the login UI is always shown).
 	SessionProvider SessionProvider
+
+	// AuthorizationDetailsTypes lists the authorization_details type values
+	// this OP supports. When non-empty, the discovery document includes
+	// authorization_details_types_supported (RFC 9396 §6).
+	// Example: []string{"payment_initiation", "account_information"}
+	AuthorizationDetailsTypes []string
 }
 
 // New creates a new Authorization plugin from a PluginContext.
@@ -161,17 +168,18 @@ func New(ctx *storm.PluginContext) *Plugin {
 // Use this when you need to override defaults (e.g., enable implicit flow).
 func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
-		authStore:       cfg.AuthStore,
-		clientStore:     cfg.ClientStore,
-		crypto:          cfg.Crypto,
-		keyStore:        cfg.KeyStore,
-		tokenStore:      cfg.TokenStore,
-		decoder:         cfg.Decoder,
-		enableImplicit:  cfg.EnableImplicit,
-		allowPlainPKCE:  cfg.AllowPlainPKCE,
-		parStore:        cfg.PARStore,
-		sessionProvider: cfg.SessionProvider,
-		createAuthCode:  cfg.CreateAuthCode,
+		authStore:                 cfg.AuthStore,
+		clientStore:               cfg.ClientStore,
+		crypto:                    cfg.Crypto,
+		keyStore:                  cfg.KeyStore,
+		tokenStore:                cfg.TokenStore,
+		decoder:                   cfg.Decoder,
+		enableImplicit:            cfg.EnableImplicit,
+		allowPlainPKCE:            cfg.AllowPlainPKCE,
+		parStore:                  cfg.PARStore,
+		sessionProvider:           cfg.SessionProvider,
+		createAuthCode:            cfg.CreateAuthCode,
+		authorizationDetailsTypes: cfg.AuthorizationDetailsTypes,
 	}
 }
 
@@ -241,6 +249,14 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 
 	// RFC 9207: iss parameter in authorization response
 	cfg.AuthorizationResponseISSParameterSupported = true
+
+	// RFC 8707: Resource Indicators for OAuth 2.0
+	cfg.ResourceIndicatorsSupported = true
+
+	// RFC 9396: Rich Authorization Requests
+	if len(p.authorizationDetailsTypes) > 0 {
+		cfg.AuthorizationDetailsTypesSupported = p.authorizationDetailsTypes
+	}
 }
 
 // --- authorize handler ---

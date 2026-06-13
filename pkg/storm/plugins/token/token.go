@@ -256,7 +256,17 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resp, tokenID, err := p.createTokenResponseFromTokenRequest(r.Context(), authReq, client, tokenResponseOpts{
+	// RFC 8707: merge resource indicator values into the token request's audience.
+	// If the auth request stored resource values, wrap it so GetAudience()
+	// includes them, ensuring the access token's aud claim is correct.
+	tokenRequest := storm.TokenRequest(authReq)
+	if ri, ok := authReq.(storm.ResourceIndicator); ok {
+		if resources := ri.GetResources(); len(resources) > 0 {
+			tokenRequest = &resourceAwareRequest{TokenRequest: authReq, resources: resources}
+		}
+	}
+
+	resp, tokenID, err := p.createTokenResponseFromTokenRequest(r.Context(), tokenRequest, client, tokenResponseOpts{
 		IssueRefresh: true,
 		Code:         tokenReq.Code,
 	})

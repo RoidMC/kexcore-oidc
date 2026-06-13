@@ -271,6 +271,14 @@ type DiscoveryConfiguration struct {
 	// RFC 8705 §5 (OAuth 2.0 Mutual TLS)
 	MTLSEndpointAliases any `json:"mtls_endpoint_aliases,omitempty"`
 
+	// OPTIONAL. Whether the OP supports Resource Indicators.
+	// RFC 8707 §5 (Resource Indicators for OAuth 2.0)
+	ResourceIndicatorsSupported bool `json:"resource_indicators_supported,omitempty"`
+
+	// OPTIONAL. List of supported authorization_details type values.
+	// RFC 9396 §6 (Rich Authorization Requests)
+	AuthorizationDetailsTypesSupported []string `json:"authorization_details_types_supported,omitempty"`
+
 	// Extra holds additional discovery fields contributed by plugins that
 	// are not part of the standard metadata registry.
 	Extra map[string]any `json:"-"`

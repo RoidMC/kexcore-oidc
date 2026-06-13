@@ -147,3 +147,34 @@ type sm9EncryptionKeyProvider interface {
 type clientCredentialsStore interface {
 	ClientCredentialsTokenRequest(ctx context.Context, clientID string, scopes []string) (storm.TokenRequest, error)
 }
+
+// resourceAwareRequest wraps a TokenRequest to merge RFC 8707 resource
+// indicator values into GetAudience(). This ensures the access token's
+// aud claim includes the resource parameter values from the authorization request.
+type resourceAwareRequest struct {
+	storm.TokenRequest
+	resources []string
+}
+
+func (r *resourceAwareRequest) GetAudience() []string {
+	base := r.TokenRequest.GetAudience()
+	if len(r.resources) == 0 {
+		return base
+	}
+	// Merge: deduplicate base + resources
+	seen := make(map[string]bool, len(base)+len(r.resources))
+	merged := make([]string, 0, len(base)+len(r.resources))
+	for _, v := range base {
+		if !seen[v] {
+			seen[v] = true
+			merged = append(merged, v)
+		}
+	}
+	for _, v := range r.resources {
+		if !seen[v] {
+			seen[v] = true
+			merged = append(merged, v)
+		}
+	}
+	return merged
+}

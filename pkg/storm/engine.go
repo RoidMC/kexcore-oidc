@@ -94,6 +94,7 @@ const (
 	PriorityMTLS          = 970
 	PriorityJARM          = 975
 	PriorityDCR           = 1000
+	PriorityWebFinger     = 1100
 )
 
 // RegisterPlugin registers a plugin factory in the global registry.
