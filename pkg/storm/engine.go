@@ -46,6 +46,7 @@ type Engine struct {
 	enableImplicit    bool              // enable implicit/hybrid flows
 	allowPlainPKCE    bool              // allow plain code_challenge_method
 	allowPrivateIPs   bool              // allow private/link-local IPs in jwks_uri etc.
+	skipTLSCertVerify bool              // skip TLS cert verification on outbound HTTP
 }
 
 // DiscoveryConfig holds extra fields injected into the discovery document.
@@ -64,6 +65,9 @@ type PluginContext struct {
 	AllowPrivateIPs bool // WARNING: disables SSRF protection in DCR (jwks_uri, sector_identifier_uri).
 	// Only for testing with private-network conformance suites.
 	// NEVER enable in production — use network-level controls instead.
+	SkipTLSCertVerify bool // WARNING: disables TLS certificate verification on outbound HTTP requests.
+	// Only for testing with self-signed certificates.
+	// NEVER enable in production.
 	IssuerFn shared.IssuerFromRequest // issuer URL function
 	Tracer   trace.Tracer             // otel tracer for plugins
 }
@@ -226,6 +230,15 @@ func WithAllowPrivateIPs() EngineOption {
 	}
 }
 
+// WithSkipTLSCertVerify disables TLS certificate verification on outbound
+// HTTP requests (JWKS fetches, request_uri, backchannel_logout, etc.).
+// Use ONLY for testing with self-signed certificates. NEVER enable in production.
+func WithSkipTLSCertVerify() EngineOption {
+	return func(e *Engine) {
+		e.skipTLSCertVerify = true
+	}
+}
+
 // New creates a new Engine with the given storage and issuer function.
 //
 // The issuerFn is used to inject the issuer into the request context
@@ -259,14 +272,15 @@ func New(storage Storage, issuerFn shared.IssuerFromRequest, opts ...EngineOptio
 func (e *Engine) autoRegisterPlugins() {
 	// Build plugin context with all dependencies
 	pctx := &PluginContext{
-		Storage:         e.storage,
-		Crypto:          e.crypto,
-		Decoder:         e.decoder,
-		EnableImplicit:  e.enableImplicit,
-		AllowPlainPKCE:  e.allowPlainPKCE,
-		AllowPrivateIPs: e.allowPrivateIPs,
-		IssuerFn:        e.issuerFn,
-		Tracer:          e.tracer,
+		Storage:           e.storage,
+		Crypto:            e.crypto,
+		Decoder:           e.decoder,
+		EnableImplicit:    e.enableImplicit,
+		AllowPlainPKCE:    e.allowPlainPKCE,
+		AllowPrivateIPs:   e.allowPrivateIPs,
+		SkipTLSCertVerify: e.skipTLSCertVerify,
+		IssuerFn:          e.issuerFn,
+		Tracer:            e.tracer,
 	}
 	if pctx.Decoder == nil {
 		pctx.Decoder = protocol.NewDecoder()

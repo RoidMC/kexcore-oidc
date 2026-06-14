@@ -230,13 +230,17 @@ func ValidatePKCE(authReq *protocol.AuthRequest) error {
 	}
 }
 
-// ValidateNonce enforces that nonce is present for implicit flows (OIDC Core §3.2.2.1).
+// ValidateNonce enforces that nonce is present for implicit and hybrid flows
+// (OIDC Core §3.2.2.1, §3.3.2.1).
 func ValidateNonce(authReq *protocol.AuthRequest) error {
-	if authReq.ResponseType == protocol.ResponseTypeIDTokenOnly ||
-		authReq.ResponseType == protocol.ResponseTypeIDToken {
+	switch authReq.ResponseType {
+	case protocol.ResponseTypeIDTokenOnly,
+		protocol.ResponseTypeIDToken,
+		protocol.ResponseTypeCodeIDToken,
+		protocol.ResponseTypeCodeIDTokenToken:
 		if authReq.Nonce == "" {
 			return protocol.ErrInvalidRequest().
-				WithDescription("nonce is required for implicit flow")
+				WithDescription("nonce is required for implicit/hybrid flow")
 		}
 	}
 	return nil

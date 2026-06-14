@@ -85,9 +85,6 @@ func (e *Engine) storageImplements(ifaceName string) bool {
 	case "TokenCNFStore":
 		_, ok := e.storage.(TokenCNFStore)
 		return ok
-	case "TokenScopeProvider":
-		_, ok := e.storage.(TokenScopeProvider)
-		return ok
 	case "PairwiseTransformer":
 		_, ok := e.storage.(PairwiseTransformer)
 		return ok
@@ -154,7 +151,6 @@ var knownStorageInterfaces = map[string]reflect.Type{
 	"JWTProfileStore":         reflect.TypeOf((*JWTProfileStore)(nil)).Elem(),
 	"TokenExchangeStore":      reflect.TypeOf((*TokenExchangeStore)(nil)).Elem(),
 	"TokenCNFStore":           reflect.TypeOf((*TokenCNFStore)(nil)).Elem(),
-	"TokenScopeProvider":      reflect.TypeOf((*TokenScopeProvider)(nil)).Elem(),
 	"PairwiseTransformer":     reflect.TypeOf((*PairwiseTransformer)(nil)).Elem(),
 	"AutoCompleteAuthRequest": reflect.TypeOf((*AutoCompleteAuthRequest)(nil)).Elem(),
 	"CodeReuseDetector":       reflect.TypeOf((*CodeReuseDetector)(nil)).Elem(),

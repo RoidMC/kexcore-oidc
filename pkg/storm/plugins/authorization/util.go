@@ -88,7 +88,10 @@ func (a *authRequestClientAdapter) IsScopeAllowed(scope string) bool {
 
 func parseAuthorizeRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.AuthRequest, error) {
 	req := new(protocol.AuthRequest)
-	if err := decoder.Decode(req, form); err != nil {
+	// Ignore unknown keys so that OIDC extension parameters (claims_locales,
+	// acr_values, etc.) that the OP does not explicitly handle do not cause
+	// a hard parse error.  Fields that ARE in AuthRequest will still be decoded.
+	if err := decoder.Decode(req, form, protocol.WithIgnoreUnknownKeys()); err != nil {
 		return nil, err
 	}
 	return req, nil

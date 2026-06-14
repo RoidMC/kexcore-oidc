@@ -42,6 +42,11 @@ func (u *UserInfo) GetSubject() string {
 // FilterByScopes removes standard OIDC claims that are not covered by the
 // granted scopes. Custom claims in the Claims map are always preserved.
 //
+// This is a convenience method intended to be called by storage implementations
+// inside SetUserinfoFromToken. The UserInfo plugin does NOT call this
+// automatically — if the storage does not filter, all populated claims will be
+// returned in the response.
+//
 // OIDC Core §5.3.2: The UserInfo Response MUST include the "sub" claim.
 // Other claims are filtered by scope per §5.4:
 //   - profile: name, given_name, family_name, middle_name, nickname, preferred_username,

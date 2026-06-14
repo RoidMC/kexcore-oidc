@@ -13,7 +13,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jwk"
@@ -26,7 +25,7 @@ import (
 func init() {
 	storm.RegisterPlugin("dcr", storm.PriorityDCR, func(ctx *storm.PluginContext) storm.Plugin {
 		if dcrStore, ok := ctx.Storage.(storm.DCRStore); ok {
-			return New(Config{Store: dcrStore, AllowPrivateIPs: ctx.AllowPrivateIPs})
+			return New(Config{Store: dcrStore, AllowPrivateIPs: ctx.AllowPrivateIPs, SkipTLSCertVerify: ctx.SkipTLSCertVerify})
 		}
 		return nil
 	})
@@ -34,26 +33,34 @@ func init() {
 
 // Plugin implements the Dynamic Client Registration endpoint.
 type Plugin struct {
-	store           storm.DCRStore
-	allowPrivateIPs bool
+	store             storm.DCRStore
+	allowPrivateIPs   bool
+	skipTLSCertVerify bool
 }
 
 // Config holds the dependencies for the DCR plugin.
 type Config struct {
-	Store           storm.DCRStore
-	AllowPrivateIPs bool
+	Store             storm.DCRStore
+	AllowPrivateIPs   bool
+	SkipTLSCertVerify bool
 }
 
 // New creates a new DCR plugin.
 func New(cfg Config) *Plugin {
 	return &Plugin{
-		store:           cfg.Store,
-		allowPrivateIPs: cfg.AllowPrivateIPs,
+		store:             cfg.Store,
+		allowPrivateIPs:   cfg.AllowPrivateIPs,
+		skipTLSCertVerify: cfg.SkipTLSCertVerify,
 	}
 }
 
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "dcr" }
+
+// httpClient returns an HTTP client for fetching remote URLs.
+func (p *Plugin) httpClient() *http.Client {
+	return shared.NewHTTPClient(p.skipTLSCertVerify)
+}
 
 // Register installs the /register routes.
 //
@@ -102,7 +109,7 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// Must be a valid HTTPS URI, fetchable, returning a JSON array of redirect_uri values.
 	// All registered redirect_uris must be contained in that array.
 	if req.SectorIdentifierURI != "" {
-		if err := validateSectorIdentifierURI(req.SectorIdentifierURI, req.RedirectURIs, p.allowPrivateIPs); err != nil {
+		if err := p.validateSectorIdentifierURI(req.SectorIdentifierURI, req.RedirectURIs); err != nil {
 			shared.WriteError(w, r,
 				protocol.ErrInvalidClientMetadata().WithDescription("invalid sector_identifier_uri: %s", err.Error()),
 				nil)
@@ -119,8 +126,7 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		// Safe: ValidateRemoteURL blocks private IPs, non-HTTPS, and DNS rebinding
+		client := p.httpClient()
 		resp, err := client.Get(req.JWKSURI)
 		if err != nil {
 			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("failed to fetch jwks_uri: %s", req.JWKSURI).WithParent(err), nil)
@@ -249,19 +255,19 @@ func randomHex(n int) string {
 // The sector_identifier_uri must be a valid HTTPS URL, fetchable, returning
 // a JSON array of redirect_uri values. All registered redirect_uris must be
 // contained in that array.
-func validateSectorIdentifierURI(sectorURI string, redirectURIs []string, allowPrivateIPs bool) error {
+func (p *Plugin) validateSectorIdentifierURI(sectorURI string, redirectURIs []string) error {
 	u, err := url.Parse(sectorURI)
 	if err != nil || u.Scheme != "https" {
 		return fmt.Errorf("sector_identifier_uri must use https scheme")
 	}
 
-	if !allowPrivateIPs {
+	if !p.allowPrivateIPs {
 		if err := shared.ValidateRemoteURL(sectorURI); err != nil {
 			return fmt.Errorf("sector_identifier_uri is not reachable: %w", err)
 		}
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := p.httpClient()
 	resp, err := client.Get(sectorURI)
 	if err != nil {
 		return fmt.Errorf("failed to fetch sector_identifier_uri: %w", err)

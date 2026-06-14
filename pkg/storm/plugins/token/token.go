@@ -58,6 +58,8 @@ func New(ctx *storm.PluginContext) *Plugin {
 	if pt, ok := ctx.Storage.(storm.PairwiseTransformer); ok {
 		p.pairwiseTransformer = pt
 	}
+	p.allowPrivateIPs = ctx.AllowPrivateIPs
+	p.skipTLSCertVerify = ctx.SkipTLSCertVerify
 	return p
 }
 
@@ -944,7 +946,7 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 	var clientKeys []jwk.Key
 	if uriProvider, ok := client.(storm.ClientJWKSURIProvider); ok && uriProvider.ClientJWKSURI() != "" {
 		// Fetch fresh keys from the client's jwks_uri
-		fetchedKeys, err := fetchJWKSFromURI(uriProvider.ClientJWKSURI())
+		fetchedKeys, err := p.fetchJWKSFromURI(uriProvider.ClientJWKSURI())
 		if err != nil {
 			slog.Default().Warn("failed to fetch client jwks_uri, falling back to cached keys", "error", err, "uri", uriProvider.ClientJWKSURI())
 			clientKeys = clientKS.ClientJWKS()
@@ -971,8 +973,8 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 }
 
 // fetchJWKSFromURI fetches and parses a JWKS from a remote URI.
-func fetchJWKSFromURI(uri string) ([]jwk.Key, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+func (p *Plugin) fetchJWKSFromURI(uri string) ([]jwk.Key, error) {
+	client := shared.NewHTTPClient(p.skipTLSCertVerify)
 	resp, err := client.Get(uri)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch jwks_uri: %w", err)
@@ -1066,6 +1068,7 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 
 // writeTokenResponse writes a successful token response with optional DPoP-Nonce header.
 // RFC 9449 §8: the server MAY include a DPoP-Nonce header in 200 responses.
+// Cache-Control: no-store is set by shared.JSONResponse per RFC 6749 §5.1.
 func (p *Plugin) writeTokenResponse(w http.ResponseWriter, r *http.Request, resp any) {
 	if p.dpopNonceSender != nil && shared.DPoPFromContext(r.Context()) != nil {
 		p.dpopNonceSender.WriteNonceHeader(w)

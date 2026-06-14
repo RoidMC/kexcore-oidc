@@ -27,7 +27,6 @@ const DefaultUserInfoJWTLifetime = 5 * time.Minute
 // Plugin implements the OIDC UserInfo endpoint.
 type Plugin struct {
 	store             storm.UserinfoStore
-	scopeProvider     storm.TokenScopeProvider
 	cnfLookup         storm.TokenCNFLookup              // optional, enables sender-constrained token verification
 	clientLookup      storm.TokenClientProvider         // optional, enables JWT response (aud claim)
 	responseAlgLookup storm.UserInfoResponseAlgProvider // optional, per-client userinfo_signed_response_alg
@@ -37,12 +36,11 @@ type Plugin struct {
 
 // Config holds the dependencies for the UserInfo plugin.
 type Config struct {
-	Store         storm.UserinfoStore
-	ScopeProvider storm.TokenScopeProvider  // optional, enables scope-based claim filtering
-	CNFLookup     storm.TokenCNFLookup      // optional, enables DPoP/mTLS token binding verification
-	ClientLookup  storm.TokenClientProvider // optional, enables JWT response (aud claim)
-	Crypto        storm.UniCrypto
-	KeyStore      storm.KeyStore
+	Store        storm.UserinfoStore
+	CNFLookup    storm.TokenCNFLookup      // optional, enables DPoP/mTLS token binding verification
+	ClientLookup storm.TokenClientProvider // optional, enables JWT response (aud claim)
+	Crypto       storm.UniCrypto
+	KeyStore     storm.KeyStore
 }
 
 // New creates a new UserInfo plugin from a PluginContext.
@@ -51,9 +49,6 @@ func New(ctx *storm.PluginContext) *Plugin {
 		store:    ctx.Storage.(storm.UserinfoStore),
 		crypto:   ctx.Crypto,
 		keyStore: ctx.Storage.(storm.KeyStore),
-	}
-	if sp, ok := ctx.Storage.(storm.TokenScopeProvider); ok {
-		p.scopeProvider = sp
 	}
 	if cl, ok := ctx.Storage.(storm.TokenCNFLookup); ok {
 		p.cnfLookup = cl
@@ -74,12 +69,11 @@ func New(ctx *storm.PluginContext) *Plugin {
 // NewWithConfig creates a new UserInfo plugin with explicit config.
 func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
-		store:         cfg.Store,
-		scopeProvider: cfg.ScopeProvider,
-		cnfLookup:     cfg.CNFLookup,
-		clientLookup:  cfg.ClientLookup,
-		crypto:        cfg.Crypto,
-		keyStore:      cfg.KeyStore,
+		store:        cfg.Store,
+		cnfLookup:    cfg.CNFLookup,
+		clientLookup: cfg.ClientLookup,
+		crypto:       cfg.Crypto,
+		keyStore:     cfg.KeyStore,
 	}
 }
 
@@ -161,14 +155,9 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// OIDC Core §5.4: filter standard claims by scope.
-	// If the storage implements TokenScopeProvider, we enforce scope filtering
-	// at the protocol level. Custom claims in the Claims map are always preserved.
-	if p.scopeProvider != nil {
-		if scopes, err := p.scopeProvider.TokenScopes(r.Context(), tokenID); err == nil {
-			userInfo.FilterByScopes(scopes)
-		}
-	}
+	// Note: Scope-based claim filtering is the responsibility of the storage
+	// implementation in SetUserinfoFromToken. The plugin does not enforce
+	// filtering here — it serializes whatever the storage populates.
 
 	// OIDC Core §5.3.2: return signed JWT when:
 	// 1. Client registered userinfo_signed_response_alg (MUST), OR

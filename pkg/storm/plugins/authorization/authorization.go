@@ -55,6 +55,8 @@ type Plugin struct {
 	decoder                   *protocol.Decoder
 	enableImplicit            bool
 	allowPlainPKCE            bool
+	allowPrivateIPs           bool
+	skipTLSCertVerify         bool
 	parStore                  storm.PARStore
 	sessionProvider           SessionProvider
 	jarmSigner                JARMSigner // optional, set via SetJARMSigner
@@ -128,14 +130,16 @@ type Config struct {
 // Authorization Requests are enabled.
 func New(ctx *storm.PluginContext) *Plugin {
 	p := &Plugin{
-		authStore:      ctx.Storage.(storm.AuthStore),
-		clientStore:    ctx.Storage.(storm.ClientStore),
-		crypto:         ctx.Crypto,
-		keyStore:       ctx.Storage.(storm.KeyStore),
-		decoder:        ctx.Decoder,
-		enableImplicit: ctx.EnableImplicit,
-		allowPlainPKCE: ctx.AllowPlainPKCE,
-		tracer:         ctx.Tracer,
+		authStore:         ctx.Storage.(storm.AuthStore),
+		clientStore:       ctx.Storage.(storm.ClientStore),
+		crypto:            ctx.Crypto,
+		keyStore:          ctx.Storage.(storm.KeyStore),
+		decoder:           ctx.Decoder,
+		enableImplicit:    ctx.EnableImplicit,
+		allowPlainPKCE:    ctx.AllowPlainPKCE,
+		allowPrivateIPs:   ctx.AllowPrivateIPs,
+		skipTLSCertVerify: ctx.SkipTLSCertVerify,
+		tracer:            ctx.Tracer,
 	}
 	// Register custom parser for OIDC §5.5 claims parameter (JSON object).
 	ctx.Decoder.RegisterParser(
@@ -908,6 +912,20 @@ func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRe
 	if nonce := authReq.GetNonce(); nonce != "" {
 		claims["nonce"] = nonce
 	}
+	// OIDC Core §2 / §15.1: auth_time is REQUIRED when max_age is requested
+	// or when the client requires it via claims parameter.
+	if t := authReq.GetAuthTime(); !t.IsZero() {
+		claims["auth_time"] = t.Unix()
+	}
+	if acr := authReq.GetACR(); acr != "" {
+		claims["acr"] = acr
+	}
+	if amr := authReq.GetAMR(); len(amr) > 0 {
+		claims["amr"] = amr
+	}
+	if sid := authReq.GetSID(); sid != "" {
+		claims["sid"] = sid
+	}
 	// OIDC Core §2 / §3.2.2.1: at_hash is REQUIRED when access_token is returned
 	// "Access Token hash value. Its value is the base64url encoding of the left-most
 	// half of the hash of the octets of the ASCII representation of the access_token value"
@@ -1093,7 +1111,7 @@ func (p *Plugin) applyRequestObject(ctx context.Context, authReq *protocol.AuthR
 // applyRequestURI fetches and validates a signed JWT request object from a URL (OIDC Core §6.1).
 func (p *Plugin) applyRequestURI(ctx context.Context, authReq *protocol.AuthRequest) error {
 	// Fetch the JWT from the URL
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := shared.NewHTTPClient(p.skipTLSCertVerify)
 	resp, err := client.Get(authReq.RequestURI)
 	if err != nil {
 		return protocol.ErrInvalidRequest().WithDescription("failed to fetch request_uri: %s", authReq.RequestURI).WithParent(err)

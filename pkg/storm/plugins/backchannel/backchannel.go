@@ -18,18 +18,22 @@ import (
 
 // Plugin implements the OIDC Back-Channel Logout endpoint.
 type Plugin struct {
-	store    storm.BackChannelStore
-	keyStore storm.KeyStore
-	issuer   string
-	logger   *slog.Logger
+	store             storm.BackChannelStore
+	keyStore          storm.KeyStore
+	issuer            string
+	logger            *slog.Logger
+	allowPrivateIPs   bool
+	skipTLSCertVerify bool
 }
 
 // New creates a new BackChannel plugin from a PluginContext.
 func New(ctx *storm.PluginContext) *Plugin {
 	return &Plugin{
-		store:    ctx.Storage.(storm.BackChannelStore),
-		keyStore: ctx.Storage.(storm.KeyStore),
-		logger:   slog.Default(),
+		store:             ctx.Storage.(storm.BackChannelStore),
+		keyStore:          ctx.Storage.(storm.KeyStore),
+		logger:            slog.Default(),
+		allowPrivateIPs:   ctx.AllowPrivateIPs,
+		skipTLSCertVerify: ctx.SkipTLSCertVerify,
 	}
 }
 
@@ -57,7 +61,7 @@ func (p *Plugin) PostLogout(ctx context.Context, userID, clientID, sid string) {
 		)
 		return
 	}
-	if err := PushLogoutTokens(ctx, p.store, p.issuer, signingKey, userID, sid, p.logger); err != nil {
+	if err := PushLogoutTokensWithClient(ctx, p.store, p.issuer, signingKey, userID, sid, p.logger, shared.NewHTTPClient(p.skipTLSCertVerify)); err != nil {
 		p.logger.Error("backchannel: failed to push logout tokens",
 			slog.String("user_id", userID),
 			slog.String("sid", sid),
@@ -142,7 +146,46 @@ func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer 
 			continue
 		}
 
-		go sendLogoutToken(uri, logoutToken, logger)
+		go sendLogoutToken(uri, logoutToken, logger, nil)
+	}
+
+	return nil
+}
+
+// PushLogoutTokensWithClient is like PushLogoutTokens but accepts a custom
+// HTTP client for outbound requests (e.g., with TLS skip for testing).
+func PushLogoutTokensWithClient(ctx context.Context, store storm.BackChannelStore, issuer string, signingKey storm.SigningKey, subject, sid string, logger *slog.Logger, httpClient *http.Client) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	clients, err := store.ClientsForSession(ctx, subject, sid)
+	if err != nil {
+		return err
+	}
+
+	for _, cl := range clients {
+		bc, ok := cl.(BackChannelLogoutClient)
+		if !ok {
+			continue
+		}
+		uri := bc.BackChannelLogoutURI()
+		if uri == "" {
+			continue
+		}
+
+		logoutToken, err := createLogoutToken(issuer, subject, cl.GetID(), sid, signingKey)
+		if err != nil {
+			logger.Error("failed to create logout token",
+				slog.String("client_id", cl.GetID()),
+				slog.String("subject", subject),
+				slog.String("sid", sid),
+				slog.Any("error", err),
+			)
+			continue
+		}
+
+		go sendLogoutToken(uri, logoutToken, logger, httpClient)
 	}
 
 	return nil

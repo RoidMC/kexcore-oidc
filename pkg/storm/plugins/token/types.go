@@ -29,6 +29,8 @@ type Plugin struct {
 	devicePollInterval  time.Duration   // default polling interval for device_code grant
 	requireDPoP         bool            // FAPI2: require DPoP proof for all token requests
 	requireMtls         bool            // FAPI2: require mTLS client certificate for all token requests
+	allowPrivateIPs     bool            // allow private IPs in jwks_uri fetches (testing only)
+	skipTLSCertVerify   bool            // skip TLS cert verification on outbound HTTP (testing only)
 	dpopNonceSender     DPoPNonceSender // optional, set via SetDPoPNonceSender
 }
 
@@ -52,6 +54,10 @@ type Config struct {
 	// Requests without a client certificate are rejected with invalid_request.
 	// Use this for FAPI 2.0 compliance (sender-constrained tokens via mTLS).
 	RequireMtls bool
+	// AllowPrivateIPs disables SSRF protection for jwks_uri fetches (testing only).
+	AllowPrivateIPs bool
+	// SkipTLSCertVerify disables TLS certificate verification on outbound HTTP (testing only).
+	SkipTLSCertVerify bool
 }
 
 // DPoPNonceSender is optionally implemented by a plugin to provide

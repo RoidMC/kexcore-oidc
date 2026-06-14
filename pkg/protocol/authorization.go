@@ -160,7 +160,8 @@ type AuthRequest struct {
 	Display      Display             `json:"display" schema:"display"`
 	Prompt       SpaceDelimitedArray `json:"prompt" schema:"prompt"`
 	MaxAge       *uint               `json:"max_age" schema:"max_age"`
-	UILocales    Locales             `json:"ui_locales" schema:"ui_locales"`
+	UILocales     Locales             `json:"ui_locales" schema:"ui_locales"`
+	ClaimsLocales Locales             `json:"claims_locales" schema:"claims_locales"`
 	IDTokenHint  string              `json:"id_token_hint" schema:"id_token_hint"`
 	LoginHint    string              `json:"login_hint" schema:"login_hint"`
 	ACRValues    SpaceDelimitedArray `json:"acr_values" schema:"acr_values"`

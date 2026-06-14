@@ -48,7 +48,6 @@
 //   - [JWTProfileStore]       — RFC 7523 JWT Bearer Grant
 //   - [TokenExchangeStore]    — RFC 8693 Token Exchange
 //   - [TokenCNFStore]         — RFC 8705/9449 Token Binding (cnf claim)
-//   - [TokenScopeProvider]    — Scope-based UserInfo claim filtering
 //   - [PairwiseTransformer]   — OIDC Core §8.1 Pairwise Subject Identifiers
 //
 // ## Optional extensions on Client
@@ -398,9 +397,9 @@ type IntrospectStore interface {
 // Implementation notes:
 //   - SetUserinfoFromToken receives a tokenID (from TokenStore) and the subject claim.
 //     Look up the user by subject, then populate the UserInfo fields based on
-//     the token's granted scopes. For scope-based filtering, you can either:
-//     (a) filter here based on token scopes, or
-//     (b) implement [TokenScopeProvider] and let the plugin filter automatically.
+//     the token's granted scopes. If you want scope-based filtering, call
+//     [protocol.UserInfo.FilterByScopes] before returning; otherwise all claims
+//     set on the UserInfo will be included in the response.
 //   - origin is the HTTP Origin header value (for CORS), may be empty.
 //   - Set the UserInfo.Subject field — this is enforced by the plugin.
 //
@@ -408,13 +407,6 @@ type IntrospectStore interface {
 // verify the token — just populate the response.
 type UserinfoStore interface {
 	SetUserinfoFromToken(ctx context.Context, userinfo *protocol.UserInfo, tokenID, subject, origin string) error
-}
-
-// TokenScopeProvider is an optional extension of UserinfoStore or TokenStore
-// that returns the scopes associated with a token. When implemented, the
-// UserInfo plugin uses it to filter standard OIDC claims by scope (OIDC Core §5.4).
-type TokenScopeProvider interface {
-	TokenScopes(ctx context.Context, tokenID string) ([]string, error)
 }
 
 // RevocationStore is required by the Revocation plugin.

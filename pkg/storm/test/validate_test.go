@@ -364,41 +364,7 @@ func TestValidate_UserinfoStoreHint(t *testing.T) {
 
 // --- optional interface discovery tests ---
 
-// tokenScopeProviderStore extends baseStorage with TokenScopeProvider
-type tokenScopeProviderStore struct{ baseStorage }
 
-func (s *tokenScopeProviderStore) TokenScopes(_ context.Context, tokenID string) ([]string, error) {
-	return []string{"openid", "profile"}, nil
-}
-
-// userinfoWithScopeStore extends baseStorage with UserinfoStore + TokenScopeProvider
-type userinfoWithScopeStore struct{ baseStorage }
-
-func (s *userinfoWithScopeStore) SetUserinfoFromToken(ctx context.Context, resp *protocol.UserInfo, tokenID, subject, origin string) error {
-	return errors.New("not implemented")
-}
-func (s *userinfoWithScopeStore) TokenScopes(_ context.Context, tokenID string) ([]string, error) {
-	return []string{"openid", "profile"}, nil
-}
-
-func TestValidate_TokenScopeProvider_Optional(t *testing.T) {
-	store := &userinfoWithScopeStore{}
-	engine := storm.New(store, shared.StaticIssuer("https://example.com"))
-
-	engine.Register(&mockPlugin{
-		name:     "userinfo",
-		category: storm.CategoryCore,
-		requires: []string{"UserinfoStore"},
-	})
-
-	// TokenScopeProvider is optional — should not cause validation to fail
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("unexpected panic: %v", r)
-		}
-	}()
-	engine.Build()
-}
 
 // --- helper ---
 
