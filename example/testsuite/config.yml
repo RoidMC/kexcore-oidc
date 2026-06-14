@@ -206,7 +206,7 @@ skip_modules:
   - "oidcc-max-age-1"
   - "oidcc-ensure-registered-redirect-uri"
   # oidcc-dynamic-certification-test-plan
-  - "oidcc-server-rotate-keys"
+  # oidcc-server-rotate-keys: automated via rotate_key_endpoint hook
   # oidcc-rp-initiated-logout-certification-test-plan
   - "oidcc-rp-initiated-logout-modified-id-token-hint"
   - "oidcc-rp-initiated-logout-no-id-token-hint"
