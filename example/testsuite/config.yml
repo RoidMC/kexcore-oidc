@@ -1,0 +1,420 @@
+# OIDC Conformance Test Suite Configuration
+# Used by test.py to automate conformance testing via the OIDF conformance suite API.
+# See: https://gitlab.com/openid/conformance-suite/-/wikis/Design/BrowserControl
+
+# Shared variables — referenced via ${VAR} in this file
+vars:
+  suite_url: "https://192.168.2.167:8443"
+  issuer_url: "https://192.168.2.133:9998"
+  issuer_host: "192.168.2.133"
+
+# OIDC Conformance Suite
+# Official: https://www.certification.openid.net (requires token from /tokens.html)
+# Self-hosted: https://localhost:8443 (no token needed)
+suite:
+  url: "${suite_url}"
+  # Get token from: https://www.certification.openid.net/tokens.html
+  # Or set env var: OIDF_CONFORMANCE_TOKEN
+  token: ""
+  # Set to false for self-hosted suites with self-signed certificates
+  verify_ssl: false
+  rotate_key_endpoint:
+    url: "/admin/rotate-keys"
+    method: "POST"
+
+plan_config:
+  alias: "kexcore-test"
+  description: "StormEngine SDK conformance testing"
+  server:
+    discoveryUrl: "${issuer_url}/.well-known/openid-configuration"
+    allow_unexpected_metadata_fields:
+      - "resource_indicators_supported"
+      - "backchannel_logout_endpoint"
+  client:
+    client_id: "Test Client 1"
+    client_secret: "test-secret-1"
+  client_secret_post:
+    client_id: "Test Client 1"
+    client_secret: "test-secret-1"
+  client2:
+    client_id: "Test Client 2"
+    client_secret: "test-secret-2"
+  # publish: "summary"  # uncomment to publish results to certification.openid.net
+
+  # Browser automation — controls the conformance suite's built-in Selenium
+  browser:
+    - match: "${issuer_url}/authorize*"
+      tasks:
+        - task: "Login"
+          optional: true
+          match: "${issuer_url}/login*"
+          commands:
+            - ["text", "name", "username", "test-user@${issuer_host}"]
+            - ["text", "name", "password", "verysecure"]
+            - ["click", "css", "button[type='submit']"]
+        - task: "Authorize callback"
+          optional: true
+          match: "${issuer_url}/authorize/callback*"
+          commands: []
+        - task: "Verify complete"
+          match: "*/test/*/callback*"
+          commands:
+            - ["wait", "id", "submission_complete", 30]
+    # Logout flow — server does immediate redirect (no confirmation page)
+    - match: "${issuer_url}/end_session*"
+      tasks:
+        - task: "Logged out"
+          optional: true
+          match: "${issuer_url}/end_session*"
+          commands:
+            - ["wait", "xpath", "//*", 30, "Logged Out", "update-image-placeholder"]
+
+  # Per-test browser overrides (for negative / special tests)
+  override:
+    oidcc-response-type-missing:
+      browser:
+        - match: "${issuer_url}/authorize*"
+          tasks:
+            - task: "Verify error"
+              match: "${issuer_url}/error*"
+              commands:
+                - [
+                    "wait",
+                    "xpath",
+                    "//*",
+                    30,
+                    "Error",
+                    "update-image-placeholder",
+                  ]
+    oidcc-ensure-registered-redirect-uri:
+      browser:
+        - match: "${issuer_url}/authorize*"
+          tasks:
+            - task: "Verify error"
+              match: "${issuer_url}/error*"
+              commands:
+                - [
+                    "wait",
+                    "xpath",
+                    "//*",
+                    30,
+                    "Error",
+                    "update-image-placeholder",
+                  ]
+    oidcc-prompt-none-not-logged-in:
+      browser:
+        - match: "${issuer_url}/authorize*"
+          tasks:
+            - task: "Verify login_required"
+              match: "*/test/*/callback*"
+              commands:
+                - ["wait", "id", "submission_complete", 30]
+    oidcc-rp-initiated-logout-no-id-token-hint:
+      browser:
+        - match: "${issuer_url}/authorize*"
+          tasks:
+            - task: "Login"
+              optional: true
+              match: "${issuer_url}/login*"
+              commands:
+                - ["text", "name", "username", "test-user@${issuer_host}"]
+                - ["text", "name", "password", "verysecure"]
+                - ["click", "css", "button[type='submit']"]
+            - task: "Verify complete"
+              match: "*/test/*/callback*"
+              commands:
+                - ["wait", "id", "submission_complete", 30]
+        - match: "${issuer_url}/end_session*"
+          tasks:
+            - task: "Logged out"
+              match: "${issuer_url}/end_session*"
+              commands:
+                - ["wait", "xpath", "//*", 30, "Logged Out", "update-image-placeholder"]
+    oidcc-rp-initiated-logout-bad-post-logout-redirect-uri:
+      browser:
+        - match: "${issuer_url}/authorize*"
+          tasks:
+            - task: "Login"
+              optional: true
+              match: "${issuer_url}/login*"
+              commands:
+                - ["text", "name", "username", "test-user@${issuer_host}"]
+                - ["text", "name", "password", "verysecure"]
+                - ["click", "css", "button[type='submit']"]
+            - task: "Verify complete"
+              match: "*/test/*/callback*"
+              commands:
+                - ["wait", "id", "submission_complete", 30]
+        - match: "${issuer_url}/end_session*"
+          tasks:
+            - task: "Expect error"
+              match: "${issuer_url}/end_session*"
+              commands:
+                - [
+                    "wait",
+                    "xpath",
+                    "//*",
+                    30,
+                    "Invalid post_logout_redirect_uri",
+                    "update-image-placeholder",
+                  ]
+    oidcc-rp-initiated-logout-modified-id-token-hint:
+      browser:
+        - match: "${issuer_url}/authorize*"
+          tasks:
+            - task: "Login"
+              optional: true
+              match: "${issuer_url}/login*"
+              commands:
+                - ["text", "name", "username", "test-user@${issuer_host}"]
+                - ["text", "name", "password", "verysecure"]
+                - ["click", "css", "button[type='submit']"]
+            - task: "Verify complete"
+              match: "*/test/*/callback*"
+              commands:
+                - ["wait", "id", "submission_complete", 30]
+        - match: "${issuer_url}/end_session*"
+          tasks:
+            - task: "Expect error"
+              match: "${issuer_url}/end_session*"
+              commands:
+                - [
+                    "wait",
+                    "xpath",
+                    "//*",
+                    30,
+                    "Invalid",
+                    "update-image-placeholder",
+                  ]
+
+# Test plans — group by category for selective runs
+# because of requires image upload
+skip_modules:
+  # oidcc-dynamic-certification-test-plan
+  - "oidcc-ensure-redirect-uri-in-authorization-request"
+  - "oidcc-redirect-uri-query-mismatch"
+  - "oidcc-redirect-uri-query-added"
+  - "oidcc-registration-logo-uri"
+  - "oidcc-registration-policy-uri"
+  - "oidcc-registration-tos-uri"
+  # oidcc-basic-certification-test-plan
+  - "oidcc-response-type-missing"
+  - "oidcc-prompt-login"
+  - "oidcc-display-page"
+  - "oidcc-display-popup"
+  - "oidcc-prompt-consent"
+  - "oidcc-max-age-1"
+  - "oidcc-ensure-registered-redirect-uri"
+  # oidcc-dynamic-certification-test-plan
+  - "oidcc-server-rotate-keys"
+  # oidcc-rp-initiated-logout-certification-test-plan
+  - "oidcc-rp-initiated-logout-modified-id-token-hint"
+  - "oidcc-rp-initiated-logout-no-id-token-hint"
+  - "oidcc-rp-initiated-logout-no-params"
+  - "oidcc-rp-initiated-logout-no-post-logout-redirect-uri"
+  - "oidcc-rp-initiated-logout-only-state"
+  - "oidcc-rp-initiated-logout-query-added-to-post-logout-redirect-uri"
+  - "oidcc-rp-initiated-logout-bad-id-token-hint"
+
+test_plans:
+  oidc_core:
+    # Config OP — discovery metadata validation
+    - planName: "oidcc-config-certification-test-plan"
+      variant: {}
+    # 3rd-party init login OP — code flow
+    - planName: "oidcc-3rdparty-init-login-certification-test-plan"
+      testcase:
+        dynamic_client:
+          variant:
+            response_type_range:
+              - "code"
+              - "id_token"
+              - "id_token token"
+              - "code id_token"
+              - "code token"
+              - "code id_token token"
+    # Basic OP — code flow
+    - planName: "oidcc-basic-certification-test-plan"
+      testcase:
+        dynamic_client:
+          variant:
+            server_metadata: "discovery"
+            client_registration: "dynamic_client"
+        static_client:
+          variant:
+            server_metadata: "discovery"
+            client_registration: "static_client"
+    # Implicit OP — plan itself defines response_type, server_metadata, client_registration
+    # OAuth 2.0 / OIDC Core 1.0 compatible (implicit flow deprecated in OAuth 2.1)
+    - planName: "oidcc-implicit-certification-test-plan"
+      testcase:
+        dynamic_client:
+          variant:
+            server_metadata: "discovery"
+            client_registration: "dynamic_client"
+        static_client:
+          variant:
+            server_metadata: "discovery"
+            client_registration: "static_client"
+    # Hybrid OP — plan itself defines response_type, server_metadata, client_registration
+    # OAuth 2.0 / OIDC Core 1.0 compatible
+    - planName: "oidcc-hybrid-certification-test-plan"
+      testcase:
+        dynamic_client:
+          variant:
+            server_metadata: "discovery"
+            client_registration: "dynamic_client"
+        static_client:
+          variant:
+            server_metadata: "discovery"
+            client_registration: "static_client"
+    # FormPost OP — code flow
+    # The hybrid and implicit standards have been phased out in Oauth2.1, and the SDK only supports Code for this feature
+    - planName: "oidcc-formpost-basic-certification-test-plan"
+      testcase:
+        dynamic_client:
+          variant:
+            server_metadata: "discovery"
+            client_registration: "dynamic_client"
+        static_client:
+          variant:
+            server_metadata: "discovery"
+            client_registration: "static_client"
+    # Dynamic OP — plan defines server_metadata and client_registration,
+    # only response_type can be overridden
+    - planName: "oidcc-dynamic-certification-test-plan"
+      testcase:
+        dynamic_client:
+          variant:
+            response_type_range:
+              - "code"
+              - "id_token"
+              - "id_token token"
+              - "code id_token"
+              - "code token"
+              - "code id_token token"
+
+  oidc_logout:
+    - planName: "oidcc-rp-initiated-logout-certification-test-plan"
+      testcase:
+        dynamic_client:
+          variant:
+            client_registration: "dynamic_client"
+            response_type_range:
+              - "code"
+              - "id_token"
+              - "id_token token"
+              - "code id_token"
+              - "code token"
+              - "code id_token token"
+        static_client:
+          variant:
+            client_registration: "static_client"
+            response_type_range:
+              - "code"
+              - "id_token"
+              - "id_token token"
+              - "code id_token"
+              - "code token"
+              - "code id_token token"
+
+ # FAPI / CIBA TODO
+  fapi2_message_signing:
+    - planName: "fapi2-message-signing-final-test-plan"
+      testcase:
+        dpop_jarm:
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "plain_fapi"
+            fapi_request_method: "signed_non_repudiation"
+            fapi_response_mode: "jarm"
+            sender_constrain: "dpop"
+            openid: "openid_connect"
+        dpop_plain:
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "plain_fapi"
+            fapi_request_method: "signed_non_repudiation"
+            fapi_response_mode: "plain_response"
+            sender_constrain: "dpop"
+            openid: "openid_connect"
+
+  fapi2_security_mtls:
+    - planName: "fapi2-security-profile-final-test-plan"
+      testcase:
+        mtls_dpop_oidc:
+          variant:
+            client_auth_type: "mtls"
+            fapi_profile: "plain_fapi"
+            sender_constrain: "dpop"
+            openid: "openid_connect"
+        mtls_dpop_cc:
+          variant:
+            client_auth_type: "mtls"
+            fapi_profile: "fapi_client_credentials_grant"
+            sender_constrain: "dpop"
+            openid: "plain_oauth"
+        mtls_dpop_plain:
+          variant:
+            client_auth_type: "mtls"
+            fapi_profile: "plain_fapi"
+            sender_constrain: "dpop"
+            openid: "plain_oauth"
+        mtls_mtls_oidc:
+          variant:
+            client_auth_type: "mtls"
+            fapi_profile: "plain_fapi"
+            sender_constrain: "mtls"
+            openid: "openid_connect"
+        mtls_mtls_cc:
+          variant:
+            client_auth_type: "mtls"
+            fapi_profile: "fapi_client_credentials_grant"
+            sender_constrain: "mtls"
+            openid: "plain_oauth"
+        mtls_mtls_plain:
+          variant:
+            client_auth_type: "mtls"
+            fapi_profile: "plain_fapi"
+            sender_constrain: "mtls"
+            openid: "plain_oauth"
+
+  fapi2_security_private_key_jwt:
+    - planName: "fapi2-security-profile-final-test-plan"
+      testcase:
+        pkj_dpop_oidc:
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "plain_fapi"
+            sender_constrain: "dpop"
+            openid: "openid_connect"
+        pkj_dpop_cc:
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "fapi_client_credentials_grant"
+            sender_constrain: "dpop"
+            openid: "plain_oauth"
+        pkj_dpop_plain:
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "plain_fapi"
+            sender_constrain: "dpop"
+            openid: "plain_oauth"
+        pkj_mtls_oidc:
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "plain_fapi"
+            sender_constrain: "mtls"
+            openid: "openid_connect"
+        pkj_mtls_cc:
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "fapi_client_credentials_grant"
+            sender_constrain: "mtls"
+            openid: "plain_oauth"
+        pkj_mtls_plain:
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "plain_fapi"
+            sender_constrain: "mtls"
+            openid: "plain_oauth"
