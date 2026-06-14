@@ -186,6 +186,30 @@ plan_config:
                     "Invalid",
                     "update-image-placeholder",
                   ]
+    # Backchannel logout: end_session redirects to post_logout_redirect_uri
+    oidcc-backchannel-rp-initiated-logout:
+      browser:
+        - match: "${issuer_url}/authorize*"
+          tasks:
+            - task: "Login"
+              optional: true
+              match: "${issuer_url}/login*"
+              commands:
+                - ["text", "name", "username", "test-user@${issuer_host}"]
+                - ["text", "name", "password", "verysecure"]
+                - ["click", "css", "button[type='submit']"]
+            - task: "Authorize callback"
+              optional: true
+              match: "${issuer_url}/authorize/callback*"
+              commands: []
+            - task: "Verify complete"
+              match: "*/test/*/callback*"
+              commands:
+                - ["wait", "id", "submission_complete", 30]
+        - match: "${issuer_url}/end_session*"
+          tasks:
+            - task: "Verify post-logout redirect"
+              match: "*/test/*/post_logout_redirect*"
 
 # Test plans — group by category for selective runs
 # because of requires image upload
@@ -295,6 +319,39 @@ test_plans:
               - "code id_token token"
 
   oidc_logout:
+    # Backchannel RP Initiated Logout OP — code / hybrid / implicit flow
+    - planName: "oidcc-backchannel-rp-initiated-logout-certification-test-plan"
+      testcase:
+        dynamic_client:
+          variant:
+            client_registration: "dynamic_client"
+            response_type_range:
+              - "code"
+              - "id_token"
+              - "id_token token"
+              - "code id_token"
+              - "code token"
+              - "code id_token token"
+        static_client:
+          variant:
+            client_registration: "static_client"
+            response_type_range:
+              - "code"
+              - "id_token"
+              - "id_token token"
+              - "code id_token"
+              - "code token"
+              - "code id_token token"
+          client:
+            client_id: "BCL Client 1"
+            client_secret: "bcl-secret-1"
+          client_secret_post:
+            client_id: "BCL Client 1"
+            client_secret: "bcl-secret-1"
+          client2:
+            client_id: "BCL Client 2"
+            client_secret: "bcl-secret-2"
+    #
     - planName: "oidcc-rp-initiated-logout-certification-test-plan"
       testcase:
         dynamic_client:

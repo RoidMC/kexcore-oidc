@@ -18,9 +18,10 @@ type Plugin struct {
 	tokenStore          storm.TokenStore
 	clientStore         storm.ClientStore
 	authStore           storm.AuthStore
-	deviceAuthStore     storm.DeviceAuthStore     // optional, for device_code grant
-	cibaStore           storm.CIBAStore           // optional, for ciba grant
-	pairwiseTransformer storm.PairwiseTransformer // optional, for pairwise sub
+	deviceAuthStore     storm.DeviceAuthStore       // optional, for device_code grant
+	cibaStore           storm.CIBAStore             // optional, for ciba grant
+	pairwiseTransformer storm.PairwiseTransformer   // optional, for pairwise sub
+	sessionRecorder     storm.ClientSessionRecorder // optional, for back-channel logout tracking
 	crypto              storm.UniCrypto
 	keyStore            storm.KeyStore
 	decoder             *protocol.Decoder
@@ -58,6 +59,8 @@ type Config struct {
 	AllowPrivateIPs bool
 	// SkipTLSCertVerify disables TLS certificate verification on outbound HTTP (testing only).
 	SkipTLSCertVerify bool
+	// SessionRecorder records client sessions for back-channel logout (optional).
+	SessionRecorder storm.ClientSessionRecorder
 }
 
 // DPoPNonceSender is optionally implemented by a plugin to provide

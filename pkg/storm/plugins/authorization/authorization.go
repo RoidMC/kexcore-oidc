@@ -62,7 +62,8 @@ type Plugin struct {
 	jarmSigner                JARMSigner // optional, set via SetJARMSigner
 	tracer                    trace.Tracer
 	createAuthCode            func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
-	authorizationDetailsTypes []string // RFC 9396 supported types
+	authorizationDetailsTypes []string                    // RFC 9396 supported types
+	sessionRecorder           storm.ClientSessionRecorder // optional, for back-channel logout tracking
 }
 
 //go:embed template/form_post.html.tmpl
@@ -165,6 +166,9 @@ func New(ctx *storm.PluginContext) *Plugin {
 	if sp, ok := ctx.Storage.(SessionProvider); ok {
 		p.sessionProvider = sp
 	}
+	if sr, ok := ctx.Storage.(storm.ClientSessionRecorder); ok {
+		p.sessionRecorder = sr
+	}
 	return p
 }
 
@@ -209,6 +213,18 @@ func (p *Plugin) Name() string { return "authorization" }
 // Called by the Engine during Build when both authorization and jarm plugins are present.
 func (p *Plugin) SetJARMSigner(signer JARMSigner) {
 	p.jarmSigner = signer
+}
+
+// recordSession records the client session for back-channel logout tracking.
+// Only records when the storage implements ClientSessionRecorder and the
+// auth request provides a SID.
+func (p *Plugin) recordSession(ctx context.Context, authReq storm.AuthRequest) {
+	if p.sessionRecorder == nil {
+		return
+	}
+	if sid := authReq.GetSID(); sid != "" {
+		p.sessionRecorder.RecordClientSession(authReq.GetSubject(), authReq.GetClientID(), sid)
+	}
 }
 
 // Register installs the authorization routes.
@@ -837,6 +853,9 @@ func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, au
 		}
 	}
 
+	// Record client session for back-channel logout tracking.
+	p.recordSession(r.Context(), authReq)
+
 	// Build fragment URL manually (Go 1.22+ u.RawFragment may not be
 	// reflected in u.String() when u.Fragment is also set by url.Parse).
 	redirectURL := authReq.GetRedirectURI()
@@ -1032,6 +1051,9 @@ func (p *Plugin) authResponseHybrid(w http.ResponseWriter, r *http.Request, auth
 			fragment.Set("id_token", idToken)
 		}
 	}
+
+	// Record client session for back-channel logout tracking.
+	p.recordSession(r.Context(), authReq)
 
 	// Build fragment URL.
 	redirectURL := authReq.GetRedirectURI()

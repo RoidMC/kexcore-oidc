@@ -16,6 +16,7 @@ import (
 
 	// Import plugins for registration
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/authorization"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/backchannel"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/dcr"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/device"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/discovery"
@@ -40,16 +41,24 @@ func main() {
 	if issuer == "" {
 		issuer = fmt.Sprintf("http://localhost:%s/", cfg.Port)
 	}
-
+	
 	clients := []*storage.Client{
 		storage.NativeClient("native", cfg.RedirectURI...),
 		storage.WebClient("web", "secret", cfg.RedirectURI...),
 		storage.WebClient("api", "secret", cfg.RedirectURI...),
-		storage.OIDFBackChannelLogoutTestClient("Test Client 1", "test-secret-1",
+		// Clients for rp-initiated-logout (no backchannel_logout_uri)
+		storage.OIDFTestClientSecretPost("Test Client 1", "test-secret-1",
+			"https://www.certification.openid.net/test/a/kexcore-test/callback",
+		),
+		storage.OIDFTestClientSecretPost("Test Client 2", "test-secret-2",
+			"https://www.certification.openid.net/test/a/kexcore-test/callback",
+		),
+		// Clients for backchannel-rp-initiated-logout (with backchannel_logout_uri)
+		storage.OIDFBackChannelLogoutTestClient("BCL Client 1", "bcl-secret-1",
 			"https://www.certification.openid.net/test/a/kexcore-test/backchannel_logout",
 			"https://www.certification.openid.net/test/a/kexcore-test/callback",
 		),
-		storage.OIDFBackChannelLogoutTestClient("Test Client 2", "test-secret-2",
+		storage.OIDFBackChannelLogoutTestClient("BCL Client 2", "bcl-secret-2",
 			"https://www.certification.openid.net/test/a/kexcore-test/backchannel_logout",
 			"https://www.certification.openid.net/test/a/kexcore-test/callback",
 		),
@@ -103,7 +112,7 @@ func main() {
 		}
 	} else {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server terminated", "error", err)
+			logger.Error("server terminated1", "error", err)
 			os.Exit(1)
 		}
 	}

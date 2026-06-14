@@ -61,7 +61,12 @@ func (p *Plugin) PostLogout(ctx context.Context, userID, clientID, sid string) {
 		)
 		return
 	}
-	if err := PushLogoutTokensWithClient(ctx, p.store, p.issuer, signingKey, userID, sid, p.logger, shared.NewHTTPClient(p.skipTLSCertVerify)); err != nil {
+	// Use the issuer from the plugin config, falling back to the request context.
+	issuer := p.issuer
+	if issuer == "" {
+		issuer = shared.IssuerFromContext(ctx)
+	}
+	if err := PushLogoutTokensWithClient(ctx, p.store, issuer, signingKey, userID, sid, p.logger, shared.NewHTTPClient(p.skipTLSCertVerify)); err != nil {
 		p.logger.Error("backchannel: failed to push logout tokens",
 			slog.String("user_id", userID),
 			slog.String("sid", sid),

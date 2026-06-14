@@ -58,6 +58,9 @@ func New(ctx *storm.PluginContext) *Plugin {
 	if pt, ok := ctx.Storage.(storm.PairwiseTransformer); ok {
 		p.pairwiseTransformer = pt
 	}
+	if sr, ok := ctx.Storage.(storm.ClientSessionRecorder); ok {
+		p.sessionRecorder = sr
+	}
 	p.allowPrivateIPs = ctx.AllowPrivateIPs
 	p.skipTLSCertVerify = ctx.SkipTLSCertVerify
 	return p
@@ -83,6 +86,7 @@ func NewWithConfig(cfg Config) *Plugin {
 		devicePollInterval: cfg.DevicePollInterval,
 		requireDPoP:        cfg.RequireDPoP,
 		requireMtls:        cfg.RequireMtls,
+		sessionRecorder:    cfg.SessionRecorder,
 	}
 }
 
@@ -1058,6 +1062,17 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 	}
 	if opts.IssueRefresh && refreshToken != "" {
 		resp.RefreshToken = refreshToken
+	}
+
+	// Record client session for back-channel logout tracking.
+	// Only records when the storage implements ClientSessionRecorder
+	// and the request provides a SID (authorization_code flow).
+	if p.sessionRecorder != nil {
+		if authReq, ok := request.(storm.AuthRequest); ok {
+			if sid := authReq.GetSID(); sid != "" {
+				p.sessionRecorder.RecordClientSession(request.GetSubject(), request.GetClientID(), sid)
+			}
+		}
 	}
 
 	return resp, tokenID, nil

@@ -576,6 +576,14 @@ type BackChannelStore interface {
 	ClientsForSession(ctx context.Context, sub, sid string) ([]Client, error)
 }
 
+// ClientSessionRecorder is an optional interface for tracking client sessions
+// per subject. When implemented by the storage, the token plugin records each
+// client session on token issuance so that BackChannelStore.ClientsForSession
+// can find the relevant RPs to notify on logout.
+type ClientSessionRecorder interface {
+	RecordClientSession(subject, clientID, sid string)
+}
+
 // PARStore is required by the Pushed Authorization Request plugin.
 type PARStore interface {
 	StorePushedAuthRequest(ctx context.Context, clientID string, req *protocol.AuthRequest, lifetime time.Duration) (requestURI string, err error)

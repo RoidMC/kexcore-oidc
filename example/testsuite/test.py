@@ -71,6 +71,10 @@ async def run_plan(conformance, plan_name, variant, base_plan_config, skip_modul
     base_desc = base_plan_config.get("description", "")
     cfg["description"] = f"{base_desc} ({label})" if label else base_desc
     plan_config_json = json.dumps(cfg)
+    # Debug: show client config being sent
+    for k in ("client", "client_secret_post", "client2"):
+        if k in cfg:
+            print(f"  {k}: {json.dumps(cfg[k])}")
 
     test_plan = await conformance.create_test_plan(plan_name, plan_config_json, variant)
     plan_id = test_plan["id"]
@@ -138,6 +142,11 @@ async def run_plan(conformance, plan_name, variant, base_plan_config, skip_modul
                 skipped_auto += 1
             else:
                 print(f"  Result: [ERR] {status} / {result}")
+                # Print failure details for debugging
+                details = info.get("details", [])
+                for d in details:
+                    if isinstance(d, dict):
+                        print(f"    {d.get('id', '?')}: {d.get('description', d)}")
                 errors += 1
         except Exception as e:
             print(f"  Error: {e}")
@@ -317,6 +326,11 @@ async def main():
                 # Expand named testcases into individual plan runs
                 for tc_name, tc_def in testcases.items():
                     variant = tc_def.get("variant")
+                    # Merge per-testcase client overrides into plan config
+                    tc_cfg = dict(plan_cfg)
+                    for key in ("client", "client_secret_post", "client2"):
+                        if key in tc_def:
+                            tc_cfg[key] = tc_def[key]
                     # Expand response_type_range into individual runs
                     if variant and "response_type_range" in variant:
                         base = {k: v for k, v in variant.items() if k != "response_type_range"}
@@ -326,7 +340,7 @@ async def main():
                             print(f"\n  [{label}]")
                             p, f, e, r, sm, sa = await run_plan(
                                 conformance, plan_name, v,
-                                plan_cfg, skip_modules, label=label, hooks=hooks,
+                                tc_cfg, skip_modules, label=label, hooks=hooks,
                             )
                             total_passed += p
                             total_failed += f
@@ -339,7 +353,7 @@ async def main():
                         print(f"\n  [{label}]")
                         p, f, e, r, sm, sa = await run_plan(
                             conformance, plan_name, variant,
-                            plan_cfg, skip_modules, label=label, hooks=hooks,
+                            tc_cfg, skip_modules, label=label, hooks=hooks,
                         )
                         total_passed += p
                         total_failed += f

@@ -140,7 +140,7 @@ func OIDFTestClientSecretPost(id, secret string, redirectURIs ...string) *Client
 }
 
 func OIDFBackChannelLogoutTestClient(id, secret, backChannelLogoutURI string, redirectURIs ...string) *Client {
-	c := OIDFTestClient(id, secret, redirectURIs...)
+	c := OIDFTestClientSecretPost(id, secret, redirectURIs...)
 	c.backChannelLogoutURI = backChannelLogoutURI
 	return c
 }

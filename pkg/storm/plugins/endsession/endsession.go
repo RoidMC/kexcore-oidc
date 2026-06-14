@@ -79,19 +79,20 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Terminate the session
-	if err := p.store.TerminateSession(r.Context(), session.UserID, session.ClientID); err != nil {
-		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error terminating session"), nil)
-		return
-	}
-
-	// Trigger post-logout hook (e.g., back-channel logout, audit logging).
+	// Trigger post-logout hook BEFORE terminating session, so back-channel
+	// logout can find the client sessions that need to be notified.
 	if p.logoutHook != nil {
 		sid := ""
 		if session.IDTokenHintClaims != nil {
 			sid = session.IDTokenHintClaims.SessionID
 		}
 		p.logoutHook.PostLogout(r.Context(), session.UserID, session.ClientID, sid)
+	}
+
+	// Terminate the session
+	if err := p.store.TerminateSession(r.Context(), session.UserID, session.ClientID); err != nil {
+		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error terminating session"), nil)
+		return
 	}
 
 	// Redirect to the post-logout URI or show a logout confirmation page
