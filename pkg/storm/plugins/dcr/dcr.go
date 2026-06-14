@@ -26,7 +26,7 @@ import (
 func init() {
 	storm.RegisterPlugin("dcr", storm.PriorityDCR, func(ctx *storm.PluginContext) storm.Plugin {
 		if dcrStore, ok := ctx.Storage.(storm.DCRStore); ok {
-			return New(Config{Store: dcrStore})
+			return New(Config{Store: dcrStore, AllowPrivateIPs: ctx.AllowPrivateIPs})
 		}
 		return nil
 	})
@@ -34,18 +34,21 @@ func init() {
 
 // Plugin implements the Dynamic Client Registration endpoint.
 type Plugin struct {
-	store storm.DCRStore
+	store           storm.DCRStore
+	allowPrivateIPs bool
 }
 
 // Config holds the dependencies for the DCR plugin.
 type Config struct {
-	Store storm.DCRStore
+	Store           storm.DCRStore
+	AllowPrivateIPs bool
 }
 
 // New creates a new DCR plugin.
 func New(cfg Config) *Plugin {
 	return &Plugin{
-		store: cfg.Store,
+		store:           cfg.Store,
+		allowPrivateIPs: cfg.AllowPrivateIPs,
 	}
 }
 
@@ -99,7 +102,7 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// Must be a valid HTTPS URI, fetchable, returning a JSON array of redirect_uri values.
 	// All registered redirect_uris must be contained in that array.
 	if req.SectorIdentifierURI != "" {
-		if err := validateSectorIdentifierURI(req.SectorIdentifierURI, req.RedirectURIs); err != nil {
+		if err := validateSectorIdentifierURI(req.SectorIdentifierURI, req.RedirectURIs, p.allowPrivateIPs); err != nil {
 			shared.WriteError(w, r,
 				protocol.ErrInvalidClientMetadata().WithDescription("invalid sector_identifier_uri: %s", err.Error()),
 				nil)
@@ -110,9 +113,11 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// If jwks_uri specified but jwks not, fetch the key set and populate jwks
 	// so the storage layer can parse encryption keys from it.
 	if len(req.JWKS) == 0 && req.JWKSURI != "" {
-		if err := shared.ValidateRemoteURL(req.JWKSURI); err != nil {
-			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid jwks_uri: %s", err.Error()), nil)
-			return
+		if !p.allowPrivateIPs {
+			if err := shared.ValidateRemoteURL(req.JWKSURI); err != nil {
+				shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid jwks_uri: %s", err.Error()), nil)
+				return
+			}
 		}
 		client := &http.Client{Timeout: 10 * time.Second}
 		// Safe: ValidateRemoteURL blocks private IPs, non-HTTPS, and DNS rebinding
@@ -244,14 +249,16 @@ func randomHex(n int) string {
 // The sector_identifier_uri must be a valid HTTPS URL, fetchable, returning
 // a JSON array of redirect_uri values. All registered redirect_uris must be
 // contained in that array.
-func validateSectorIdentifierURI(sectorURI string, redirectURIs []string) error {
+func validateSectorIdentifierURI(sectorURI string, redirectURIs []string, allowPrivateIPs bool) error {
 	u, err := url.Parse(sectorURI)
 	if err != nil || u.Scheme != "https" {
 		return fmt.Errorf("sector_identifier_uri must use https scheme")
 	}
 
-	if err := shared.ValidateRemoteURL(sectorURI); err != nil {
-		return fmt.Errorf("sector_identifier_uri is not reachable: %w", err)
+	if !allowPrivateIPs {
+		if err := shared.ValidateRemoteURL(sectorURI); err != nil {
+			return fmt.Errorf("sector_identifier_uri is not reachable: %w", err)
+		}
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}

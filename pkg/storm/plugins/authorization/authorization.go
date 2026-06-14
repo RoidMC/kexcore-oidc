@@ -709,7 +709,13 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 	case protocol.ResponseModeFragment:
 		u.Fragment = params.Encode()
 	case protocol.ResponseModeQuery:
-		u.RawQuery = params.Encode()
+		queries := u.Query()
+		for key, vals := range params {
+			for _, val := range vals {
+				queries.Add(key, val)
+			}
+		}
+		u.RawQuery = queries.Encode()
 	default:
 		// Default for code flow: query parameters.
 		queries := u.Query()

@@ -45,6 +45,7 @@ type Engine struct {
 	decoder           *protocol.Decoder // optional, for form parsing
 	enableImplicit    bool              // enable implicit/hybrid flows
 	allowPlainPKCE    bool              // allow plain code_challenge_method
+	allowPrivateIPs   bool              // allow private/link-local IPs in jwks_uri etc.
 }
 
 // DiscoveryConfig holds extra fields injected into the discovery document.
@@ -55,13 +56,16 @@ type DiscoveryConfig struct {
 // PluginContext provides dependencies to plugin factories.
 // It wraps Storage with additional engine-level services.
 type PluginContext struct {
-	Storage        Storage
-	Crypto         UniCrypto // may be nil if not configured
-	Decoder        *protocol.Decoder
-	EnableImplicit bool                     // enable implicit/hybrid flows (disabled by default per OAuth 2.1)
-	AllowPlainPKCE bool                     // allow plain code_challenge_method (disabled by default per OAuth 2.1)
-	IssuerFn       shared.IssuerFromRequest // issuer URL function
-	Tracer         trace.Tracer             // otel tracer for plugins
+	Storage         Storage
+	Crypto          UniCrypto // may be nil if not configured
+	Decoder         *protocol.Decoder
+	EnableImplicit  bool // enable implicit/hybrid flows (disabled by default per OAuth 2.1)
+	AllowPlainPKCE  bool // allow plain code_challenge_method (disabled by default per OAuth 2.1)
+	AllowPrivateIPs bool // WARNING: disables SSRF protection in DCR (jwks_uri, sector_identifier_uri).
+	// Only for testing with private-network conformance suites.
+	// NEVER enable in production — use network-level controls instead.
+	IssuerFn shared.IssuerFromRequest // issuer URL function
+	Tracer   trace.Tracer             // otel tracer for plugins
 }
 
 // PluginFactory creates a plugin from a PluginContext.
@@ -210,6 +214,18 @@ func WithPlainPKCE() EngineOption {
 	}
 }
 
+// WithAllowPrivateIPs disables SSRF protection in DCR (jwks_uri,
+// sector_identifier_uri). Use ONLY for testing with self-hosted conformance
+// suites on private networks. NEVER enable in production.
+//
+// For production deployments that need to allow specific private CIDRs,
+// handle this at the network layer (firewall / reverse proxy) instead.
+func WithAllowPrivateIPs() EngineOption {
+	return func(e *Engine) {
+		e.allowPrivateIPs = true
+	}
+}
+
 // New creates a new Engine with the given storage and issuer function.
 //
 // The issuerFn is used to inject the issuer into the request context
@@ -243,13 +259,14 @@ func New(storage Storage, issuerFn shared.IssuerFromRequest, opts ...EngineOptio
 func (e *Engine) autoRegisterPlugins() {
 	// Build plugin context with all dependencies
 	pctx := &PluginContext{
-		Storage:        e.storage,
-		Crypto:         e.crypto,
-		Decoder:        e.decoder,
-		EnableImplicit: e.enableImplicit,
-		AllowPlainPKCE: e.allowPlainPKCE,
-		IssuerFn:       e.issuerFn,
-		Tracer:         e.tracer,
+		Storage:         e.storage,
+		Crypto:          e.crypto,
+		Decoder:         e.decoder,
+		EnableImplicit:  e.enableImplicit,
+		AllowPlainPKCE:  e.allowPlainPKCE,
+		AllowPrivateIPs: e.allowPrivateIPs,
+		IssuerFn:        e.issuerFn,
+		Tracer:          e.tracer,
 	}
 	if pctx.Decoder == nil {
 		pctx.Decoder = protocol.NewDecoder()
