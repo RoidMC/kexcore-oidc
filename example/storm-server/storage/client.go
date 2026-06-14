@@ -6,6 +6,7 @@
 package storage
 
 import (
+	"net/url"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
@@ -118,9 +119,17 @@ func WebClient(id, secret string, redirectURIs ...string) *Client {
 
 func OIDFTestClient(id, secret string, redirectURIs ...string) *Client {
 	c := WebClient(id, secret, redirectURIs...)
-	c.postLogoutRedirectURIs = []string{
-		"https://www.certification.openid.net/test/a/kexcore-test/post_logout_redirect",
+	// Derive post_logout_redirect_uri from the first redirect URI (same host as conformance suite)
+	for _, uri := range redirectURIs {
+		if u, err := url.Parse(uri); err == nil {
+			c.postLogoutRedirectURIs = append(c.postLogoutRedirectURIs,
+				u.Scheme+"://"+u.Host+"/test/a/kexcore-test/post_logout_redirect")
+			break
+		}
 	}
+	// Always include the official certification URL
+	c.postLogoutRedirectURIs = append(c.postLogoutRedirectURIs,
+		"https://www.certification.openid.net/test/a/kexcore-test/post_logout_redirect")
 	return c
 }
 

@@ -11,6 +11,8 @@ import (
 )
 
 const (
+	EnableSelfSignSSL        = "true"
+	EnableSkipTLSCertVerify  = "true"
 	DefaultIssuerPort        = "9998"
 	DefaultSigningAlgorithms = "RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512,HS256,HS384,HS512,EdDSA"
 )
@@ -26,6 +28,8 @@ type Config struct {
 	Issuer            string
 	SigningAlgorithms []string
 	CryptoMethod      string
+	TLSCertFile       string
+	TLSKeyFile        string
 }
 
 func FromEnvVars(defaults *Config) *Config {
@@ -60,6 +64,17 @@ func FromEnvVars(defaults *Config) *Config {
 		cfg.CryptoMethod = value
 	} else if cfg.CryptoMethod == "" {
 		cfg.CryptoMethod = "aes"
+	}
+	if value, ok := os.LookupEnv("TLS_CERT_FILE"); ok {
+		cfg.TLSCertFile = value
+	}
+	if value, ok := os.LookupEnv("TLS_KEY_FILE"); ok {
+		cfg.TLSKeyFile = value
+	}
+	// Auto-enable self-signed TLS if EnableSelfSignSSL is set and no cert/key provided
+	if EnableSelfSignSSL == "true" && cfg.TLSCertFile == "" && cfg.TLSKeyFile == "" {
+		cfg.TLSCertFile = "example/storm-server/cert/web/server.crt"
+		cfg.TLSKeyFile = "example/storm-server/cert/web/server.key"
 	}
 	return cfg
 }

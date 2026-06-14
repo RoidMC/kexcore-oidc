@@ -111,6 +111,8 @@ type TenantConfig struct {
 	Discovery         storm.DiscoveryConfig
 	UserStore         storage.UserStore // optional, defaults to in-memory
 	Clients           []*storage.Client // clients to register
+	AllowPrivateIPs   bool              // WARNING: disables SSRF protection. Only for testing.
+	SkipTLSCertVerify bool              // WARNING: disables TLS cert verification. Only for testing.
 }
 
 // SetupTenant creates a complete OIDC tenant with all core plugins registered.
@@ -157,14 +159,21 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 	// Plugins auto-register via init() — just create the engine.
 	// The engine discovers all registered plugins, checks storage dependencies,
 	// and registers them in priority order.
-	engine := storm.New(stor, shared.StaticIssuer(cfg.Issuer),
+	engineOpts := []storm.EngineOption{
 		storm.WithLogger(cfg.Logger),
 		storm.WithMiddleware(shared.IssuerMiddleware(shared.StaticIssuer(cfg.Issuer))),
 		storm.WithDiscoveryConfig(discovery),
 		storm.WithCrypto(tokenCrypto),
 		storm.WithDecoder(decoder),
 		storm.WithImplicit(),
-	)
+	}
+	if cfg.AllowPrivateIPs {
+		engineOpts = append(engineOpts, storm.WithAllowPrivateIPs())
+	}
+	if cfg.SkipTLSCertVerify {
+		engineOpts = append(engineOpts, storm.WithSkipTLSCertVerify())
+	}
+	engine := storm.New(stor, shared.StaticIssuer(cfg.Issuer), engineOpts...)
 
 	engineHandler := engine.Build()
 

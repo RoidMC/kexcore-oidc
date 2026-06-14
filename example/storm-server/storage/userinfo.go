@@ -126,6 +126,9 @@ func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *protocol.Use
 		}
 	}
 
+	// Scope-based filtering per OIDC Core §5.4.
+	userinfo.FilterByScopes(token.Scopes)
+
 	// OIDC Core §5.5: claims parameter can request specific claims
 	// even without the corresponding scope.
 	if token.Claims != nil && token.Claims.UserInfo != nil {
@@ -180,22 +183,4 @@ func applyUserInfoClaims(userinfo *protocol.UserInfo, user *User, claims map[str
 			userinfo.UpdatedAt = protocol.Time(time.Now().Unix())
 		}
 	}
-}
-
-// TokenScopes returns the scopes associated with a token.
-// Implements storm.TokenScopeProvider for scope-based UserInfo claim filtering.
-func (s *Storage) TokenScopes(_ context.Context, tokenID string) ([]string, error) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	token, ok := s.tokens[tokenID]
-	if !ok {
-		for _, rt := range s.refreshTokens {
-			if rt.Token == tokenID {
-				return rt.Scopes, nil
-			}
-		}
-		return nil, fmt.Errorf("token not found: %s", tokenID)
-	}
-	return token.Scopes, nil
 }

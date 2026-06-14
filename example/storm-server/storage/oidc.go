@@ -7,6 +7,7 @@ package storage
 
 import (
 	"log/slog"
+	"slices"
 	"time"
 
 	"golang.org/x/text/language"
@@ -145,64 +146,121 @@ func authRequestToInternal(authReq *protocol.AuthRequest, userID string, user *U
 		CodeChallenge:      codeChallenge,
 		ACRValues:          authReq.ACRValues,
 		Claims:             authReq.Claims,
-		extraIDTokenClaims: buildIDTokenClaims(authReq.Claims, user),
+		extraIDTokenClaims: buildIDTokenClaims(authReq.Scopes, authReq.Claims, user, authReq.ResponseType),
 		sessionID:          uuid.NewString(),
 	}
 }
 
 // buildIDTokenClaims returns extra claims to merge into the ID token
-// based on the OIDC §5.5 claims.id_token request parameter.
-func buildIDTokenClaims(cr *protocol.ClaimsRequest, user *User) map[string]any {
-	if cr == nil || cr.IDToken == nil || user == nil {
+// based on the granted scopes (OIDC Core §5.4) and the claims.id_token
+// request parameter (OIDC Core §5.5).
+//
+// OIDC Core §5.4: For Authorization Endpoint responses (implicit/hybrid flows),
+// scope-based standard claims are included in the ID token. For Token Endpoint
+// responses (authorization_code flow), only claims explicitly requested via the
+// claims.id_token parameter are included.
+func buildIDTokenClaims(scopes []string, cr *protocol.ClaimsRequest, user *User, responseType protocol.ResponseType) map[string]any {
+	if user == nil {
 		return nil
 	}
 	claims := make(map[string]any)
-	for name := range cr.IDToken {
-		switch name {
-		case "auth_time", "acr", "amr", "azp":
-			// Handled directly by the token plugin; skip.
-		case "name":
+
+	// OIDC Core §5.4: The Claims requested by the profile, email, address,
+	// and phone scope values are returned from the UserInfo Endpoint, except
+	// for response_type=id_token where they are returned in the ID token
+	// (no access token is issued, so UserInfo cannot be called).
+	if responseType == protocol.ResponseTypeIDTokenOnly {
+		if slices.Contains(scopes, protocol.ScopeProfile) {
 			claims["name"] = user.FirstName + " " + user.LastName
-		case "given_name":
 			claims["given_name"] = user.FirstName
-		case "family_name":
 			claims["family_name"] = user.LastName
-		case "middle_name":
 			claims["middle_name"] = "N/A"
-		case "nickname":
 			claims["nickname"] = user.Username
-		case "preferred_username":
 			claims["preferred_username"] = user.Username
-		case "profile":
 			claims["profile"] = "https://example.com"
-		case "picture":
 			claims["picture"] = "https://example.com/avatar.png"
-		case "website":
 			claims["website"] = "https://example.com"
-		case "email":
-			claims["email"] = user.Email
-			claims["email_verified"] = user.EmailVerified
-		case "gender":
 			claims["gender"] = "other"
-		case "birthdate":
 			claims["birthdate"] = "2000-01-01"
-		case "zoneinfo":
 			claims["zoneinfo"] = "UTC"
-		case "locale":
 			claims["locale"] = user.PreferredLanguage
-		case "phone_number":
-			claims["phone_number"] = user.Phone
-			claims["phone_number_verified"] = user.PhoneVerified
-		case "address":
-			claims["address"] = map[string]string{"formatted": "N/A"}
-		case "updated_at":
 			claims["updated_at"] = time.Now().Unix()
 		}
+		if slices.Contains(scopes, protocol.ScopeEmail) {
+			claims["email"] = user.Email
+			claims["email_verified"] = user.EmailVerified
+		}
+		if slices.Contains(scopes, protocol.ScopePhone) {
+			claims["phone_number"] = user.Phone
+			claims["phone_number_verified"] = user.PhoneVerified
+		}
+		if slices.Contains(scopes, protocol.ScopeAddress) {
+			claims["address"] = map[string]string{"formatted": "N/A"}
+		}
 	}
+
+	// OIDC Core §5.5: claims.id_token applies to ALL flows.
+	if cr != nil && cr.IDToken != nil {
+		for name, req := range cr.IDToken {
+			switch name {
+			case "auth_time", "acr", "amr", "azp":
+				// Handled directly by the token plugin; skip.
+			case "name":
+				setClaimValue(claims, "name", req, user.FirstName+" "+user.LastName)
+			case "given_name":
+				setClaimValue(claims, "given_name", req, user.FirstName)
+			case "family_name":
+				setClaimValue(claims, "family_name", req, user.LastName)
+			case "middle_name":
+				setClaimValue(claims, "middle_name", req, "N/A")
+			case "nickname":
+				setClaimValue(claims, "nickname", req, user.Username)
+			case "preferred_username":
+				setClaimValue(claims, "preferred_username", req, user.Username)
+			case "profile":
+				setClaimValue(claims, "profile", req, "https://example.com")
+			case "picture":
+				setClaimValue(claims, "picture", req, "https://example.com/avatar.png")
+			case "website":
+				setClaimValue(claims, "website", req, "https://example.com")
+			case "email":
+				setClaimValue(claims, "email", req, user.Email)
+				claims["email_verified"] = user.EmailVerified
+			case "email_verified":
+				claims["email_verified"] = user.EmailVerified
+			case "gender":
+				setClaimValue(claims, "gender", req, "other")
+			case "birthdate":
+				setClaimValue(claims, "birthdate", req, "2000-01-01")
+			case "zoneinfo":
+				setClaimValue(claims, "zoneinfo", req, "UTC")
+			case "locale":
+				setClaimValue(claims, "locale", req, user.PreferredLanguage)
+			case "phone_number":
+				setClaimValue(claims, "phone_number", req, user.Phone)
+				claims["phone_number_verified"] = user.PhoneVerified
+			case "phone_number_verified":
+				claims["phone_number_verified"] = user.PhoneVerified
+			case "address":
+				setClaimValue(claims, "address", req, map[string]string{"formatted": "N/A"})
+			case "updated_at":
+				setClaimValue(claims, "updated_at", req, time.Now().Unix())
+			}
+		}
+	}
+
 	if len(claims) == 0 {
 		return nil
 	}
 	return claims
+}
+
+func setClaimValue(claims map[string]any, key string, req *protocol.ClaimRequest, defaultValue any) {
+	if req != nil && req.Value != nil {
+		claims[key] = req.Value
+	} else {
+		claims[key] = defaultValue
+	}
 }
 
 type OIDCCodeChallenge struct {

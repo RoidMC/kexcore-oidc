@@ -215,6 +215,10 @@ func (s *Storage) CheckUsernamePassword(username, password, id string) error {
 		if len(request.ACRValues) > 0 {
 			request.acr = request.ACRValues[0]
 		}
+		// Rebuild extra ID token claims now that the user is known.
+		// At CreateAuthRequest time the user was nil (not logged in yet),
+		// so these were empty.
+		request.extraIDTokenClaims = buildIDTokenClaims(request.Scopes, request.Claims, user, request.ResponseType)
 		// Store session with session ID as key (not subject)
 		s.sessions[request.sessionID] = &sessionInfo{
 			subject:  user.ID,

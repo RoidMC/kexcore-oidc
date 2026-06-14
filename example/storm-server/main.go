@@ -86,6 +86,8 @@ func main() {
 		Logger:            logger,
 		UserStore:         userStore,
 		Clients:           clients,
+		AllowPrivateIPs:   config.EnableSelfSignSSL == "true",
+		SkipTLSCertVerify: config.EnableSkipTLSCertVerify == "true",
 	})
 
 	server := &http.Server{
@@ -93,9 +95,16 @@ func main() {
 		Handler: handler,
 	}
 
-	logger.Info("storm-server listening", "addr", issuer)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Error("server terminated", "error", err)
-		os.Exit(1)
+	logger.Info("storm-server listening", "addr", issuer, "tls", cfg.TLSCertFile != "")
+	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+		if err := server.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile); err != nil && err != http.ErrServerClosed {
+			logger.Error("server terminated", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("server terminated", "error", err)
+			os.Exit(1)
+		}
 	}
 }

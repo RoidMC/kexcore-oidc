@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -60,6 +61,12 @@ func main() {
 	)
 	client := &http.Client{
 		Timeout: time.Minute,
+	}
+	// Allow self-signed certs when INSECURE_TLS=true (for local dev/testing)
+	if strings.EqualFold(os.Getenv("INSECURE_TLS"), "true") {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		}
 	}
 	// enable outgoing request logging
 	logctx.EnableHTTPClient(client,
