@@ -22,6 +22,7 @@ type clientSession struct {
 // sessionInfo holds the authentication time and session ID for an active session.
 type sessionInfo struct {
 	subject  string
+	clientID string // 新增：记录所属client，防止session串用
 	authTime time.Time
 	sid      string
 	expiry   time.Time
@@ -68,9 +69,19 @@ func (s *Storage) TerminateSession(_ context.Context, userID, clientID string) e
 
 // RecordClientSession records that a client has an active session for a subject.
 // Call this when issuing tokens to a client.
+// Only records sessions for clients that have a backchannel_logout_uri configured,
+// since only those clients need to be notified on logout.
 func (s *Storage) RecordClientSession(subject, clientID, sid string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+	// Only track sessions for clients with backchannel_logout_uri
+	client, ok := s.clients[clientID]
+	if !ok {
+		return
+	}
+	if client.BackChannelLogoutURI() == "" {
+		return
+	}
 	if s.clientSessions[subject] == nil {
 		s.clientSessions[subject] = make(map[string]*clientSession)
 	}
@@ -121,7 +132,7 @@ func (s *Storage) ClientsForSession(_ context.Context, sub, sid string) ([]storm
 // It checks whether the given subject has an active session and
 // returns the original authentication time and session ID.
 // The session is identified by the "session_id" cookie in the request.
-func (s *Storage) GetSession(_ context.Context, r *http.Request, _ string) (string, time.Time, string, bool) {
+func (s *Storage) GetSession(_ context.Context, r *http.Request, clientID string) (string, time.Time, string, bool) {
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
 		return "", time.Time{}, "", false
@@ -132,6 +143,11 @@ func (s *Storage) GetSession(_ context.Context, r *http.Request, _ string) (stri
 
 	info, ok := s.sessions[cookie.Value]
 	if !ok {
+		return "", time.Time{}, "", false
+	}
+
+	// 检查client_id是否匹配，防止session串用
+	if clientID != "" && info.clientID != clientID {
 		return "", time.Time{}, "", false
 	}
 
@@ -158,16 +174,36 @@ func (s *Storage) CreateSession(subject string, authTime time.Time, sid string) 
 	}
 }
 
+// CreateSessionWithClient records a subject as having an active session for a specific client.
+// The session is stored with the session ID as the key.
+// Default session expiry is 24 hours.
+func (s *Storage) CreateSessionWithClient(subject, clientID string, authTime time.Time, sid string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.sessions[sid] = &sessionInfo{
+		subject:  subject,
+		clientID: clientID,
+		authTime: authTime,
+		sid:      sid,
+		expiry:   time.Now().Add(24 * time.Hour),
+	}
+}
+
 // GetSessionBySubject returns the most recent active session for a given subject.
 // Used by prompt=none when the caller provides id_token_hint or login_hint
 // instead of a session cookie.
-func (s *Storage) GetSessionBySubject(subject string) (authTime time.Time, sid string, ok bool) {
+// If clientID is provided, only returns sessions for that client.
+func (s *Storage) GetSessionBySubject(subject string, clientID ...string) (authTime time.Time, sid string, ok bool) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	var found *sessionInfo
 	for _, info := range s.sessions {
 		if info.subject != subject {
+			continue
+		}
+		// 如果指定了clientID，只返回该client的session
+		if len(clientID) > 0 && clientID[0] != "" && info.clientID != clientID[0] {
 			continue
 		}
 		if !info.expiry.IsZero() && time.Now().After(info.expiry) {
@@ -220,8 +256,10 @@ func (s *Storage) CheckUsernamePassword(username, password, id string) error {
 		// so these were empty.
 		request.extraIDTokenClaims = buildIDTokenClaims(request.Scopes, request.Claims, user, request.ResponseType)
 		// Store session with session ID as key (not subject)
+		// 记录clientID，防止不同client的session串用
 		s.sessions[request.sessionID] = &sessionInfo{
 			subject:  user.ID,
+			clientID: request.ApplicationID,
 			authTime: request.authTime,
 			sid:      request.sessionID,
 			expiry:   time.Now().Add(24 * time.Hour),
