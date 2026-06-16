@@ -944,7 +944,10 @@ func TestCreateTokenResponse_RequireDPoP_Accepted(t *testing.T) {
 		"redirect_uri": {"https://example.com/callback"},
 	})
 	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
-	// Inject DPoP proof into context
+	// Inject DPoP proof into context and set DPoP header to simulate the
+	// full request flow (checkSenderConstraining checks the header, while
+	// createTokenResponseFromTokenRequest checks the context).
+	r.Header.Set("DPoP", "fake-dpop-proof")
 	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{thumbprint: "abc123"})
 	r = r.WithContext(ctx)
 	w := httptest.NewRecorder()
@@ -1047,7 +1050,10 @@ func TestCreateTokenResponse_RequireDPoPAndMtls_EitherAccepted(t *testing.T) {
 		"redirect_uri": {"https://example.com/callback"},
 	})
 	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
-	// Only DPoP, no mTLS — requireMtls should reject
+	// Only DPoP, no mTLS — requireMtls should reject.
+	// Set DPoP header so the DPoP check in checkSenderConstraining passes,
+	// letting the mTLS check be the one that rejects.
+	r.Header.Set("DPoP", "fake-dpop-proof")
 	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{thumbprint: "abc"})
 	r = r.WithContext(ctx)
 	w := httptest.NewRecorder()
