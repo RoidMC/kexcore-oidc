@@ -885,7 +885,8 @@ func newTestPluginWithSenderConstraint(t *testing.T, cs *fakeClientStore, as *fa
 
 type fakeDPoPProof struct{ thumbprint string }
 
-func (f *fakeDPoPProof) JWKThumbprint() string { return f.thumbprint }
+func (f *fakeDPoPProof) JWKThumbprint() string   { return f.thumbprint }
+func (f *fakeDPoPProof) AccessTokenHash() string { return "" }
 
 func TestCreateTokenResponse_RequireDPoP_Rejected(t *testing.T) {
 	cs := &fakeClientStore{

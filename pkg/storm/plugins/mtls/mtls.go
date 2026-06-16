@@ -39,6 +39,12 @@ func (p *Plugin) Name() string { return "mtls" }
 // mTLS enforcement is handled by middleware, not route registration.
 func (p *Plugin) Register(r chi.Router) {}
 
+// Middleware implements storm.MiddlewareProvider. It extracts the client
+// TLS certificate from the connection and stores it in the request context.
+func (p *Plugin) Middleware(next http.Handler) http.Handler {
+	return ClientCertMiddleware(next)
+}
+
 // Contribute returns discovery fields for mTLS.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
 	cfg.MTLSEndpointAliases = map[string]string{

@@ -13,6 +13,8 @@ type Plugin struct {
 	clientStore storm.ClientStore
 	decoder     *protocol.Decoder
 	lifetime    time.Duration
+	requireDPoP bool
+	requireMtls bool
 }
 
 // Config holds the dependencies for the PAR plugin.
@@ -22,4 +24,8 @@ type Config struct {
 	Decoder     *protocol.Decoder
 	// Lifetime is the request_uri expiration duration (default: 5m).
 	Lifetime time.Duration
+	// RequireDPoP rejects requests without a DPoP proof when true (FAPI 2.0).
+	RequireDPoP bool
+	// RequireMtls rejects requests without an mTLS client certificate when true (FAPI 2.0).
+	RequireMtls bool
 }

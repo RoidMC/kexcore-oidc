@@ -85,6 +85,10 @@ type Storage struct {
 	tokenTTL   time.Duration
 	refreshTTL time.Duration
 	issuer     string
+
+	// dpopJKTs stores DPoP JWK thumbprints for authorization code binding (RFC 9449 §7.1).
+	// Key: auth request ID, Value: JWK thumbprint.
+	dpopJKTs map[string]string
 }
 
 type signingKey struct {
@@ -179,10 +183,15 @@ var (
 
 func NewStorage(userStore UserStore, algorithms []string) *Storage {
 	signingKeys := make([]signingKey, 0, len(algorithms))
-	var sharedRSA *rsa.PrivateKey // RS256/RS384/RS512 share one RSA key
+	var sharedRSA *rsa.PrivateKey // RS256/RS384/RS512/PS256/PS384/PS512 share one RSA key
 	for _, alg := range algorithms {
 		switch alg {
-		case "RS256", "RS384", "RS512":
+		case "RS256", "RS384", "RS512", "PS256", "PS384", "PS512":
+			// RSA-PSS (PS*) and RSA-PKCS#1 v1.5 (RS*) use the same RSA key
+			// material; only the signature padding differs. We share one
+			// RSA private key across all six algorithms but emit a separate
+			// signingKey entry per algorithm so that SigningKeyByAlg can
+			// return an exact match (and JWKS exposes one key per alg).
 			if sharedRSA == nil {
 				key, err := rsa.GenerateKey(rand.Reader, 2048)
 				if err != nil {
@@ -298,6 +307,7 @@ func NewStorage(userStore UserStore, algorithms []string) *Storage {
 		PARStore:           NewPARStore(),
 		userStore:          userStore,
 		signingKeys:        signingKeys,
+		dpopJKTs:           make(map[string]string),
 		tokenTTL:           1 * time.Hour,
 		refreshTTL:         24 * time.Hour,
 	}
@@ -380,27 +390,9 @@ func (s *Storage) SignatureAlgorithms(_ context.Context) ([]string, error) {
 			algs = append(algs, k.algorithm)
 			seen[k.algorithm] = true
 		}
-		if ps, ok := rsToPS(k.algorithm); ok && !seen[ps] {
-			algs = append(algs, ps)
-			seen[ps] = true
-		}
 	}
 	slices.Sort(algs)
 	return algs, nil
-}
-
-// rsToPS maps RS algorithms to their PS equivalents.
-func rsToPS(alg string) (string, bool) {
-	switch alg {
-	case "RS256":
-		return "PS256", true
-	case "RS384":
-		return "PS384", true
-	case "RS512":
-		return "PS512", true
-	default:
-		return "", false
-	}
 }
 
 func (s *Storage) SigningKey(_ context.Context) (storm.SigningKey, error) {
@@ -411,6 +403,23 @@ func (s *Storage) SigningKey(_ context.Context) (storm.SigningKey, error) {
 		return nil, fmt.Errorf("no signing keys available")
 	}
 	return &s.signingKeys[0], nil
+}
+
+// SigningKeyByAlg returns a signing key matching the requested algorithm.
+// Returns an error if no exact match is found — never silently falls back to
+// the default signing key. Silent fallback masks misconfiguration (e.g. a
+// client requesting PS256 silently getting RS256), which breaks FAPI/conformance
+// tests and is the opposite of what Keycloak and other OPs do.
+func (s *Storage) SigningKeyByAlg(_ context.Context, alg string) (storm.SigningKey, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	for i := range s.signingKeys {
+		if s.signingKeys[i].algorithm == alg {
+			return &s.signingKeys[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no signing key available for algorithm %q", alg)
 }
 
 // =================================================================

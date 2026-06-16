@@ -17,6 +17,29 @@ import (
 	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
+// --- JARM signer context helpers ---
+
+type jarmSignerContextKey struct{}
+type jarmClientIDContextKey struct{}
+
+func contextWithJARMSigner(ctx context.Context, signer JARMSigner) context.Context {
+	return context.WithValue(ctx, jarmSignerContextKey{}, signer)
+}
+
+func jarmSignerFromContext(ctx context.Context) (JARMSigner, bool) {
+	s, ok := ctx.Value(jarmSignerContextKey{}).(JARMSigner)
+	return s, ok
+}
+
+func contextWithJARMClientID(ctx context.Context, clientID string) context.Context {
+	return context.WithValue(ctx, jarmClientIDContextKey{}, clientID)
+}
+
+func jarmClientIDFromContext(ctx context.Context) string {
+	s, _ := ctx.Value(jarmClientIDContextKey{}).(string)
+	return s
+}
+
 // --- Client interface adapters ---
 
 // authRequestClientAdapter adapts storm.Client to shared.AuthRequestClient.
@@ -194,6 +217,34 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, redirectURI, state s
 		params.Set("iss", iss)
 	}
 
+	// JARM error response: wrap error params in a signed JWT.
+	if isJARMResponseMode(responseMode) {
+		jarmSigner, _ := jarmSignerFromContext(r.Context())
+		if jarmSigner != nil {
+			// Resolve "jwt" shorthand to concrete JARM mode.
+			effectiveRM := responseMode
+			if responseMode == protocol.ResponseModeJWT {
+				effectiveRM = protocol.ResponseModeQueryJWT
+			}
+			// Extract clientID from the auth request (stored in context or passed via redirect).
+			// For error responses, we don't have a specific clientID for audience,
+			// so we use the issuer as audience.
+			errorParams := make(map[string]string)
+			for k, vals := range params {
+				if len(vals) > 0 {
+					errorParams[k] = vals[0]
+				}
+			}
+			clientID := jarmClientIDFromContext(r.Context())
+			jwt, signErr := jarmSigner.SignAuthResponse(r.Context(), errorParams, clientID)
+			if signErr == nil {
+				writeJARMResponse(w, r, redirectURI, jwt, effectiveRM)
+				return
+			}
+		}
+		// Fallback to plain response if JARM signing fails.
+	}
+
 	switch responseMode {
 	case protocol.ResponseModeFragment:
 		// Build fragment URL manually: strip any existing fragment from the
@@ -298,7 +349,8 @@ func resolveResponseMode(explicit protocol.ResponseMode, rt protocol.ResponseTyp
 func isJARMResponseMode(rm protocol.ResponseMode) bool {
 	return rm == protocol.ResponseModeQueryJWT ||
 		rm == protocol.ResponseModeFragmentJWT ||
-		rm == protocol.ResponseModeFormPostJWT
+		rm == protocol.ResponseModeFormPostJWT ||
+		rm == protocol.ResponseModeJWT
 }
 
 // writeJARMResponse writes a JARM (JWT Secured Authorization Response Mode) response.
@@ -310,7 +362,7 @@ func writeJARMResponse(w http.ResponseWriter, r *http.Request, redirectURI, jwt 
 		return
 	}
 
-	params := url.Values{}
+	params := u.Query() // preserve existing query params from redirect_uri
 	params.Set("response", jwt)
 
 	switch responseMode {
@@ -347,55 +399,12 @@ func writeJARMResponse(w http.ResponseWriter, r *http.Request, redirectURI, jwt 
 	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
-// --- request object helpers ---
-
-// copyRequestObjectToAuthRequest overwrites present values from the Request Object
-// into the auth request and clears the RequestParam.
-// Per OIDC Core §6.1, Request Object parameters override the top-level parameters.
-func copyRequestObjectToAuthRequest(authReq *protocol.AuthRequest, requestObject *protocol.RequestObject) {
-	if len(requestObject.Scopes) > 0 {
-		authReq.Scopes = requestObject.Scopes
+// truncateStr returns the first n characters of s, with "..." appended if truncated.
+func truncateStr(s string, n int) string {
+	if len(s) <= n {
+		return s
 	}
-	if requestObject.RedirectURI != "" {
-		authReq.RedirectURI = requestObject.RedirectURI
-	}
-	if requestObject.State != "" {
-		authReq.State = requestObject.State
-	}
-	if requestObject.ResponseMode != "" {
-		authReq.ResponseMode = requestObject.ResponseMode
-	}
-	if requestObject.Nonce != "" {
-		authReq.Nonce = requestObject.Nonce
-	}
-	if requestObject.Display != "" {
-		authReq.Display = requestObject.Display
-	}
-	if len(requestObject.Prompt) > 0 {
-		authReq.Prompt = requestObject.Prompt
-	}
-	if requestObject.MaxAge != nil {
-		authReq.MaxAge = requestObject.MaxAge
-	}
-	if len(requestObject.UILocales) > 0 {
-		authReq.UILocales = requestObject.UILocales
-	}
-	if requestObject.IDTokenHint != "" {
-		authReq.IDTokenHint = requestObject.IDTokenHint
-	}
-	if requestObject.LoginHint != "" {
-		authReq.LoginHint = requestObject.LoginHint
-	}
-	if len(requestObject.ACRValues) > 0 {
-		authReq.ACRValues = requestObject.ACRValues
-	}
-	if requestObject.CodeChallenge != "" {
-		authReq.CodeChallenge = requestObject.CodeChallenge
-	}
-	if requestObject.CodeChallengeMethod != "" {
-		authReq.CodeChallengeMethod = requestObject.CodeChallengeMethod
-	}
-	authReq.RequestParam = ""
+	return s[:n] + "..."
 }
 
 // --- algorithm helpers ---

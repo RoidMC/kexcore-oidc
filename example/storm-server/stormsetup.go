@@ -30,17 +30,20 @@ import (
 
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/authorization"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/backchannel"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/ciba"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/device"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/discovery"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/dpop"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/endsession"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/introspection"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/jarm"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/keys"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/mtls"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/par"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/revocation"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/token"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/userinfo"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/webfinger"
 )
 
 // defaultGrantTypes returns the grant types supported by the default plugin set.
@@ -113,6 +116,8 @@ type TenantConfig struct {
 	Clients           []*storage.Client // clients to register
 	AllowPrivateIPs   bool              // WARNING: disables SSRF protection. Only for testing.
 	SkipTLSCertVerify bool              // WARNING: disables TLS cert verification. Only for testing.
+	RequireDPoP       bool              // FAPI 2.0: require DPoP proof for all token requests
+	RequireMtls       bool              // FAPI 2.0: require mTLS client certificate for all token requests
 }
 
 // SetupTenant creates a complete OIDC tenant with all core plugins registered.
@@ -134,7 +139,11 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 		cfg.CryptoMethod = "aes"
 	}
 	if len(cfg.SigningAlgorithms) == 0 {
-		cfg.SigningAlgorithms = []string{"RS256", "EdDSA"}
+		// Default set covers all algorithms used by the bundled clients:
+		// - RS256: OIDC Core default id_token_signed_response_alg
+		// - PS256: FAPIClient default (FAPI 1.0/2.0 baseline)
+		// - ES256/EdDSA: modern alternatives advertised in discovery
+		cfg.SigningAlgorithms = []string{"RS256", "PS256", "ES256", "EdDSA"}
 	}
 	discovery := cfg.Discovery
 	if discovery.ExtraFields == nil {
@@ -172,6 +181,12 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 	}
 	if cfg.SkipTLSCertVerify {
 		engineOpts = append(engineOpts, storm.WithSkipTLSCertVerify())
+	}
+	if cfg.RequireDPoP {
+		engineOpts = append(engineOpts, storm.WithRequireDPoP())
+	}
+	if cfg.RequireMtls {
+		engineOpts = append(engineOpts, storm.WithRequireMtls())
 	}
 	engine := storm.New(stor, shared.StaticIssuer(cfg.Issuer), engineOpts...)
 
@@ -221,6 +236,16 @@ func loginHandler(stor *storage.Storage, issuer string) http.Handler {
 			SameSite: http.SameSiteLaxMode,
 		})
 		http.Redirect(w, r, strings.TrimRight(issuer, "/")+"/authorize/callback?id="+id, http.StatusFound)
+	})
+	r.Post("/cancel", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "cannot parse form", http.StatusBadRequest)
+			return
+		}
+		id := r.FormValue("id")
+		// Redirect to authorization callback with error.
+		// The authorization plugin handles JARM-aware error responses.
+		http.Redirect(w, r, strings.TrimRight(issuer, "/")+"/authorize/callback?id="+id+"&error=access_denied&error_description=user+denied+the+authorization+request", http.StatusFound)
 	})
 	return r
 }

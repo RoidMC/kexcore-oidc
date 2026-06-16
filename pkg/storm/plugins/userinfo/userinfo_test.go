@@ -14,8 +14,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -700,9 +702,19 @@ func TestUserInfo_PluginLifecycle(t *testing.T) {
 // --- cnf binding verification tests ---
 
 // fakeDPoPProof implements shared.DPoPProof for testing.
-type fakeDPoPProof struct{ jkt string }
+type fakeDPoPProof struct {
+	jkt string
+	ath string
+}
 
-func (f *fakeDPoPProof) JWKThumbprint() string { return f.jkt }
+func (f *fakeDPoPProof) JWKThumbprint() string   { return f.jkt }
+func (f *fakeDPoPProof) AccessTokenHash() string { return f.ath }
+
+// computeATH computes base64url(SHA-256(token)) for test assertions.
+func computeATH(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return base64.RawURLEncoding.EncodeToString(h[:])
+}
 
 // TestUserInfo_DPoPBinding_Success validates that a DPoP-bound token is accepted
 // when the request contains a matching DPoP proof.
@@ -732,8 +744,8 @@ func TestUserInfo_DPoPBinding_Success(t *testing.T) {
 
 	r := newRequest("GET", "/userinfo")
 	r.Header.Set("Authorization", "Bearer dpop-token")
-	// Inject matching DPoP proof
-	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{jkt: "abc123"})
+	// Inject matching DPoP proof with valid ath
+	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{jkt: "abc123", ath: computeATH("dpop-token")})
 	r = r.WithContext(ctx)
 
 	w := serveRequest(plugin, r)
@@ -810,8 +822,8 @@ func TestUserInfo_DPoPBinding_MismatchedJKT(t *testing.T) {
 
 	r := newRequest("GET", "/userinfo")
 	r.Header.Set("Authorization", "Bearer dpop-token")
-	// Wrong jkt
-	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{jkt: "wrong-jkt"})
+	// Wrong jkt but valid ath
+	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{jkt: "wrong-jkt", ath: computeATH("dpop-token")})
 	r = r.WithContext(ctx)
 
 	w := serveRequest(plugin, r)

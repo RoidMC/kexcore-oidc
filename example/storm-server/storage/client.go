@@ -46,6 +46,11 @@ type Client struct {
 	clientJWKS                     []jwk.Key   // client's public keys for JWT bearer grant verification
 	jwksURI                        string      // client's jwks_uri for fetching fresh keys
 	userInfoSignedResponseAlg      string      // userinfo_signed_response_alg from DCR
+	idTokenSignedResponseAlg       string      // id_token_signed_response_alg from DCR
+	requestObjectSigningAlg        string      // request_object_signing_alg (e.g. "PS256" for FAPI 2.0 signed_non_repudiation)
+	fapiProfile                    bool        // FAPI 2.0 profile restrictions
+	requireDPoP                    bool        // require DPoP proof at token endpoint
+	requireMtls                    bool        // require mTLS client auth at token endpoint
 }
 
 func (c *Client) GetID() string                          { return c.id }
@@ -58,6 +63,7 @@ func (c *Client) GrantTypes() []protocol.GrantType       { return c.grantTypes }
 func (c *Client) DevMode() bool                          { return c.devMode }
 func (c *Client) IDTokenLifetime() time.Duration         { return 1 * time.Hour }
 func (c *Client) ClockSkew() time.Duration               { return c.clockSkew }
+func (c *Client) FAPIProfile() bool                      { return c.fapiProfile }
 func (c *Client) IDTokenUserinfoClaimsAssertion() bool   { return c.idTokenUserinfoClaimsAssertion }
 func (c *Client) IsScopeAllowed(scope string) bool       { return scope == CustomScope }
 func (c *Client) IDTokenEncryptionAlg() string           { return c.idTokenEncryptionAlg }
@@ -69,6 +75,35 @@ func (c *Client) TOSURI() string                         { return c.tosURI }
 func (c *Client) ClientEncryptionKey() interface{}       { return c.clientEncryptionKey }
 func (c *Client) ClientJWKS() []jwk.Key                  { return c.clientJWKS }
 func (c *Client) ClientJWKSURI() string                  { return c.jwksURI }
+func (c *Client) RequestObjectSigningAlg() string        { return c.requestObjectSigningAlg }
+func (c *Client) RequireDPoP() bool                      { return c.requireDPoP }
+func (c *Client) RequireMtls() bool                      { return c.requireMtls }
+func (c *Client) IDTokenSignedResponseAlg() string       { return c.idTokenSignedResponseAlg }
+
+// WithRequestObjectSigningAlg sets the request_object_signing_alg for this client
+// and returns the client for chaining. Use "PS256" for FAPI 2.0 signed_non_repudiation.
+func (c *Client) WithRequestObjectSigningAlg(alg string) *Client {
+	c.requestObjectSigningAlg = alg
+	return c
+}
+
+// WithRequireDPoP enables DPoP sender-constraining for this client.
+func (c *Client) WithRequireDPoP() *Client {
+	c.requireDPoP = true
+	return c
+}
+
+// WithRequireMtls enables mTLS sender-constraining for this client.
+func (c *Client) WithRequireMtls() *Client {
+	c.requireMtls = true
+	return c
+}
+
+// WithIDTokenSignedResponseAlg sets the id_token_signed_response_alg for this client.
+func (c *Client) WithIDTokenSignedResponseAlg(alg string) *Client {
+	c.idTokenSignedResponseAlg = alg
+	return c
+}
 
 func (s *Storage) RegisterClients(registerClients ...*Client) {
 	s.lock.Lock()
@@ -197,5 +232,56 @@ func OIDFEncryptedTestClient(id, secret string, alg, enc string, key interface{}
 	c.idTokenEncryptionAlg = alg
 	c.idTokenEncryptionEnc = enc
 	c.clientEncryptionKey = key
+	return c
+}
+
+// FAPIClient creates a FAPI-compliant client using private_key_jwt authentication.
+// The client supports authorization_code and client_credentials grants,
+// and uses the provided JWK set for JWT bearer verification.
+func FAPIClient(id string, clientJWKS []jwk.Key, redirectURIs ...string) *Client {
+	if len(redirectURIs) == 0 {
+		redirectURIs = []string{"https://192.168.2.167:8443/test/a/kexcore-test/callback"}
+	}
+	c := &Client{
+		id:           id,
+		redirectURIs: redirectURIs,
+		appType:      0,
+		authMethod:   protocol.AuthMethodPrivateKeyJWT,
+		loginURLFn:   defaultLoginURL,
+		responseTypes: []protocol.ResponseType{
+			protocol.ResponseTypeCode,
+			protocol.ResponseTypeIDToken,
+			protocol.ResponseTypeIDTokenOnly,
+			protocol.ResponseTypeCodeIDToken,
+			protocol.ResponseTypeCodeToken,
+			protocol.ResponseTypeCodeIDTokenToken,
+		},
+		grantTypes: []protocol.GrantType{
+			protocol.GrantTypeCode,
+			protocol.GrantTypeRefreshToken,
+			protocol.GrantTypeClientCredentials,
+		},
+		clientJWKS:               clientJWKS,
+		fapiProfile:              true,
+		idTokenSignedResponseAlg: "PS256",
+	}
+	// Derive post_logout_redirect_uri from the first redirect URI
+	for _, uri := range redirectURIs {
+		if u, err := url.Parse(uri); err == nil {
+			c.postLogoutRedirectURIs = append(c.postLogoutRedirectURIs,
+				u.Scheme+"://"+u.Host+"/test/a/kexcore-test/post_logout_redirect")
+			break
+		}
+	}
+	c.postLogoutRedirectURIs = append(c.postLogoutRedirectURIs,
+		"https://www.certification.openid.net/test/a/kexcore-test/post_logout_redirect")
+	return c
+}
+
+// FAPIClientWithJWKSURI creates a FAPI-compliant client using private_key_jwt
+// authentication with a jwks_uri for key discovery.
+func FAPIClientWithJWKSURI(id, jwksURI string, redirectURIs ...string) *Client {
+	c := FAPIClient(id, nil, redirectURIs...)
+	c.jwksURI = jwksURI
 	return c
 }

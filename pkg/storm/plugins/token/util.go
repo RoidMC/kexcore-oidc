@@ -96,7 +96,10 @@ func validateRefreshScopes(requestedScopes []string, refreshReq storm.RefreshTok
 
 // tokenError writes a token error response.
 // Per RFC 6749 §5.2, token errors use HTTP 400 with JSON body.
+// RFC 6749 §5.1 requires Cache-Control: no-store on all token endpoint responses.
 func tokenError(w http.ResponseWriter, r *http.Request, err error) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	shared.WriteError(w, r, err, nil)
 }
 

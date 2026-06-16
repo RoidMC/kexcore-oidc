@@ -6,11 +6,17 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"os"
 
+	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/roidmc/kexcore-oidc/example/storm-server/config"
 	"github.com/roidmc/kexcore-oidc/example/storm-server/storage"
 
@@ -41,26 +47,31 @@ func main() {
 	if issuer == "" {
 		issuer = fmt.Sprintf("http://localhost:%s/", cfg.Port)
 	}
-	
+
+	// FAPI test key pairs for private_key_jwt (fixed, must match config.yml jwks)
+	// Generated once, do NOT regenerate unless updating both main.go and config.yml
+	fapiJWK1 := mustParseFAPIKey("-VA0fzoJpkWmuwRWilmc8xSrlrPVmAzlpMpQMiZetVc", "sWwU5hohNPTkEuyCeVYWySYuU9a-dPkBeoAApG8UTpk", "fapi-test-key-1")
+	fapiJWK2 := mustParseFAPIKey("0YCniv9r1v7a95GbMZzxtz3w09clH7QhhKi65A2KvLw", "rG_x865khWLke14qOmogZlnSvJzvQ5yvxXdT0ySqjtw", "fapi-test-key-2")
+
 	clients := []*storage.Client{
 		storage.NativeClient("native", cfg.RedirectURI...),
 		storage.WebClient("web", "secret", cfg.RedirectURI...),
 		storage.WebClient("api", "secret", cfg.RedirectURI...),
 		// Clients for rp-initiated-logout (no backchannel_logout_uri)
 		storage.OIDFTestClientSecretPost("Test Client 1", "test-secret-1",
-			"https://www.certification.openid.net/test/a/kexcore-test/callback",
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
 		),
 		storage.OIDFTestClientSecretPost("Test Client 2", "test-secret-2",
-			"https://www.certification.openid.net/test/a/kexcore-test/callback",
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
 		),
 		// Clients for backchannel-rp-initiated-logout (with backchannel_logout_uri)
 		storage.OIDFBackChannelLogoutTestClient("BCL Client 1", "bcl-secret-1",
-			"https://www.certification.openid.net/test/a/kexcore-test/backchannel_logout",
-			"https://www.certification.openid.net/test/a/kexcore-test/callback",
+			"https://192.168.2.167:8443/test/a/kexcore-test/backchannel_logout",
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
 		),
 		storage.OIDFBackChannelLogoutTestClient("BCL Client 2", "bcl-secret-2",
-			"https://www.certification.openid.net/test/a/kexcore-test/backchannel_logout",
-			"https://www.certification.openid.net/test/a/kexcore-test/callback",
+			"https://192.168.2.167:8443/test/a/kexcore-test/backchannel_logout",
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
 		),
 		storage.EncryptedWebClient("web-dir-sm4", "secret", "dir", "A256GCM",
 			cfg.RedirectURI...,
@@ -73,6 +84,14 @@ func main() {
 		),
 		storage.BackChannelLogoutWebClient("web-bcl", "secret", "http://localhost:9999/backchannel_logout",
 			cfg.RedirectURI...,
+		),
+		// FAPI test clients (private_key_jwt authentication)
+		// request_object_signing_alg is set via DCR when the conformance suite requires it.
+		storage.FAPIClient("FAPI Client 1", []jwk.Key{fapiJWK1},
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+		),
+		storage.FAPIClient("FAPI Client 2", []jwk.Key{fapiJWK2},
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
 		),
 	}
 
@@ -97,11 +116,24 @@ func main() {
 		Clients:           clients,
 		AllowPrivateIPs:   config.EnableSelfSignSSL == "true",
 		SkipTLSCertVerify: config.EnableSkipTLSCertVerify == "true",
+		// DPoP/mTLS sender-constraining is configured per-client via DCR
+		// (require_dpop / require_mtls fields) or static client builder methods.
 	})
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
 		Handler: handler,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+			},
+		},
 	}
 
 	logger.Info("storm-server listening", "addr", issuer, "tls", cfg.TLSCertFile != "")
@@ -116,4 +148,22 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+// mustParseFAPIKey returns a fixed JWK for FAPI private_key_jwt testing.
+// The key must match the fapi_client.jwks in testsuite/config.yml.
+func mustParseFAPIKey(xStr, yStr, kid string) jwk.Key {
+	x, _ := base64.RawURLEncoding.DecodeString(xStr)
+	y, _ := base64.RawURLEncoding.DecodeString(yStr)
+
+	pub := &ecdsa.PublicKey{
+		Curve: elliptic.P256(),
+		X:     new(big.Int).SetBytes(x),
+		Y:     new(big.Int).SetBytes(y),
+	}
+	key, _ := jwk.Import[jwk.Key](pub)
+	key.Set(jwk.KeyIDKey, kid)
+	key.Set(jwk.AlgorithmKey, "ES256")
+	key.Set(jwk.KeyUsageKey, "sig")
+	return key
 }

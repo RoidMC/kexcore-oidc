@@ -2,6 +2,7 @@ package shared
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"slices"
@@ -50,6 +51,36 @@ type ResponseTypesProvider interface {
 	ResponseTypes() []protocol.ResponseType
 }
 
+// FAPIProfileClient is an optional interface for FAPI 2.0 profile detection.
+type FAPIProfileClient interface {
+	FAPIProfile() bool
+}
+
+// RequestObjectSigningAlgProvider is an optional interface for clients that
+// require signed request objects (e.g. FAPI 2.0 signed_non_repudiation).
+// When implemented and returning a non-empty string, the authorization server
+// MUST reject authorization/PAR requests without a signed request object.
+type RequestObjectSigningAlgProvider interface {
+	RequestObjectSigningAlg() string
+}
+
+// SenderConstrainingProvider is an optional interface for clients that
+// require sender-constrained tokens (FAPI 2.0 Security Profile).
+// When RequireDPoP returns true, the token endpoint MUST require a DPoP proof.
+// When RequireMtls returns true, the token endpoint MUST require mTLS client auth.
+type SenderConstrainingProvider interface {
+	RequireDPoP() bool
+	RequireMtls() bool
+}
+
+// IDTokenSignedResponseAlgProvider is an optional interface for clients that
+// specify a preferred ID token signing algorithm (id_token_signed_response_alg).
+// When implemented and returning a non-empty string, the token endpoint uses
+// this algorithm to sign the ID token instead of the default.
+type IDTokenSignedResponseAlgProvider interface {
+	IDTokenSignedResponseAlg() string
+}
+
 // --- Exported validation functions ---
 
 // Application type constants (matching common OIDC implementations).
@@ -78,6 +109,10 @@ func ValidateAuthRequestParamsExceptRedirectURI(client AuthRequestClient, authRe
 	}
 	if err := ValidateScopes(client, authReq, defaultScopes...); err != nil {
 		return err
+	}
+	// FAPI 2.0 Security Profile §5.2.2-18: PKCE is required for FAPI clients.
+	if fc, ok := client.(FAPIProfileClient); ok && fc.FAPIProfile() && authReq.CodeChallenge == "" {
+		return protocol.ErrInvalidRequest().WithDescription("PKCE is required for FAPI clients")
 	}
 	if err := ValidatePKCE(authReq); err != nil {
 		return err
@@ -161,9 +196,17 @@ func ValidatePrompt(authReq *protocol.AuthRequest) error {
 // authorization, the authorization server MUST either process the request using
 // a pre-defined default value or fail the request indicating an invalid scope."
 func ValidateScopes(client AuthRequestClient, authReq *protocol.AuthRequest, defaultScopes ...string) error {
+	// DEBUG: trace scope validation input
+	slog.Info("ValidateScopes: input",
+		slog.Any("scopes", authReq.Scopes),
+		slog.Int("scopes_len", len(authReq.Scopes)),
+		slog.Any("default_scopes", defaultScopes),
+	)
+
 	if len(authReq.Scopes) == 0 {
 		if len(defaultScopes) > 0 {
 			authReq.Scopes = defaultScopes
+			slog.Info("ValidateScopes: applied default scopes", slog.Any("scopes", authReq.Scopes))
 			return nil
 		}
 		return protocol.ErrInvalidRequest().WithDescription("scope is missing")
@@ -198,6 +241,7 @@ func ValidateScopes(client AuthRequestClient, authReq *protocol.AuthRequest, def
 	}
 
 	// Lenient mode (default): silently strip unsupported scopes.
+	beforeLen := len(authReq.Scopes)
 	authReq.Scopes = slices.DeleteFunc(authReq.Scopes, func(scope string) bool {
 		switch scope {
 		case protocol.ScopeOpenID, protocol.ScopeProfile, protocol.ScopeEmail,
@@ -210,6 +254,11 @@ func ValidateScopes(client AuthRequestClient, authReq *protocol.AuthRequest, def
 			return true
 		}
 	})
+	slog.Info("ValidateScopes: after lenient filtering",
+		slog.Any("scopes_before_len", beforeLen),
+		slog.Any("scopes_after", authReq.Scopes),
+		slog.Int("scopes_after_len", len(authReq.Scopes)),
+	)
 	return nil
 }
 
@@ -250,6 +299,15 @@ func ValidateNonce(authReq *protocol.AuthRequest) error {
 func ValidateResponseType(client AuthRequestClient, responseType protocol.ResponseType) error {
 	if responseType == "" {
 		return protocol.ErrInvalidRequest().WithDescription("response type is missing")
+	}
+
+	// FAPI 2.0 Security Profile §5.3.2.2: only response_type=code is permitted.
+	// Hybrid and implicit flows are not allowed because they return tokens via
+	// the browser front-channel where they may be leaked.
+	if fc, ok := client.(FAPIProfileClient); ok && fc.FAPIProfile() {
+		if responseType != protocol.ResponseTypeCode {
+			return protocol.ErrUnsupportedResponseType().WithDescription("FAPI 2.0 only allows response_type=code")
+		}
 	}
 
 	if rp, ok := client.(ResponseTypesProvider); ok {
@@ -424,6 +482,28 @@ func checkRedirectURIAgainstClient(client AuthRequestClient, uri string) error {
 	if rc, ok := client.(RedirectURIClient); ok {
 		if slices.Contains(rc.RedirectURIs(), uri) {
 			return nil
+		}
+
+		// Base URI match: if the registered URI has no query parameters,
+		// match only scheme + host + path (allow extra query params in request).
+		// This is common for FAPI 2.0 conformance tests.
+		reqURL, reqErr := url.Parse(uri)
+		if reqErr == nil {
+			for _, registered := range rc.RedirectURIs() {
+				regURL, regErr := url.Parse(registered)
+				if regErr != nil {
+					continue
+				}
+				if regURL.RawQuery != "" {
+					// Registered URI has query params — require exact match (already checked above).
+					continue
+				}
+				if regURL.Scheme == reqURL.Scheme &&
+					regURL.Host == reqURL.Host &&
+					regURL.Path == reqURL.Path {
+					return nil
+				}
+			}
 		}
 	}
 

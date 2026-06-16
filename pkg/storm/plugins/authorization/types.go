@@ -1,7 +1,6 @@
 package authorization
 
 import (
-	"context"
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -107,17 +106,6 @@ type IDTokenLifetimeProvider interface {
 	IDTokenLifetime() time.Duration
 }
 
-// JARMSigner is optionally implemented by a plugin to provide JARM
-// (JWT Secured Authorization Response Mode) support per RFC 9101.
-//
-// When implemented, the authorization response is signed as a JWT
-// and returned using the requested JARM response mode (query.jwt,
-// fragment.jwt, or form_post.jwt).
-type JARMSigner interface {
-	// SignAuthResponse signs the authorization response parameters
-	// as a JWT. The ctx is used to derive the issuer URL. The params
-	// map contains the response fields (code, state, etc.). The
-	// clientID is used for audience validation.
-	// Returns the compact JWT string.
-	SignAuthResponse(ctx context.Context, params map[string]string, clientID string) (string, error)
-}
+// JARMSigner is an alias for storm.JARMSigner.
+// Kept for backward compatibility with plugins that reference this type.
+type JARMSigner = storm.JARMSigner

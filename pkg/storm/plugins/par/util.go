@@ -2,6 +2,7 @@ package par
 
 import (
 	"net/http"
+	"sort"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -14,4 +15,22 @@ func validatePARRequest(r *http.Request) (clientID, clientSecret string, err err
 		return "", "", protocol.ErrInvalidRequest().WithDescription("client_id is required")
 	}
 	return clientID, clientSecret, nil
+}
+
+// truncate returns the first n characters of s, with "..." appended if truncated.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
+// formKeys returns a sorted list of form keys for debug logging.
+func formKeys(form map[string][]string) []string {
+	keys := make([]string, 0, len(form))
+	for k := range form {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

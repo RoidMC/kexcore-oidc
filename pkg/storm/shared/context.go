@@ -20,6 +20,7 @@ import (
 // Defined here to avoid import cycles between plugins.
 type DPoPProof interface {
 	JWKThumbprint() string
+	AccessTokenHash() string // ath claim (base64url(SHA-256(access_token))), empty if absent
 }
 
 type dpopContextKey struct{}
@@ -117,6 +118,22 @@ func VerifyTokenBinding(ctx context.Context, cnf map[string]any) error {
 		}
 	}
 
+	return nil
+}
+
+// ValidateDPoPProofATH validates the ath (access token hash) claim in a DPoP
+// proof against the actual access token (RFC 9449 §7.1).
+// The ath claim MUST equal base64url(SHA-256(access_token)).
+func ValidateDPoPProofATH(proof DPoPProof, accessToken string) error {
+	ath := proof.AccessTokenHash()
+	if ath == "" {
+		return protocol.ErrInvalidRequest().WithDescription("DPoP proof missing ath claim")
+	}
+	hash := sha256.Sum256([]byte(accessToken))
+	expected := base64.RawURLEncoding.EncodeToString(hash[:])
+	if ath != expected {
+		return protocol.ErrInvalidRequest().WithDescription("DPoP proof ath does not match access token")
+	}
 	return nil
 }
 

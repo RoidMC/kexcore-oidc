@@ -623,14 +623,42 @@ func VerifyIDTokenHintGeneric[C Claims](ctx context.Context, token string, v *ID
 // allowedAudiences contains the accepted aud values (typically the issuer and/or token endpoint URL).
 func VerifyJWTAssertion(ctx context.Context, assertion string, allowedAudiences []string, keys []jwk.Key, offset time.Duration) error {
 	request := new(JWTTokenRequest)
-	if _, err := ParseToken(assertion, request); err != nil {
+	payload, err := ParseToken(assertion, request)
+	if err != nil {
 		return err
 	}
+
+	// RFC 7523 / FAPI 2.0 §5.3.2.1: The aud claim in a client assertion
+	// MUST be a single string (the AS issuer or token endpoint URL).
+	// An array audience is ambiguous and must be rejected.
+	var raw struct {
+		RawAud json.RawMessage `json:"aud"`
+	}
+	if err := json.Unmarshal(payload, &raw); err == nil && len(raw.RawAud) > 0 {
+		if raw.RawAud[0] == '[' {
+			return fmt.Errorf("%w: client assertion 'aud' must be a single string, not an array", ErrAudience)
+		}
+	}
+
 	if err := CheckAudienceAny(request, allowedAudiences); err != nil {
 		return err
 	}
 	if err := CheckExpiration(request, offset); err != nil {
 		return err
+	}
+	// Reject client assertions with iat too far in the future (clock skew check).
+	if request.IssuedAt != 0 {
+		nowWithOffset := time.Now().Add(offset).Round(time.Second)
+		if request.IssuedAt.AsTime().After(nowWithOffset) {
+			return fmt.Errorf("%w: (iat: %v, now with offset: %v)", ErrIatInFuture, request.IssuedAt.AsTime(), nowWithOffset)
+		}
+	}
+	// Reject client assertions with nbf too far in the future (clock skew check).
+	if request.NotBefore != 0 {
+		nowWithOffset := time.Now().Add(offset).Round(time.Second)
+		if request.NotBefore.AsTime().After(nowWithOffset) {
+			return fmt.Errorf("%w: (nbf: %v, now with offset: %v)", ErrNbfInFuture, request.NotBefore.AsTime(), nowWithOffset)
+		}
 	}
 	if request.Issuer != request.Subject {
 		return ErrSubjectInvalid

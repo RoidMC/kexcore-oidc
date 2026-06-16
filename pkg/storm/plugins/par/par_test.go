@@ -125,7 +125,7 @@ func TestPAR_SuccessfulRequest(t *testing.T) {
 	var resp protocol.PushedAuthResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.NotEmpty(t, resp.RequestURI)
-	assert.Equal(t, 300, resp.ExpiresIn) // default 5m = 300s
+	assert.Equal(t, 90, resp.ExpiresIn) // default 90s
 }
 
 // RFC 9126 §3: Missing client_id returns invalid_request.
@@ -234,14 +234,14 @@ func TestPAR_StoreError(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "server_error")
 }
 
-// Default lifetime is 5 minutes.
+// Default lifetime is 90 seconds.
 func TestPAR_DefaultLifetime(t *testing.T) {
 	p := NewWithConfig(Config{
 		Store:       &fakePARStore{},
 		ClientStore: &fakeClientStore{},
 		Decoder:     protocol.NewDecoder(),
 	})
-	assert.Equal(t, 5*time.Minute, p.lifetime)
+	assert.Equal(t, 90*time.Second, p.lifetime)
 }
 
 // Custom lifetime is respected.
@@ -354,7 +354,7 @@ func TestPAR_StoreReceivesCorrectParams(t *testing.T) {
 	assert.Equal(t, protocol.ResponseType("code"), capturedReq.ResponseType)
 	assert.Equal(t, protocol.SpaceDelimitedArray{"openid", "profile"}, capturedReq.Scopes)
 	assert.Equal(t, "xyz", capturedReq.State)
-	assert.Equal(t, 5*time.Minute, capturedLifetime)
+	assert.Equal(t, 90*time.Second, capturedLifetime)
 }
 
 // RFC 9126 §2.1 step 2: Reject request_uri in PAR request.

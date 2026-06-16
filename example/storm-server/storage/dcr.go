@@ -104,6 +104,10 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 		clientJWKS:                sigKeys,
 		jwksURI:                   req.JWKSURI,
 		userInfoSignedResponseAlg: req.UserInfoSignedResponseAlg,
+		idTokenSignedResponseAlg:  req.IDTokenSignedResponseAlg,
+		requestObjectSigningAlg:   req.RequestObjectSigningAlg,
+		requireDPoP:               req.RequireDPoP,
+		requireMtls:               req.RequireMtls,
 	}
 	s.clients[clientID] = client
 
@@ -138,9 +142,13 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 		InitiateLoginURI:             req.InitiateLoginURI,
 		IDTokenEncryptedResponseAlg:  req.IDTokenEncryptedResponseAlg,
 		IDTokenEncryptedResponseEnc:  req.IDTokenEncryptedResponseEnc,
+		IDTokenSignedResponseAlg:     req.IDTokenSignedResponseAlg,
 		UserInfoSignedResponseAlg:    req.UserInfoSignedResponseAlg,
 		UserInfoEncryptedResponseAlg: req.UserInfoEncryptedResponseAlg,
 		UserInfoEncryptedResponseEnc: req.UserInfoEncryptedResponseEnc,
+		RequestObjectSigningAlg:      req.RequestObjectSigningAlg,
+		RequireDPoP:                  req.RequireDPoP,
+		RequireMtls:                  req.RequireMtls,
 	}
 
 	// Store registration data for later lookup

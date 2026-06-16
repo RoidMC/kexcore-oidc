@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/cors"
@@ -47,6 +48,9 @@ type Engine struct {
 	allowPlainPKCE    bool              // allow plain code_challenge_method
 	allowPrivateIPs   bool              // allow private/link-local IPs in jwks_uri etc.
 	skipTLSCertVerify bool              // skip TLS cert verification on outbound HTTP
+	requireDPoP       bool              // FAPI 2.0: require DPoP for token requests
+	requireMtls       bool              // FAPI 2.0: require mTLS for token requests
+	parLifetime       time.Duration     // PAR request_uri lifetime (default: 90s)
 }
 
 // DiscoveryConfig holds extra fields injected into the discovery document.
@@ -68,8 +72,11 @@ type PluginContext struct {
 	SkipTLSCertVerify bool // WARNING: disables TLS certificate verification on outbound HTTP requests.
 	// Only for testing with self-signed certificates.
 	// NEVER enable in production.
-	IssuerFn shared.IssuerFromRequest // issuer URL function
-	Tracer   trace.Tracer             // otel tracer for plugins
+	RequireDPoP bool                     // FAPI 2.0: require DPoP proof for all token requests
+	RequireMtls bool                     // FAPI 2.0: require mTLS client certificate for all token requests
+	PARLifetime time.Duration            // PAR request_uri lifetime (default: 0 means use plugin default, usually 90s)
+	IssuerFn    shared.IssuerFromRequest // issuer URL function
+	Tracer      trace.Tracer             // otel tracer for plugins
 }
 
 // PluginFactory creates a plugin from a PluginContext.
@@ -239,6 +246,28 @@ func WithSkipTLSCertVerify() EngineOption {
 	}
 }
 
+// WithRequireDPoP enables FAPI 2.0 DPoP sender-constrained tokens.
+func WithRequireDPoP() EngineOption {
+	return func(e *Engine) {
+		e.requireDPoP = true
+	}
+}
+
+// WithRequireMtls enables FAPI 2.0 mTLS sender-constrained tokens.
+func WithRequireMtls() EngineOption {
+	return func(e *Engine) {
+		e.requireMtls = true
+	}
+}
+
+// WithPARLifetime sets the lifetime for pushed authorization request URIs.
+// If not set, the PAR plugin uses its own default (typically 90s).
+func WithPARLifetime(d time.Duration) EngineOption {
+	return func(e *Engine) {
+		e.parLifetime = d
+	}
+}
+
 // New creates a new Engine with the given storage and issuer function.
 //
 // The issuerFn is used to inject the issuer into the request context
@@ -279,6 +308,9 @@ func (e *Engine) autoRegisterPlugins() {
 		AllowPlainPKCE:    e.allowPlainPKCE,
 		AllowPrivateIPs:   e.allowPrivateIPs,
 		SkipTLSCertVerify: e.skipTLSCertVerify,
+		RequireDPoP:       e.requireDPoP,
+		RequireMtls:       e.requireMtls,
+		PARLifetime:       e.parLifetime,
 		IssuerFn:          e.issuerFn,
 		Tracer:            e.tracer,
 	}
@@ -407,12 +439,19 @@ func (e *Engine) Build() http.Handler {
 
 	e.logPluginInfo()
 
-	// Apply middleware (CORS first, then otel, then user middleware)
+	// Apply middleware (CORS first, then otel, then plugin middleware, then user middleware)
 	var h http.Handler = e.router
 	if e.corsOpts != nil {
 		h = cors.New(*e.corsOpts).Handler(h)
 	}
 	h = e.otelMiddleware(h)
+	// Auto-apply middleware from plugins that implement MiddlewareProvider.
+	for _, p := range e.plugins {
+		if mp, ok := p.(MiddlewareProvider); ok {
+			h = mp.Middleware(h)
+			e.logger.Info("applied plugin middleware", "name", p.Name())
+		}
+	}
 	for _, mw := range e.middleware {
 		h = mw(h)
 	}
@@ -537,15 +576,11 @@ func (e *Engine) connectLogoutHooks() {
 func (e *Engine) connectJARMSigner() {
 	// Type for checking if a plugin can set a JARM signer
 	type jarmSignerSetter interface {
-		SetJARMSigner(signer interface {
-			SignAuthResponse(ctx context.Context, params map[string]string, clientID string) (string, error)
-		})
+		SetJARMSigner(signer JARMSigner)
 	}
 
 	var authorization jarmSignerSetter
-	var jarmPlugin interface {
-		SignAuthResponse(ctx context.Context, params map[string]string, clientID string) (string, error)
-	}
+	var jarmPlugin JARMSigner
 
 	for _, p := range e.plugins {
 		switch p.Name() {
@@ -554,9 +589,7 @@ func (e *Engine) connectJARMSigner() {
 				authorization = setter
 			}
 		case "jarm":
-			if signer, ok := p.(interface {
-				SignAuthResponse(ctx context.Context, params map[string]string, clientID string) (string, error)
-			}); ok {
+			if signer, ok := p.(JARMSigner); ok {
 				jarmPlugin = signer
 			}
 		}

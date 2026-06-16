@@ -57,6 +57,11 @@ func ParseProof(dpopHeader, httpMethod, httpURL string) (*Proof, error) {
 		return nil, fmt.Errorf("invalid jwk in DPoP proof: %w", err)
 	}
 
+	// RFC 9449 §4.3: the jwk MUST NOT contain private key material.
+	if isPrivateKey(key) {
+		return nil, errors.New("DPoP proof jwk must not contain private key")
+	}
+
 	// 2. Verify typ is dpop+jwt
 	typVal, _ := headers.Field("typ")
 	typStr, _ := typVal.(string)
@@ -85,11 +90,17 @@ func ParseProof(dpopHeader, httpMethod, httpURL string) (*Proof, error) {
 	var claims struct {
 		HTM string `json:"htm"`
 		HTU string `json:"htu"`
+		ATH string `json:"ath"`
 		IAT int64  `json:"iat"`
 		JTI string `json:"jti"`
 	}
 	if err := json.Unmarshal(msg.Payload(), &claims); err != nil {
 		return nil, fmt.Errorf("invalid DPoP proof payload: %w", err)
+	}
+
+	// RFC 9449 §4.2: jti claim is REQUIRED.
+	if claims.JTI == "" {
+		return nil, errors.New("DPoP proof missing jti claim")
 	}
 
 	// 3. Verify htm matches HTTP method
@@ -122,6 +133,7 @@ func ParseProof(dpopHeader, httpMethod, httpURL string) (*Proof, error) {
 		JKT:       jkt,
 		HTM:       claims.HTM,
 		HTU:       claims.HTU,
+		ATH:       claims.ATH,
 		IssuedAt:  iat,
 		UniqueID:  claims.JTI,
 		PublicKey: pubKey,
@@ -202,4 +214,34 @@ func normalizeHTU(raw string) string {
 	}
 	u.Host = u.Hostname()
 	return u.String()
+}
+
+// isPrivateKey returns true if the JWK contains private key material.
+// RFC 9449 §4.3: the jwk in a DPoP proof MUST NOT contain a private key.
+func isPrivateKey(key jwk.Key) bool {
+	raw, err := jwk.Export[any](key)
+	if err != nil {
+		return false
+	}
+	switch raw.(type) {
+	case *ecdsa.PrivateKey, *rsa.PrivateKey:
+		return true
+	}
+	return false
+}
+
+// ValidateATH validates the ath (access token hash) claim in a DPoP proof
+// against the actual access token presented in the request (RFC 9449 §7.1).
+// The ath claim MUST be present and MUST equal base64url(SHA-256(access_token)).
+func ValidateATH(proof *Proof, accessToken string) error {
+	if proof.ATH == "" {
+		return errors.New("DPoP proof missing ath claim")
+	}
+	hash := crypto.SHA256.New()
+	hash.Write([]byte(accessToken))
+	expected := base64.RawURLEncoding.EncodeToString(hash.Sum(nil))
+	if proof.ATH != expected {
+		return errors.New("DPoP proof ath does not match access token")
+	}
+	return nil
 }

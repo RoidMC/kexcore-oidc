@@ -60,6 +60,7 @@ type JWTTokenRequest struct {
 	Audience  Audience            `json:"aud"`
 	IssuedAt  Time                `json:"iat"`
 	ExpiresAt Time                `json:"exp"`
+	NotBefore Time                `json:"nbf"`
 
 	private map[string]any
 }
@@ -120,6 +121,10 @@ func (j *JWTTokenRequest) GetExpiration() time.Time {
 
 func (j *JWTTokenRequest) GetIssuedAt() time.Time {
 	return j.IssuedAt.AsTime()
+}
+
+func (j *JWTTokenRequest) GetNotBefore() time.Time {
+	return j.NotBefore.AsTime()
 }
 
 func (j *JWTTokenRequest) GetNonce() string {

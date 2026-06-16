@@ -115,6 +115,7 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 	cfg.RequestURIParameterSupported = true
 	cfg.RequireRequestURIRegistration = false
 	cfg.AuthorizationResponseISSParameterSupported = true
+	cfg.ScopesSupported = []string{"openid", "profile", "email", "address", "phone", "offline_access"}
 
 	// Extra fields from config
 	for k, v := range p.config.ExtraFields {

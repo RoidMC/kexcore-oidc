@@ -1,0 +1,12 @@
+{
+  "keys": [
+    {
+      "alg": "RSA-OAEP",
+      "e": "AQAB",
+      "kid": "mtls-demo-enc-key-1",
+      "kty": "RSA",
+      "n": "skhXamVb0LOyejYlZ1KazpLldiRO8fVi7Pe-aMlQyj4MIY0pyYQ1Yao4Ye1wpY12p46GPVVWvjQCwCtcKFDhDPyExj1p6vVXbLhE9lYj-iFFuXgfBvIw4oUDWPTp2JVnfm99ZfhWLTgA29fMySPQA2Nz52X0ZU_oxbil_U2b6nqNZ3XmElVABSt6sW45tfXPKDT-A3rK20hJot3sJJpqF-eqXri_kSF0yQyRE9wKI_Sod0RMiFzJyGhjz3uDKRdemnyEJIihnVgL6NIgxYUfvQfutkaNZmNxr18AuHZUFqbZgX2PHDmRSQmdEbHAkk97Cy4aHkch9eYeK6V_3fFYww",
+      "use": "enc"
+    }
+  ]
+}

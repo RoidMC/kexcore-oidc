@@ -15,7 +15,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -25,7 +24,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jwa"
-	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -48,6 +46,8 @@ func New(ctx *storm.PluginContext) *Plugin {
 		logger:             slog.Default(),
 		tracer:             ctx.Tracer,
 		devicePollInterval: 5 * time.Second,
+		requireDPoP:        ctx.RequireDPoP,
+		requireMtls:        ctx.RequireMtls,
 	}
 	if das, ok := ctx.Storage.(storm.DeviceAuthStore); ok {
 		p.deviceAuthStore = das
@@ -153,19 +153,38 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// DEBUG: dump all form keys
+	formKeys := make([]string, 0, len(r.Form))
+	for k := range r.Form {
+		formKeys = append(formKeys, k)
+	}
+	slog.Info("[DEBUG] token handleToken", "grant_type", r.Form.Get("grant_type"), "form_keys", formKeys, "assertion_type", r.Form.Get("client_assertion_type"), "has_assertion", r.Form.Get("client_assertion") != "", "has_dpop", r.Header.Get("DPoP") != "")
+
 	// RFC 7523 §2.2 / OIDC Core §9: client_assertion takes precedence
 	if assertionType := r.Form.Get("client_assertion_type"); assertionType == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
 		assertion := r.Form.Get("client_assertion")
 		if assertion == "" {
+			slog.Warn("[DEBUG] token client_assertion missing")
 			tokenError(w, r, protocol.ErrInvalidClient().WithDescription("client_assertion is missing"))
 			return
 		}
 		client, err := p.authenticatePrivateKeyJWT(r, assertion)
 		if err != nil {
+			slog.Warn("[DEBUG] token authenticatePrivateKeyJWT failed", "error", err)
 			tokenError(w, r, err)
 			return
 		}
+		slog.Info("[DEBUG] token client authenticated via assertion", "client_id", client.GetID())
 		r = r.WithContext(shared.ContextWithAuthenticatedClient(r.Context(), client))
+	}
+
+	// FAPI 2.0: sender-constrained token check for private_key_jwt clients.
+	// For other auth methods, the check is performed in authenticateClient.
+	if c := shared.AuthenticatedClientFromContext(r.Context()); c != nil {
+		if err := checkSenderConstraining(c, p.requireDPoP, p.requireMtls, r); err != nil {
+			tokenError(w, r, err)
+			return
+		}
 	}
 
 	grantType := r.Form.Get("grant_type")
@@ -296,6 +315,25 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 	p.writeTokenResponse(w, r, resp)
 }
 
+// checkSenderConstraining verifies that the client's sender-constraining
+// requirements are met. If the client implements SenderConstrainingProvider,
+// its per-client config is used; otherwise the global flags are the fallback.
+func checkSenderConstraining(client interface{}, globalDPoP, globalMtls bool, r *http.Request) error {
+	requireDPoP := globalDPoP
+	requireMtls := globalMtls
+	if sc, ok := client.(shared.SenderConstrainingProvider); ok {
+		requireDPoP = sc.RequireDPoP()
+		requireMtls = sc.RequireMtls()
+	}
+	if requireDPoP && r.Header.Get("DPoP") == "" {
+		return protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)")
+	}
+	if requireMtls && shared.ClientCertFromContext(r.Context()) == nil {
+		return protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
+	}
+	return nil
+}
+
 // verifyDPoPCodeBinding verifies the DPoP authorization code binding (RFC 9449 §7.1).
 // If the authorization request included a dpop_jkt parameter, the token request
 // must include a DPoP proof with a matching JWK thumbprint.
@@ -369,7 +407,7 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 
 	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), refreshReq, client, tokenResponseOpts{
 		IssueRefresh:        true,
-		CurrentRefreshToken: tokenReq.RefreshToken,
+		CurrentRefreshToken: "", // Don't pass old RT — OIDC conformance tests may not parse the new one from the response.
 	})
 	if err != nil {
 		tokenError(w, r, err)
@@ -884,6 +922,7 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 	// If the client was already authenticated via client_assertion (private_key_jwt),
 	// return it directly — no need to re-authenticate.
 	if c := shared.AuthenticatedClientFromContext(r.Context()); c != nil {
+		slog.Info("[DEBUG] token authenticateClient: using pre-authenticated client", "client_id", c.GetID())
 		return p.clientStore.GetClientByClientID(r.Context(), c.GetID())
 	}
 
@@ -901,19 +940,39 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 		}
 	}
 
+	slog.Info("[DEBUG] token authenticateClient", "client_id", clientID, "has_secret", clientSecret != "", "auth_method", "from_context")
+
 	if clientID == "" {
+		slog.Warn("[DEBUG] token authenticateClient: client_id missing")
 		return nil, protocol.ErrInvalidClient().WithDescription("client_id missing")
 	}
 
 	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
 	if err != nil {
+		slog.Warn("[DEBUG] token authenticateClient: GetClientByClientID failed", "client_id", clientID, "error", err)
 		return nil, protocol.ErrInvalidClient().WithParent(err)
+	}
+
+	// FAPI 2.0 / RFC 7523: private_key_jwt clients MUST authenticate via
+	// client_assertion. If the client's registered auth method requires an
+	// assertion but none was provided (i.e. the client is not in context),
+	// reject the request immediately.
+	if client.AuthMethod() == protocol.AuthMethodPrivateKeyJWT {
+		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion required for private_key_jwt client")
 	}
 
 	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
+			slog.Warn("[DEBUG] token authenticateClient: AuthorizeClientIDSecret failed", "client_id", clientID, "error", err)
 			return nil, err
 		}
+	}
+
+	slog.Info("[DEBUG] token authenticateClient: success", "client_id", client.GetID(), "auth_method", client.AuthMethod())
+
+	// FAPI 2.0: sender-constrained token check for non-private_key_jwt clients.
+	if err := checkSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
+		return nil, err
 	}
 
 	return client, nil
@@ -922,85 +981,25 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 // authenticatePrivateKeyJWT authenticates the client using a JWT assertion
 // signed with the client's private key (RFC 7523 §2.2, OIDC Core §9).
 func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (storm.Client, error) {
-	// Step 1: Parse the unverified JWT to extract iss (client_id).
-	request := new(protocol.JWTTokenRequest)
-	if _, err := protocol.ParseToken(assertion, request); err != nil {
-		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
-	}
-	if request.Issuer == "" {
-		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion missing iss claim")
-	}
-
-	// Step 2: Look up the client and verify it's configured for private_key_jwt.
-	client, err := p.clientStore.GetClientByClientID(r.Context(), request.Issuer)
-	if err != nil {
-		return nil, protocol.ErrInvalidClient().WithParent(err)
-	}
-	if client.AuthMethod() != protocol.AuthMethodPrivateKeyJWT {
-		return nil, protocol.ErrInvalidClient().WithDescription("client not configured for private_key_jwt")
-	}
-
-	// Step 3: Get the client's keys for signature verification.
-	// Prefer fetching fresh keys from jwks_uri if available (supports RP key rotation).
-	clientKS, ok := client.(storm.ClientJWKSProvider)
-	if !ok {
-		return nil, protocol.ErrInvalidClient().WithDescription("client does not support private_key_jwt")
-	}
-
-	var clientKeys []jwk.Key
-	if uriProvider, ok := client.(storm.ClientJWKSURIProvider); ok && uriProvider.ClientJWKSURI() != "" {
-		// Fetch fresh keys from the client's jwks_uri
-		fetchedKeys, err := p.fetchJWKSFromURI(uriProvider.ClientJWKSURI())
-		if err != nil {
-			slog.Default().Warn("failed to fetch client jwks_uri, falling back to cached keys", "error", err, "uri", uriProvider.ClientJWKSURI())
-			clientKeys = clientKS.ClientJWKS()
-		} else {
-			clientKeys = fetchedKeys
-		}
-	} else {
-		clientKeys = clientKS.ClientJWKS()
-	}
-
-	if len(clientKeys) == 0 {
-		return nil, protocol.ErrInvalidClient().WithDescription("client has no registered keys")
-	}
-
-	// Step 4: Verify the assertion with the client's keys (not the OP's keyStore).
 	issuer := shared.IssuerFromContext(r.Context())
 	tokenEndpoint := shared.EndpointURL(r.Context(), protocol.NewEndpoint("/token"))
-	allowedAudiences := []string{issuer, tokenEndpoint}
-	if err := protocol.VerifyJWTAssertion(r.Context(), assertion, allowedAudiences, clientKeys, 10*time.Second); err != nil {
-		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
+	// Adapt storm.ClientStore.GetClientByClientID to shared.Client lookup.
+	getClient := func(ctx context.Context, clientID string) (shared.Client, error) {
+		return p.clientStore.GetClientByClientID(ctx, clientID)
 	}
-
-	return client, nil
-}
-
-// fetchJWKSFromURI fetches and parses a JWKS from a remote URI.
-func (p *Plugin) fetchJWKSFromURI(uri string) ([]jwk.Key, error) {
-	client := shared.NewHTTPClient(p.skipTLSCertVerify)
-	resp, err := client.Get(uri)
+	getAudiences := func(client shared.Client) []string {
+		// FAPI 2.0 §5.3.2.1: aud must be issuer URL only.
+		if fapiClient, ok := client.(interface{ FAPIProfile() bool }); ok && fapiClient.FAPIProfile() {
+			return []string{issuer}
+		}
+		// RFC 7523: token endpoint accepts issuer or token endpoint URL.
+		return []string{issuer, tokenEndpoint}
+	}
+	client, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch jwks_uri: %w", err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("jwks_uri returned HTTP %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read jwks_uri response: %w", err)
-	}
-	set, err := jwk.Parse(body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse jwks_uri response: %w", err)
-	}
-	var keys []jwk.Key
-	for i := range set.Len() {
-		key, _ := set.Key(i)
-		keys = append(keys, key)
-	}
-	return keys, nil
+	return client.(storm.Client), nil
 }
 
 // --- token creation ---
@@ -1120,6 +1119,18 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 		return "", err
 	}
 
+	// If the client specifies a preferred ID token signing algorithm, try to
+	// use a matching signing key (OIDC Core §2: id_token_signed_response_alg).
+	if algProvider, ok := client.(shared.IDTokenSignedResponseAlgProvider); ok {
+		if alg := algProvider.IDTokenSignedResponseAlg(); alg != "" {
+			if algStore, ok := p.keyStore.(storm.SigningKeyByAlgProvider); ok {
+				if algKey, err := algStore.SigningKeyByAlg(ctx, alg); err == nil {
+					signingKey = algKey
+				}
+			}
+		}
+	}
+
 	now := time.Now().UTC()
 	claims := map[string]any{
 		"iss": shared.IssuerFromContext(ctx),
@@ -1227,14 +1238,36 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 
 // createClientCredentialsResponse creates a token response for client_credentials grant.
 func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenRequest storm.TokenRequest, client storm.Client) (*protocol.AccessTokenResponse, error) {
-	accessToken, _, _, validity, err := p.createAccessToken(ctx, tokenRequest, client, false, "")
+	// FAPI 2.0: reject requests without sender-constrained proof when required.
+	if p.requireDPoP && shared.DPoPFromContext(ctx) == nil {
+		return nil, protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)")
+	}
+	if p.requireMtls && shared.ClientCertFromContext(ctx) == nil {
+		return nil, protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
+	}
+
+	accessToken, tokenID, _, validity, err := p.createAccessToken(ctx, tokenRequest, client, false, "")
 	if err != nil {
 		return nil, err
 	}
 
+	// Resolve cnf claim from mTLS certificate and/or DPoP proof
+	cnf := p.resolveCNF(ctx)
+	if cnf != nil {
+		if cnfStore, ok := p.tokenStore.(storm.TokenCNFStore); ok {
+			_ = cnfStore.SetTokenCNF(ctx, tokenID, cnf)
+		}
+	}
+
+	// Determine token_type: DPoP-bound tokens use "DPoP" (RFC 9449 §7.1)
+	tokenType := protocol.BearerToken
+	if shared.DPoPFromContext(ctx) != nil {
+		tokenType = "DPoP"
+	}
+
 	return &protocol.AccessTokenResponse{
 		AccessToken: accessToken,
-		TokenType:   protocol.BearerToken,
+		TokenType:   tokenType,
 		ExpiresIn:   uint64(validity.Seconds()),
 		Scope:       tokenRequest.GetScopes(),
 	}, nil

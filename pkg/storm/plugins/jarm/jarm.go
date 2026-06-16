@@ -96,7 +96,7 @@ func (p *Plugin) Register(r chi.Router) {}
 // Contribute returns discovery fields for JARM.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
 	cfg.ResponseModesSupported = append(cfg.ResponseModesSupported,
-		"query.jwt", "fragment.jwt", "form_post.jwt",
+		"jwt", "query.jwt", "fragment.jwt", "form_post.jwt",
 	)
 }
 
@@ -142,7 +142,7 @@ func (p *Plugin) SignAuthResponse(ctx context.Context, params map[string]string,
 	}
 
 	alg := determineAlg(signingKey.Algorithm())
-	signed, err := jwt.Sign(token, jwt.WithKey(alg, signingKey.Key))
+	signed, err := jwt.Sign(token, jwt.WithKey(alg, signingKey.Key()))
 	if err != nil {
 		return "", err
 	}

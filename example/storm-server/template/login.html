@@ -9,7 +9,7 @@
 <input type="hidden" name="id" value="{{.ID}}">
 <p><label>Username: <input name="username" value="test-user@{{.Domain}}"></label></p>
 <p><label>Password: <input name="password" type="password" value="verysecure"></label></p>
-<p><button type="submit">Login</button></p>
+<p><button type="submit">Login</button> <button type="submit" formaction="/login/cancel" formmethod="POST" style="margin-left:8px">Cancel</button></p>
 </form>
 {{if .PolicyURI}}<p><a href="{{.PolicyURI}}" target="_blank">Privacy Policy</a></p>{{end}}
 {{if .TOSURI}}<p><a href="{{.TOSURI}}" target="_blank">Terms of Service</a></p>{{end}}

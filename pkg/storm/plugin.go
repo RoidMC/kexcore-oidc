@@ -7,6 +7,7 @@ package storm
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
@@ -86,4 +87,17 @@ type DiscoveryContributor interface {
 	// Plugins should only set the fields they own.
 	// ctx contains the issuer via shared.IssuerFromContext.
 	Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration)
+}
+
+// MiddlewareProvider is optionally implemented by plugins that provide
+// HTTP middleware to be applied to all requests. The engine auto-detects
+// this interface during Build() and applies the middleware to the pipeline.
+//
+// Example: DPoP plugin provides middleware to parse DPoP proofs from
+// request headers and store them in the request context.
+type MiddlewareProvider interface {
+	Plugin
+
+	// Middleware wraps the given handler with plugin-specific middleware.
+	Middleware(next http.Handler) http.Handler
 }

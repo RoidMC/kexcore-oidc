@@ -159,6 +159,13 @@ type KeyStore interface {
 	SigningKey(ctx context.Context) (SigningKey, error)
 }
 
+// SigningKeyByAlgProvider is an optional interface that a KeyStore can
+// implement to support retrieving a signing key by algorithm.
+// This enables per-client ID token signing algorithms.
+type SigningKeyByAlgProvider interface {
+	SigningKeyByAlg(ctx context.Context, alg string) (SigningKey, error)
+}
+
 // Key is an alias for protocol.Key.
 // GM/T keys should additionally satisfy protocol.GMJWKProvider
 // for JWKS publication of SM2/SM9 keys that jwx cannot represent.
@@ -521,11 +528,15 @@ type RegistrationRequest struct {
 	BackChannelLogoutURI         string          `json:"backchannel_logout_uri"`
 	SectorIdentifierURI          string          `json:"sector_identifier_uri,omitempty"`
 	InitiateLoginURI             string          `json:"initiate_login_uri"`
+	IDTokenSignedResponseAlg     string          `json:"id_token_signed_response_alg,omitempty"`
 	IDTokenEncryptedResponseAlg  string          `json:"id_token_encrypted_response_alg,omitempty"`
 	IDTokenEncryptedResponseEnc  string          `json:"id_token_encrypted_response_enc,omitempty"`
 	UserInfoSignedResponseAlg    string          `json:"userinfo_signed_response_alg,omitempty"`
 	UserInfoEncryptedResponseAlg string          `json:"userinfo_encrypted_response_alg,omitempty"`
 	UserInfoEncryptedResponseEnc string          `json:"userinfo_encrypted_response_enc,omitempty"`
+	RequestObjectSigningAlg      string          `json:"request_object_signing_alg,omitempty"`
+	RequireDPoP                  bool            `json:"require_dpop,omitempty"`
+	RequireMtls                  bool            `json:"require_mtls,omitempty"`
 }
 
 // ClientRegistration represents a registered client.
@@ -556,11 +567,15 @@ type ClientRegistration struct {
 	BackChannelLogoutURI         string          `json:"backchannel_logout_uri,omitempty"`
 	SectorIdentifierURI          string          `json:"sector_identifier_uri,omitempty"`
 	InitiateLoginURI             string          `json:"initiate_login_uri,omitempty"`
+	IDTokenSignedResponseAlg     string          `json:"id_token_signed_response_alg,omitempty"`
 	IDTokenEncryptedResponseAlg  string          `json:"id_token_encrypted_response_alg,omitempty"`
 	IDTokenEncryptedResponseEnc  string          `json:"id_token_encrypted_response_enc,omitempty"`
 	UserInfoSignedResponseAlg    string          `json:"userinfo_signed_response_alg,omitempty"`
 	UserInfoEncryptedResponseAlg string          `json:"userinfo_encrypted_response_alg,omitempty"`
 	UserInfoEncryptedResponseEnc string          `json:"userinfo_encrypted_response_enc,omitempty"`
+	RequestObjectSigningAlg      string          `json:"request_object_signing_alg,omitempty"`
+	RequireDPoP                  bool            `json:"require_dpop,omitempty"`
+	RequireMtls                  bool            `json:"require_mtls,omitempty"`
 }
 
 // UserInfoResponseAlgProvider is an optional interface that returns the
@@ -650,6 +665,21 @@ type UniCrypto interface {
 type Signer interface {
 	// Sign signs the payload and returns the compact JWS serialization.
 	Sign(ctx context.Context, keyID string, payload []byte) (string, error)
+}
+
+// JARMSigner is optionally implemented by a plugin to provide JARM
+// (JWT Secured Authorization Response Mode) support per RFC 9101.
+//
+// When implemented, the authorization response is signed as a JWT
+// and returned using the requested JARM response mode (query.jwt,
+// fragment.jwt, or form_post.jwt).
+type JARMSigner interface {
+	// SignAuthResponse signs the authorization response parameters
+	// as a JWT. The ctx is used to derive the issuer URL. The params
+	// map contains the response fields (code, state, etc.). The
+	// clientID is used for audience validation.
+	// Returns the compact JWT string.
+	SignAuthResponse(ctx context.Context, params map[string]string, clientID string) (string, error)
 }
 
 // EndSessionRequest represents a parsed RP-initiated logout request.

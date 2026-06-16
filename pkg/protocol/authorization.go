@@ -83,6 +83,10 @@ const (
 
 	// ResponseModeFormPostJWT returns the authorization response as a JWT via form post.
 	ResponseModeFormPostJWT ResponseMode = "form_post.jwt"
+
+	// ResponseModeJWT is the JARM shorthand (RFC 9101 §4.1 / FAPI 2.0).
+	// It resolves to query.jwt for code flow, fragment.jwt for implicit/hybrid.
+	ResponseModeJWT ResponseMode = "jwt"
 )
 
 // OIDC Core 1.0 §3.1.2.1 — Authentication Request (prompt parameter)
@@ -156,21 +160,21 @@ type AuthRequest struct {
 	State string `json:"state" schema:"state"`
 	Nonce string `json:"nonce" schema:"nonce"`
 
-	ResponseMode ResponseMode        `json:"response_mode" schema:"response_mode"`
-	Display      Display             `json:"display" schema:"display"`
-	Prompt       SpaceDelimitedArray `json:"prompt" schema:"prompt"`
-	MaxAge       *uint               `json:"max_age" schema:"max_age"`
+	ResponseMode  ResponseMode        `json:"response_mode" schema:"response_mode"`
+	Display       Display             `json:"display" schema:"display"`
+	Prompt        SpaceDelimitedArray `json:"prompt" schema:"prompt"`
+	MaxAge        *uint               `json:"max_age" schema:"max_age"`
 	UILocales     Locales             `json:"ui_locales" schema:"ui_locales"`
 	ClaimsLocales Locales             `json:"claims_locales" schema:"claims_locales"`
-	IDTokenHint  string              `json:"id_token_hint" schema:"id_token_hint"`
-	LoginHint    string              `json:"login_hint" schema:"login_hint"`
-	ACRValues    SpaceDelimitedArray `json:"acr_values" schema:"acr_values"`
+	IDTokenHint   string              `json:"id_token_hint" schema:"id_token_hint"`
+	LoginHint     string              `json:"login_hint" schema:"login_hint"`
+	ACRValues     SpaceDelimitedArray `json:"acr_values" schema:"acr_values"`
 
 	CodeChallenge       string              `json:"code_challenge" schema:"code_challenge"`
 	CodeChallengeMethod CodeChallengeMethod `json:"code_challenge_method" schema:"code_challenge_method"`
 
-	RequestParam string         `schema:"request"`
-	RequestURI   string         `schema:"request_uri"`
+	RequestParam string         `json:"request,omitempty" schema:"request"`
+	RequestURI   string         `json:"request_uri,omitempty" schema:"request_uri"`
 	Claims       *ClaimsRequest `json:"claims" schema:"claims"`
 
 	// DPoP JWK Thumbprint for authorization code binding (RFC 9449 §7.1).

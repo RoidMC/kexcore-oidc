@@ -2,8 +2,13 @@ package shared
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"time"
+
+	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -22,6 +27,18 @@ type ClientStore interface {
 type Client interface {
 	GetID() string
 	AuthMethod() protocol.AuthMethod
+}
+
+// JWKSProvider is optionally implemented by Client to provide
+// the client's public JWKS keys for signature verification.
+type JWKSProvider interface {
+	ClientJWKS() []jwk.Key
+}
+
+// JWKSURIProvider is optionally implemented by Client to provide
+// the client's jwks_uri for fetching fresh keys.
+type JWKSURIProvider interface {
+	ClientJWKSURI() string
 }
 
 // clientStoreFunc adapts function references to ClientStore.
@@ -142,4 +159,93 @@ func ParseClientCredentials(r *http.Request) (clientID, clientSecret string, err
 	}
 
 	return clientID, clientSecret, nil
+}
+
+// AuthenticatePrivateKeyJWT authenticates a client using a JWT assertion
+// signed with the client's private key (RFC 7523 §2.2, OIDC Core §9).
+//
+// getClientByClientID is a function that looks up a client by ID.
+// getAudiences is called after the client is resolved so the allowed aud
+// values can depend on the client's profile (e.g. FAPI 2.0 vs plain OAuth).
+// If nil, the assertion's audience is not checked (not recommended).
+func AuthenticatePrivateKeyJWT(r *http.Request, getClientByClientID func(ctx context.Context, clientID string) (Client, error), assertion string, getAudiences func(client Client) []string) (Client, error) {
+	// Step 1: Parse the unverified JWT to extract iss (client_id).
+	request := new(protocol.JWTTokenRequest)
+	if _, err := protocol.ParseToken(assertion, request); err != nil {
+		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
+	}
+	if request.Issuer == "" {
+		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion missing iss claim")
+	}
+
+	// Step 2: Look up the client and verify it's configured for private_key_jwt.
+	client, err := getClientByClientID(r.Context(), request.Issuer)
+	if err != nil {
+		return nil, protocol.ErrInvalidClient().WithParent(err)
+	}
+	if client.AuthMethod() != protocol.AuthMethodPrivateKeyJWT {
+		return nil, protocol.ErrInvalidClient().WithDescription("client not configured for private_key_jwt")
+	}
+
+	// Step 3: Get the client's keys for signature verification.
+	clientKS, ok := client.(JWKSProvider)
+	if !ok {
+		return nil, protocol.ErrInvalidClient().WithDescription("client does not support private_key_jwt")
+	}
+
+	var clientKeys []jwk.Key
+	if uriProvider, ok := client.(JWKSURIProvider); ok && uriProvider.ClientJWKSURI() != "" {
+		fetchedKeys, err := FetchJWKSFromURI(uriProvider.ClientJWKSURI())
+		if err != nil {
+			clientKeys = clientKS.ClientJWKS()
+		} else {
+			clientKeys = fetchedKeys
+		}
+	} else {
+		clientKeys = clientKS.ClientJWKS()
+	}
+
+	if len(clientKeys) == 0 {
+		return nil, protocol.ErrInvalidClient().WithDescription("client has no registered keys")
+	}
+
+	// Step 4: Determine allowed audiences based on client profile.
+	var allowedAudiences []string
+	if getAudiences != nil {
+		allowedAudiences = getAudiences(client)
+	}
+
+	// Step 5: Verify the assertion with the client's keys.
+	if err := protocol.VerifyJWTAssertion(r.Context(), assertion, allowedAudiences, clientKeys, 10*time.Second); err != nil {
+		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
+	}
+
+	return client, nil
+}
+
+// FetchJWKSFromURI fetches and parses a JWKS from a remote URI.
+func FetchJWKSFromURI(uri string) ([]jwk.Key, error) {
+	client := NewHTTPClient(false)
+	resp, err := client.Get(uri)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch jwks_uri: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("jwks_uri returned HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read jwks_uri response: %w", err)
+	}
+	set, err := jwk.Parse(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse jwks_uri response: %w", err)
+	}
+	var keys []jwk.Key
+	for i := range set.Len() {
+		key, _ := set.Key(i)
+		keys = append(keys, key)
+	}
+	return keys, nil
 }

@@ -36,9 +36,47 @@ plan_config:
   client_secret_post:
     client_id: "Test Client 1"
     client_secret: "test-secret-1"
+  # Resource endpoint for FAPI tests (RFC 8707 resource indicator)
+  # The conformance suite uses this URL to verify access tokens by calling the resource.
+  resource:
+    resourceUrl: "${issuer_url}/userinfo"
   client2:
     client_id: "Test Client 2"
     client_secret: "test-secret-2"
+  # FAPI client (private_key_jwt authentication)
+  # Private key (d): D0elCuLKMTS5M1Q1K-lhmfMiUjoDv-L-HPQz_Z9WY2Q
+  # Must match the key registered in main.go mustParseFAPIKey()
+  fapi_client: &fapi_client
+    client_id: "FAPI Client 1"
+    client_secret: ""
+    scope: "openid profile"
+    token_endpoint_auth_method: "private_key_jwt"
+    jwks:
+      keys:
+        - kty: "EC"
+          use: "sig"
+          kid: "fapi-test-key-1"
+          alg: "ES256"
+          crv: "P-256"
+          x: "-VA0fzoJpkWmuwRWilmc8xSrlrPVmAzlpMpQMiZetVc"
+          y: "sWwU5hohNPTkEuyCeVYWySYuU9a-dPkBeoAApG8UTpk"
+          d: "D0elCuLKMTS5M1Q1K-lhmfMiUjoDv-L-HPQz_Z9WY2Q"
+  # FAPI second client (for user-rejects-authentication test)
+  fapi_client2: &fapi_client2
+    client_id: "FAPI Client 2"
+    scope: "openid profile"
+    client_secret: ""
+    token_endpoint_auth_method: "private_key_jwt"
+    jwks:
+      keys:
+        - kty: "EC"
+          use: "sig"
+          kid: "fapi-test-key-2"
+          alg: "ES256"
+          crv: "P-256"
+          x: "0YCniv9r1v7a95GbMZzxtz3w09clH7QhhKi65A2KvLw"
+          y: "rG_x865khWLke14qOmogZlnSvJzvQ5yvxXdT0ySqjtw"
+          d: "rurglw6JTgh3Ijy-UiNQCPswBYsnxrnDRyP1Xde39lc"
   # publish: "summary"  # uncomment to publish results to certification.openid.net
 
   # Browser automation — controls the conformance suite's built-in Selenium
@@ -211,6 +249,44 @@ plan_config:
             - task: "Verify post-logout redirect"
               match: "*/test/*/post_logout_redirect*"
 
+    # FAPI user-rejects-authentication: click Cancel instead of Login
+    fapi2-security-profile-final-user-rejects-authentication:
+      browser:
+        - match: "${issuer_url}/authorize*"
+          tasks:
+            - task: "Cancel login"
+              optional: true
+              match: "${issuer_url}/login*"
+              commands:
+                - ["click", "css", "button[formaction='/login/cancel']"]
+            - task: "Verify access_denied"
+              match: "*/test/*/callback*"
+              commands:
+                - ["wait", "id", "submission_complete", 30]
+
+    # FAPI PAR request_uri reuse: first visit must NOT log in; second visit logs in
+    fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds:
+      browser:
+        - match: "${issuer_url}/authorize*"
+          tasks:
+            - task: "First visit - no login"
+              optional: true
+              match: "${issuer_url}/login*"
+              commands: []
+        - match: "${issuer_url}/authorize*"
+          tasks:
+            - task: "Second visit - login"
+              optional: true
+              match: "${issuer_url}/login*"
+              commands:
+                - ["text", "name", "username", "test-user@${issuer_host}"]
+                - ["text", "name", "password", "verysecure"]
+                - ["click", "css", "button[type='submit']"]
+            - task: "Verify complete"
+              match: "*/test/*/callback*"
+              commands:
+                - ["wait", "id", "submission_complete", 30]
+
 # Test plans — group by category for selective runs
 # because of requires image upload
 skip_modules:
@@ -239,6 +315,13 @@ skip_modules:
   - "oidcc-rp-initiated-logout-only-state"
   - "oidcc-rp-initiated-logout-query-added-to-post-logout-redirect-uri"
   - "oidcc-rp-initiated-logout-bad-id-token-hint"
+  # fapi2
+  - "fapi2-security-profile-final-ensure-different-nonce-inside-and-outside-request-object"
+  - "fapi2-security-profile-final-ensure-different-state-inside-and-outside-request-object"
+  - "fapi2-security-profile-final-ensure-authorization-request-with-long-nonce"
+  - "fapi2-security-profile-final-par-attempt-to-use-request_uri-for-different-client"
+  - "fapi2-security-profile-final-par-attempt-to-use-expired-request_uri"
+  - "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds"
 
 test_plans:
   oidc_core:
@@ -376,10 +459,20 @@ test_plans:
               - "code id_token token"
 
  # FAPI / CIBA TODO
+ # fapi2_security_private_key_jwt 和  fapi2_message_signing的openid connect测试已通过
+ #
+
+  fapi-ciba:
+    - planName: "fapi-"
+      testcase:
+        static_client:
+          variant:
   fapi2_message_signing:
     - planName: "fapi2-message-signing-final-test-plan"
       testcase:
         dpop_jarm:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "private_key_jwt"
             fapi_profile: "plain_fapi"
@@ -388,6 +481,8 @@ test_plans:
             sender_constrain: "dpop"
             openid: "openid_connect"
         dpop_plain:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "private_key_jwt"
             fapi_profile: "plain_fapi"
@@ -400,36 +495,48 @@ test_plans:
     - planName: "fapi2-security-profile-final-test-plan"
       testcase:
         mtls_dpop_oidc:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "mtls"
             fapi_profile: "plain_fapi"
             sender_constrain: "dpop"
             openid: "openid_connect"
         mtls_dpop_cc:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "mtls"
             fapi_profile: "fapi_client_credentials_grant"
             sender_constrain: "dpop"
             openid: "plain_oauth"
         mtls_dpop_plain:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "mtls"
             fapi_profile: "plain_fapi"
             sender_constrain: "dpop"
             openid: "plain_oauth"
         mtls_mtls_oidc:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "mtls"
             fapi_profile: "plain_fapi"
             sender_constrain: "mtls"
             openid: "openid_connect"
         mtls_mtls_cc:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "mtls"
             fapi_profile: "fapi_client_credentials_grant"
             sender_constrain: "mtls"
             openid: "plain_oauth"
         mtls_mtls_plain:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "mtls"
             fapi_profile: "plain_fapi"
@@ -440,36 +547,48 @@ test_plans:
     - planName: "fapi2-security-profile-final-test-plan"
       testcase:
         pkj_dpop_oidc:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "private_key_jwt"
             fapi_profile: "plain_fapi"
             sender_constrain: "dpop"
             openid: "openid_connect"
         pkj_dpop_cc:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "private_key_jwt"
             fapi_profile: "fapi_client_credentials_grant"
             sender_constrain: "dpop"
             openid: "plain_oauth"
         pkj_dpop_plain:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "private_key_jwt"
             fapi_profile: "plain_fapi"
             sender_constrain: "dpop"
             openid: "plain_oauth"
         pkj_mtls_oidc:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "private_key_jwt"
             fapi_profile: "plain_fapi"
             sender_constrain: "mtls"
             openid: "openid_connect"
         pkj_mtls_cc:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "private_key_jwt"
             fapi_profile: "fapi_client_credentials_grant"
             sender_constrain: "mtls"
             openid: "plain_oauth"
         pkj_mtls_plain:
+          client: *fapi_client
+          client2: *fapi_client2
           variant:
             client_auth_type: "private_key_jwt"
             fapi_profile: "plain_fapi"

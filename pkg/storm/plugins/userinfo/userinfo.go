@@ -131,6 +131,17 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RFC 9449 §7.1: when a DPoP proof is presented to a resource server,
+	// the ath claim MUST be present and MUST match base64url(SHA-256(access_token)).
+	if proof := shared.DPoPFromContext(r.Context()); proof != nil {
+		if err := shared.ValidateDPoPProofATH(proof, accessToken); err != nil {
+			errMsg := err.Error()
+			shared.WriteError(w, r, shared.NewStatusError(
+				protocol.ErrInvalidRequest().WithDescription("%s", errMsg), http.StatusBadRequest), nil)
+			return
+		}
+	}
+
 	// RFC 8705 §5 / RFC 9449 §7.2: verify sender-constrained token binding.
 	// If the token has a cnf claim, the request MUST prove possession of the
 	// corresponding key (DPoP jkt or mTLS x5t#S256).
@@ -189,11 +200,17 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	shared.JSONResponse(w, userInfo, http.StatusOK)
 }
 
-// extractAccessToken extracts the bearer token from the request.
+// extractAccessToken extracts the access token from the request.
+// Supports both Bearer (RFC 6750) and DPoP (RFC 9449) authorization schemes.
+// The auth-scheme is case-insensitive per RFC 6750 §1.1.
 func extractAccessToken(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimPrefix(auth, "Bearer ")
+	authLower := strings.ToLower(auth)
+	if strings.HasPrefix(authLower, "bearer ") {
+		return auth[len("bearer "):]
+	}
+	if strings.HasPrefix(authLower, "dpop ") {
+		return auth[len("dpop "):]
 	}
 	// Fallback to form body for POST requests
 	if r.Method == http.MethodPost {

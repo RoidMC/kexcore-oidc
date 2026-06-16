@@ -20,6 +20,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 )
 
 // --- fake implementations ---
@@ -479,7 +480,7 @@ func TestCopyRequestObjectToAuthRequest(t *testing.T) {
 		},
 	}
 
-	copyRequestObjectToAuthRequest(authReq, requestObject)
+	shared.CopyRequestObjectToAuthRequest(authReq, requestObject)
 
 	assert.Equal(t, protocol.SpaceDelimitedArray{"openid", "profile"}, authReq.Scopes)
 	assert.Equal(t, "new-state", authReq.State)
@@ -499,7 +500,7 @@ func TestCopyRequestObjectToAuthRequest_EmptyScopesNotOverwritten(t *testing.T) 
 		},
 	}
 
-	copyRequestObjectToAuthRequest(authReq, requestObject)
+	shared.CopyRequestObjectToAuthRequest(authReq, requestObject)
 
 	// Scopes should remain unchanged since request object has no scopes
 	assert.Equal(t, protocol.SpaceDelimitedArray{"openid", "profile"}, authReq.Scopes)

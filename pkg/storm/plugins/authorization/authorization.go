@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -30,7 +31,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -282,8 +282,17 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 // --- authorize handler ---
 
 func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
+	// DEBUG: log every request hitting the authorize endpoint
+	slog.Info("handleAuthorize: REQUEST RECEIVED",
+		slog.String("method", r.Method),
+		slog.String("url", r.URL.String()),
+		slog.String("remote_addr", r.RemoteAddr),
+	)
 	ctx, span := shared.TracerSpan(r.Context(), p.tracer, "authorization.authorize")
 	defer span.End()
+	if p.jarmSigner != nil {
+		ctx = contextWithJARMSigner(ctx, p.jarmSigner)
+	}
 	r = r.WithContext(ctx)
 
 	if err := r.ParseForm(); err != nil {
@@ -308,9 +317,19 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		attribute.StringSlice("scopes", []string(authReq.Scopes)),
 	)
 
+	// DEBUG: trace scope after initial form parsing
+	slog.Info("authorize: after parseAuthorizeRequest",
+		slog.Any("scopes", authReq.Scopes),
+		slog.String("client_id", authReq.ClientID),
+		slog.String("request_param_present", fmt.Sprintf("%v", authReq.RequestParam != "")),
+		slog.String("request_uri", authReq.RequestURI),
+	)
+
 	// Resolve effective response mode: explicit > implicit default from response_type.
 	// Per OAuth 2.0 Multiple Response Types §2.1, hybrid/implicit flows default to fragment.
-	resolvedMode := resolveResponseMode(authReq.ResponseMode, authReq.ResponseType)
+	// NOTE: This is calculated AFTER request_uri/PAR resolution so that response_mode
+	// from the request object or PAR request is properly reflected.
+	// (initial calculation removed — moved below request_uri/PAR resolution)
 
 	// RFC 9101 §5.2.1: request and request_uri MUST NOT be used together.
 	// Note: Before the client is resolved, we cannot validate redirect_uri
@@ -328,6 +347,10 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 			shared.WriteError(w, r, err, nil)
 			return
 		}
+		slog.Info("authorize: after applyRequestObject",
+			slog.Any("scopes", authReq.Scopes),
+			slog.String("client_id", authReq.ClientID),
+		)
 	}
 
 	// Resolve request_uri (OIDC Core §6.1, RFC 9101 §5.2)
@@ -338,6 +361,10 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 				shared.WriteError(w, r, err, nil)
 				return
 			}
+			slog.Info("authorize: after applyRequestURI",
+				slog.Any("scopes", authReq.Scopes),
+				slog.String("client_id", authReq.ClientID),
+			)
 		} else {
 			// request_uri is a PAR reference (RFC 9101 §5.2)
 			if p.parStore == nil {
@@ -348,8 +375,22 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 				shared.WriteError(w, r, err, nil)
 				return
 			}
+			slog.Info("authorize: after applyPARRequest",
+				slog.Any("scopes", authReq.Scopes),
+				slog.String("client_id", authReq.ClientID),
+				slog.String("redirect_uri", authReq.RedirectURI),
+			)
 		}
 	}
+
+	// Resolve effective response mode AFTER request_uri/PAR resolution.
+	resolvedMode := resolveResponseMode(authReq.ResponseMode, authReq.ResponseType)
+	slog.Info("authorize: resolved response mode",
+		slog.String("authReq_response_mode", string(authReq.ResponseMode)),
+		slog.String("authReq_response_type", string(authReq.ResponseType)),
+		slog.String("resolved_mode", string(resolvedMode)),
+		slog.String("client_id", authReq.ClientID),
+	)
 
 	if authReq.ClientID == "" {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("client_id is missing"), nil)
@@ -367,6 +408,10 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		shared.WriteError(w, r, protocol.ErrInvalidRequestRedirectURI().WithDescription("unable to retrieve client").WithParent(err), nil)
 		return
 	}
+	// Store clientID in context for JARM error responses.
+	if authReq.ClientID != "" {
+		r = r.WithContext(contextWithJARMClientID(r.Context(), authReq.ClientID))
+	}
 
 	// Validate redirect_uri first — separately from other params.
 	// Per OIDC Core §3.1.2.4: if redirect_uri is not registered, the OP
@@ -377,12 +422,57 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RFC 9449 §7.1: if the authorization request includes a DPoP proof
+	// header and dpop_jkt was not already set (e.g. from PAR data or
+	// request object), capture the JWK thumbprint for code binding.
+	if authReq.DPoPJKT == "" {
+		if dpopProof := shared.DPoPFromContext(r.Context()); dpopProof != nil {
+			authReq.DPoPJKT = dpopProof.JWKThumbprint()
+			slog.Info("authorize: captured DPoP JKT from proof",
+				slog.String("jkt", authReq.DPoPJKT),
+			)
+		}
+	}
+
+	// FAPI 2.0 §5.3.1: the authorization server SHALL require the use of
+	// PAR or a request object. Reject plain query-string requests for
+	// FAPI 2.0 clients.
+	if fapiClient, ok := client.(interface{ FAPIProfile() bool }); ok && fapiClient.FAPIProfile() {
+		if authReq.RequestURI == "" && authReq.RequestParam == "" {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
+				protocol.ErrInvalidRequest().WithDescription("FAPI 2.0 requires a request object or PAR (request_uri)"))
+			return
+		}
+	}
+
+	// FAPI 2.0 signed_non_repudiation: if the client is configured with a
+	// request_object_signing_alg, a signed request object is required.
+	if algProvider, ok := client.(shared.RequestObjectSigningAlgProvider); ok && algProvider.RequestObjectSigningAlg() != "" {
+		if authReq.RequestParam == "" {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
+				protocol.ErrInvalidRequest().WithDescription("signed request object is required for this client"))
+			return
+		}
+	}
+
 	// Now that redirect_uri is validated, remaining errors can be
 	// safely redirected to the registered URI.
+	slog.Info("authorize: before validateAuthRequestParamsExceptRedirectURI",
+		slog.Any("scopes", authReq.Scopes),
+		slog.Int("scopes_len", len(authReq.Scopes)),
+	)
 	if err := validateAuthRequestParamsExceptRedirectURI(client, authReq); err != nil {
+		slog.Error("authorize: validation failed",
+			slog.Any("error", err),
+			slog.Any("scopes", authReq.Scopes),
+		)
 		writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode, err)
 		return
 	}
+	slog.Info("authorize: after validateAuthRequestParamsExceptRedirectURI",
+		slog.Any("scopes", authReq.Scopes),
+		slog.Int("scopes_len", len(authReq.Scopes)),
+	)
 
 	// Reject plain PKCE unless explicitly allowed (OAuth 2.1 §4.1.1).
 	// S256 is always accepted; plain requires the server to opt in.
@@ -586,6 +676,9 @@ func (p *Plugin) storeDPoPCodeBinding(ctx context.Context, authRequestID string,
 // --- callback handler ---
 
 func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
+	if p.jarmSigner != nil {
+		r = r.WithContext(contextWithJARMSigner(r.Context(), p.jarmSigner))
+	}
 	if err := r.ParseForm(); err != nil {
 		shared.WriteError(w, r, fmt.Errorf("cannot parse form: %w", err), nil)
 		return
@@ -600,6 +693,23 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 	authReq, err := p.authStore.AuthRequestByID(r.Context(), id)
 	if err != nil {
 		shared.WriteError(w, r, err, nil)
+		return
+	}
+	// Store clientID in context for JARM error responses.
+	if authReq.GetClientID() != "" {
+		r = r.WithContext(contextWithJARMClientID(r.Context(), authReq.GetClientID()))
+	}
+
+	// If the login UI passed an error (e.g. user cancelled), return it
+	// via the authorization error response (JARM-aware).
+	if errorParam := r.Form.Get("error"); errorParam != "" {
+		description := r.Form.Get("error_description")
+		if description == "" {
+			description = errorParam
+		}
+		writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(),
+			resolveResponseMode(authReq.GetResponseMode(), authReq.GetResponseType()),
+			protocol.ToOAuthError(errorParam).WithDescription("%s", description))
 		return
 	}
 
@@ -665,7 +775,21 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 	}
 
 	// JARM response modes (RFC 9101)
+	slog.Info("authorize: checking JARM",
+		slog.String("response_mode", string(responseMode)),
+		slog.Bool("is_jarm", isJARMResponseMode(responseMode)),
+		slog.Bool("has_signer", p.jarmSigner != nil),
+	)
 	if isJARMResponseMode(responseMode) && p.jarmSigner != nil {
+		// Resolve "jwt" shorthand to concrete JARM mode (RFC 9101 §4.1).
+		effectiveRM := responseMode
+		if responseMode == protocol.ResponseModeJWT {
+			if usesFragmentDefault(authReq.GetResponseType()) {
+				effectiveRM = protocol.ResponseModeFragmentJWT
+			} else {
+				effectiveRM = protocol.ResponseModeQueryJWT
+			}
+		}
 		params := map[string]string{
 			"code": resp.Code,
 		}
@@ -681,14 +805,25 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 			params["iss"] = resp.Issuer
 		}
 
+		slog.Info("authorize: calling SignAuthResponse",
+			slog.String("clientID", authReq.GetClientID()),
+			slog.Any("params", params),
+		)
 		jwt, err := p.jarmSigner.SignAuthResponse(r.Context(), params, authReq.GetClientID())
 		if err != nil {
+			slog.Error("authorize: JARM signing failed", slog.Any("error", err))
 			writeAuthError(w, r, redirectURI, authReq.GetState(), responseMode,
 				protocol.DefaultToServerError(err, "failed to sign JARM response"))
 			return
 		}
 
-		writeJARMResponse(w, r, redirectURI, jwt, responseMode)
+		slog.Info("authorize: JARM signed",
+			slog.String("effectiveRM", string(effectiveRM)),
+			slog.String("redirectURI", redirectURI),
+			slog.String("jwt_prefix", truncateStr(jwt, 80)),
+		)
+
+		writeJARMResponse(w, r, redirectURI, jwt, effectiveRM)
 		return
 	}
 
@@ -1070,64 +1205,10 @@ func (p *Plugin) authResponseHybrid(w http.ResponseWriter, r *http.Request, auth
 
 // applyRequestObject parses and validates a JWT request object (OIDC Core §6.1).
 func (p *Plugin) applyRequestObject(ctx context.Context, authReq *protocol.AuthRequest) error {
-	requestObject := new(protocol.RequestObject)
-	payload, err := protocol.ParseToken(authReq.RequestParam, requestObject)
-	if err != nil {
-		return protocol.ErrInvalidRequest().WithDescription("invalid request object").WithParent(err)
+	lookupClient := func(ctx context.Context, clientID string) (shared.Client, error) {
+		return p.clientStore.GetClientByClientID(ctx, clientID)
 	}
-
-	// Validate request object claims
-	if requestObject.Issuer == "" {
-		return protocol.ErrInvalidRequest().WithDescription("request object missing iss claim")
-	}
-	if requestObject.Issuer != requestObject.ClientID {
-		return protocol.ErrInvalidRequest().WithDescription("missing or wrong issuer in request object")
-	}
-	issuer := shared.IssuerFromContext(ctx)
-	if !slices.Contains(requestObject.Audience, issuer) {
-		return protocol.ErrInvalidRequest().WithDescription("issuer missing in request object audience")
-	}
-
-	// Look up the client and verify signature using client's JWKS
-	oidcClient, err := p.clientStore.GetClientByClientID(ctx, requestObject.Issuer)
-	if err != nil {
-		return protocol.ErrInvalidRequest().WithDescription("client not found for request object issuer")
-	}
-	if requestObject.ClientID != "" && requestObject.ClientID != authReq.ClientID && authReq.ClientID != "" {
-		return protocol.ErrInvalidRequest().WithDescription("missing or wrong client id in request object")
-	}
-	if requestObject.ResponseType != "" && requestObject.ResponseType != authReq.ResponseType && authReq.ResponseType != "" {
-		return protocol.ErrInvalidRequest().WithDescription("missing or wrong response type in request object")
-	}
-
-	// Get client's JWKS for signature verification
-	clientJWKSProvider, ok := oidcClient.(storm.ClientJWKSProvider)
-	if !ok {
-		return protocol.ErrInvalidRequest().WithDescription("client does not support request object verification")
-	}
-	clientKeys := clientJWKSProvider.ClientJWKS()
-	if len(clientKeys) == 0 {
-		return protocol.ErrInvalidRequest().WithDescription("client has no registered keys")
-	}
-
-	// Verify signature using client's keys
-	if err := verifyRequestObjectSignature(ctx, authReq.RequestParam, payload, requestObject, clientKeys); err != nil {
-		return protocol.ErrInvalidRequest().WithDescription("invalid request object signature").WithParent(err)
-	}
-
-	// Validate time claims (OIDC Core §6.1, FAPI 2.0 §5.3.2.2).
-	now := time.Now()
-	const clockSkew = 10 * time.Second
-	if requestObject.ExpiresAt != 0 && now.After(time.Unix(requestObject.ExpiresAt, 0).Add(clockSkew)) {
-		return protocol.ErrInvalidRequest().WithDescription("request object has expired")
-	}
-	if requestObject.NotBefore != 0 && now.Before(time.Unix(requestObject.NotBefore, 0).Add(-clockSkew)) {
-		return protocol.ErrInvalidRequest().WithDescription("request object is not yet valid (nbf)")
-	}
-
-	// Copy request object values into the auth request.
-	copyRequestObjectToAuthRequest(authReq, requestObject)
-	return nil
+	return shared.ParseAndValidateRequestObject(ctx, authReq, lookupClient)
 }
 
 // applyRequestURI fetches and validates a signed JWT request object from a URL (OIDC Core §6.1).
@@ -1136,92 +1217,23 @@ func (p *Plugin) applyRequestURI(ctx context.Context, authReq *protocol.AuthRequ
 	client := shared.NewHTTPClient(p.skipTLSCertVerify)
 	resp, err := client.Get(authReq.RequestURI)
 	if err != nil {
-		return protocol.ErrInvalidRequest().WithDescription("failed to fetch request_uri: %s", authReq.RequestURI).WithParent(err)
+		return protocol.ErrInvalidRequestObject().WithDescription("failed to fetch request_uri: %s", authReq.RequestURI).WithParent(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return protocol.ErrInvalidRequest().WithDescription("request_uri returned HTTP %d", resp.StatusCode)
+		return protocol.ErrInvalidRequestObject().WithDescription("request_uri returned HTTP %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return protocol.ErrInvalidRequest().WithDescription("failed to read request_uri response").WithParent(err)
-	}
-	jwtString := strings.TrimSpace(string(body))
-
-	// Parse the JWT request object
-	requestObject := new(protocol.RequestObject)
-	payload, err := protocol.ParseToken(jwtString, requestObject)
-	if err != nil {
-		return protocol.ErrInvalidRequest().WithDescription("invalid request object from request_uri").WithParent(err)
+		return protocol.ErrInvalidRequestObject().WithDescription("failed to read request_uri response").WithParent(err)
 	}
 
-	// Validate request object claims
-	if requestObject.Issuer == "" {
-		return protocol.ErrInvalidRequest().WithDescription("request object missing iss claim")
+	// Set the fetched JWT as the request parameter and validate using shared logic.
+	authReq.RequestParam = strings.TrimSpace(string(body))
+	lookupClient := func(ctx context.Context, clientID string) (shared.Client, error) {
+		return p.clientStore.GetClientByClientID(ctx, clientID)
 	}
-	if requestObject.Issuer != requestObject.ClientID {
-		return protocol.ErrInvalidRequest().WithDescription("missing or wrong issuer in request object")
-	}
-	issuer := shared.IssuerFromContext(ctx)
-	if !slices.Contains(requestObject.Audience, issuer) {
-		return protocol.ErrInvalidRequest().WithDescription("issuer missing in request object audience")
-	}
-
-	// Look up the client and verify signature using client's JWKS
-	oidcClient, err := p.clientStore.GetClientByClientID(ctx, requestObject.Issuer)
-	if err != nil {
-		return protocol.ErrInvalidRequest().WithDescription("client not found for request object issuer")
-	}
-	if requestObject.ClientID != "" && requestObject.ClientID != authReq.ClientID && authReq.ClientID != "" {
-		return protocol.ErrInvalidRequest().WithDescription("missing or wrong client id in request object")
-	}
-	if requestObject.ResponseType != "" && requestObject.ResponseType != authReq.ResponseType && authReq.ResponseType != "" {
-		return protocol.ErrInvalidRequest().WithDescription("missing or wrong response type in request object")
-	}
-
-	// Get client's JWKS for signature verification
-	clientJWKSProvider, ok := oidcClient.(storm.ClientJWKSProvider)
-	if !ok {
-		return protocol.ErrInvalidRequest().WithDescription("client does not support request object verification")
-	}
-	clientKeys := clientJWKSProvider.ClientJWKS()
-	if len(clientKeys) == 0 {
-		return protocol.ErrInvalidRequest().WithDescription("client has no registered keys")
-	}
-
-	// Verify signature using client's keys
-	if err := verifyRequestObjectSignature(ctx, jwtString, payload, requestObject, clientKeys); err != nil {
-		return protocol.ErrInvalidRequest().WithDescription("invalid request object signature").WithParent(err)
-	}
-
-	// Validate time claims (OIDC Core §6.1, FAPI 2.0 §5.3.2.2).
-	now := time.Now()
-	const clockSkew = 10 * time.Second
-	if requestObject.ExpiresAt != 0 && now.After(time.Unix(requestObject.ExpiresAt, 0).Add(clockSkew)) {
-		return protocol.ErrInvalidRequest().WithDescription("request object has expired")
-	}
-	if requestObject.NotBefore != 0 && now.Before(time.Unix(requestObject.NotBefore, 0).Add(-clockSkew)) {
-		return protocol.ErrInvalidRequest().WithDescription("request object is not yet valid (nbf)")
-	}
-
-	// Copy request object values into the auth request.
-	copyRequestObjectToAuthRequest(authReq, requestObject)
-	return nil
-}
-
-// verifyRequestObjectSignature verifies a JWT signature using the client's JWKS keys.
-func verifyRequestObjectSignature(ctx context.Context, token string, payload []byte, claims protocol.ClaimsSignature, keys []jwk.Key) error {
-	parsed, err := jws.Parse([]byte(token))
-	if err != nil {
-		return fmt.Errorf("error parsing token: %w", err)
-	}
-	keyID, alg := protocol.GetKeyIDAndAlg(parsed)
-	matchingKey, err := protocol.FindMatchingKey(keyID, protocol.KeyUseSignature, alg, keys...)
-	if err != nil {
-		return fmt.Errorf("no matching key found: %w", err)
-	}
-	_, err = protocol.VerifySignature(ctx, parsed, []byte(token), matchingKey, alg)
-	return err
+	return shared.ParseAndValidateRequestObject(ctx, authReq, lookupClient)
 }
 
 // applyPARRequest resolves a Pushed Authorization Request (RFC 9101 §5.2).
@@ -1231,54 +1243,58 @@ func (p *Plugin) applyPARRequest(ctx context.Context, authReq *protocol.AuthRequ
 		return protocol.ErrInvalidRequest().WithDescription("invalid request_uri").WithParent(err)
 	}
 
-	// Only copy fields that are not already present in the incoming request.
-	if parReq.ClientID != "" && authReq.ClientID == "" {
-		authReq.ClientID = parReq.ClientID
+	// DEBUG: trace PAR data before merging
+	slog.Info("applyPARRequest: PAR data retrieved",
+		slog.Any("par_scopes", parReq.Scopes),
+		slog.String("par_client_id", parReq.ClientID),
+		slog.String("par_redirect_uri", parReq.RedirectURI),
+		slog.Any("incoming_scopes", authReq.Scopes),
+		slog.String("incoming_client_id", authReq.ClientID),
+	)
+
+	// RFC 9126: The request_uri is bound to the client that created it.
+	// If the authorize endpoint carries a different client_id, reject.
+	if authReq.ClientID != "" && authReq.ClientID != parReq.ClientID {
+		return protocol.ErrInvalidRequest().WithDescription("client_id does not match the pushed authorization request")
 	}
-	if parReq.RedirectURI != "" && authReq.RedirectURI == "" {
-		authReq.RedirectURI = parReq.RedirectURI
+
+	// FAPI 2.0 / RFC 9126: when PAR is used, authorization parameters MUST
+	// come exclusively from the pushed request. The authorize endpoint query
+	// string only carries request_uri (and optionally client_id for
+	// identification). All other parameters from the query string are ignored.
+	// We unconditionally assign from the PAR data so that any stale
+	// query-string values (e.g. state) that were not part of the pushed
+	// request are cleared.
+	authReq.ClientID = parReq.ClientID
+	authReq.RedirectURI = parReq.RedirectURI
+	authReq.Scopes = parReq.Scopes
+	authReq.State = parReq.State
+	authReq.ResponseType = parReq.ResponseType
+	authReq.ResponseMode = parReq.ResponseMode
+	if parReq.Nonce != "" && authReq.Nonce != "" && authReq.Nonce != parReq.Nonce {
+		return protocol.ErrInvalidRequest().WithDescription("nonce in query does not match nonce in PAR request")
 	}
-	if len(parReq.Scopes) > 0 && len(authReq.Scopes) == 0 {
-		authReq.Scopes = parReq.Scopes
-	}
-	if parReq.State != "" && authReq.State == "" {
-		authReq.State = parReq.State
-	}
-	if parReq.ResponseType != "" && authReq.ResponseType == "" {
-		authReq.ResponseType = parReq.ResponseType
-	}
-	if parReq.ResponseMode != "" && authReq.ResponseMode == "" {
-		authReq.ResponseMode = parReq.ResponseMode
-	}
-	if parReq.Nonce != "" && authReq.Nonce == "" {
-		authReq.Nonce = parReq.Nonce
-	}
-	if parReq.Display != "" && authReq.Display == "" {
-		authReq.Display = parReq.Display
-	}
-	if len(parReq.Prompt) > 0 && len(authReq.Prompt) == 0 {
-		authReq.Prompt = parReq.Prompt
-	}
-	if parReq.MaxAge != nil && authReq.MaxAge == nil {
-		authReq.MaxAge = parReq.MaxAge
-	}
-	if len(parReq.UILocales) > 0 && len(authReq.UILocales) == 0 {
-		authReq.UILocales = parReq.UILocales
-	}
-	if parReq.IDTokenHint != "" && authReq.IDTokenHint == "" {
-		authReq.IDTokenHint = parReq.IDTokenHint
-	}
-	if parReq.LoginHint != "" && authReq.LoginHint == "" {
-		authReq.LoginHint = parReq.LoginHint
-	}
-	if len(parReq.ACRValues) > 0 && len(authReq.ACRValues) == 0 {
-		authReq.ACRValues = parReq.ACRValues
-	}
-	if parReq.CodeChallenge != "" && authReq.CodeChallenge == "" {
-		authReq.CodeChallenge = parReq.CodeChallenge
-	}
-	if parReq.CodeChallengeMethod != "" && authReq.CodeChallengeMethod == "" {
-		authReq.CodeChallengeMethod = parReq.CodeChallengeMethod
+	authReq.Nonce = parReq.Nonce
+	authReq.Display = parReq.Display
+	authReq.Prompt = parReq.Prompt
+	authReq.MaxAge = parReq.MaxAge
+	authReq.UILocales = parReq.UILocales
+	authReq.IDTokenHint = parReq.IDTokenHint
+	authReq.LoginHint = parReq.LoginHint
+	authReq.ACRValues = parReq.ACRValues
+	authReq.CodeChallenge = parReq.CodeChallenge
+	authReq.CodeChallengeMethod = parReq.CodeChallengeMethod
+	authReq.DPoPJKT = parReq.DPoPJKT
+	authReq.Claims = parReq.Claims
+	authReq.Resource = parReq.Resource
+	authReq.AuthorizationDetails = parReq.AuthorizationDetails
+	authReq.RequestParam = parReq.RequestParam
+
+	// If the pushed request included a request object, parse and validate it.
+	if authReq.RequestParam != "" {
+		if err := p.applyRequestObject(ctx, authReq); err != nil {
+			return err
+		}
 	}
 
 	return nil

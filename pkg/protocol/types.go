@@ -252,12 +252,19 @@ func (s SpaceDelimitedArray) MarshalJSON() ([]byte, error) {
 }
 
 func (s *SpaceDelimitedArray) UnmarshalJSON(data []byte) error {
+	// Try string first (space-delimited, e.g. "openid email profile")
 	var str string
-	if err := json.Unmarshal(data, &str); err != nil {
-		return err
+	if err := json.Unmarshal(data, &str); err == nil {
+		*s = strings.Split(str, " ")
+		return nil
 	}
-	*s = strings.Split(str, " ")
-	return nil
+	// Try JSON array (e.g. ["openid", "email"])
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		*s = arr
+		return nil
+	}
+	return fmt.Errorf("cannot unmarshal %s into SpaceDelimitedArray", string(data))
 }
 
 func (s *SpaceDelimitedArray) Scan(src any) error {

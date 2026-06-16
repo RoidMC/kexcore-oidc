@@ -70,6 +70,9 @@ var (
 	// ErrIatToOld indicates the iat claim exceeds the maximum age.
 	ErrIatToOld = errors.New("issuedAt of token is to old")
 
+	// ErrNbfInFuture indicates the nbf claim is in the future.
+	ErrNbfInFuture = errors.New("notBefore of token is in the future")
+
 	// ErrNonceInvalid indicates the nonce claim does not match the expected value.
 	ErrNonceInvalid = errors.New("nonce does not match")
 
@@ -199,6 +202,13 @@ const (
 	// OIDC Core 1.0 §6.3
 	RequestURINotSupported errorType = "request_uri_not_supported"
 
+	// ---- RFC 9101 JAR / OIDC Core §6 ----
+
+	// InvalidRequestObject: The request object is invalid, malformed,
+	// has an invalid signature, or fails validation.
+	// RFC 9101 §6.3 / OIDC Core §6.1
+	InvalidRequestObject errorType = "invalid_request_object"
+
 	// ---- RFC 8628 Device Authorization Grant (§3.5) ----
 
 	// AuthorizationPending: The authorization request is still pending as the
@@ -307,6 +317,12 @@ var (
 
 	ErrRequestURINotSupported = func() *Error {
 		return &Error{ErrorType: RequestURINotSupported}
+	}
+
+	// ---- RFC 9101 JAR / OIDC Core §6 ----
+
+	ErrInvalidRequestObject = func() *Error {
+		return &Error{ErrorType: InvalidRequestObject}
 	}
 
 	// ---- RFC 8628 Device Authorization Grant (§3.5) ----
@@ -483,6 +499,7 @@ func DefaultToServerError(err error, description string) *Error {
 		errors.Is(err, ErrIatMissing),
 		errors.Is(err, ErrIatInFuture),
 		errors.Is(err, ErrIatToOld),
+		errors.Is(err, ErrNbfInFuture),
 		errors.Is(err, ErrNonceInvalid),
 		errors.Is(err, ErrAcrInvalid),
 		errors.Is(err, ErrAuthTimeNotPresent),
@@ -529,4 +546,31 @@ func (e *Error) LogValue() slog.Value {
 		attrs = append(attrs, slog.Bool("redirect_disabled", e.redirectDisabled))
 	}
 	return slog.GroupValue(attrs...)
+}
+
+// ToOAuthError maps an OAuth error code string (e.g. "access_denied")
+// to a protocol.Error. Returns ErrInvalidRequest for unknown codes.
+func ToOAuthError(code string) *Error {
+	switch errorType(code) {
+	case AccessDenied:
+		return ErrAccessDenied()
+	case InvalidClient:
+		return ErrInvalidClient()
+	case InvalidGrant:
+		return ErrInvalidGrant()
+	case InvalidScope:
+		return ErrInvalidScope()
+	case UnauthorizedClient:
+		return ErrUnauthorizedClient()
+	case UnsupportedResponseType:
+		return ErrUnsupportedResponseType()
+	case InteractionRequired:
+		return ErrInteractionRequired()
+	case LoginRequired:
+		return ErrLoginRequired()
+	case ServerError:
+		return ErrServerError()
+	default:
+		return ErrInvalidRequest()
+	}
 }

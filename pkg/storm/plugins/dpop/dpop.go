@@ -104,15 +104,32 @@ func DPoPFromContext(ctx context.Context) *Proof {
 // the request is rejected with HTTP 400 (RFC 9449 §4.3).
 func (p *Plugin) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		dpopHeader := r.Header.Get(Header)
-		if dpopHeader == "" {
+		// RFC 9449 §7.1: if more than one DPoP proof is present, reject.
+		dpopHeaders := r.Header.Values(Header)
+		if len(dpopHeaders) == 0 {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if len(dpopHeaders) > 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_dpop_proof","error_description":"multiple DPoP proofs in request"}`))
+			return
+		}
+		dpopHeader := dpopHeaders[0]
 
-		proof, err := ParseProof(dpopHeader, r.Method, r.URL.String())
+		// Construct full URL from request (r.URL is relative in Go).
+		scheme := "https"
+		if r.TLS == nil {
+			scheme = "http"
+		}
+		fullURL := scheme + "://" + r.Host + r.URL.String()
+
+		proof, err := ParseProof(dpopHeader, r.Method, fullURL)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"error":"invalid_dpop_proof","error_description":"` + escapeJSON(err.Error()) + `"}`))
 			return
@@ -123,6 +140,7 @@ func (p *Plugin) Middleware(next http.Handler) http.Handler {
 		if _, exists := p.usedNonces[proof.UniqueID]; exists {
 			p.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"error":"invalid_dpop_proof","error_description":"DPoP proof jti replay detected"}`))
 			return

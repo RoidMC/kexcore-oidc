@@ -43,7 +43,7 @@ func (s *Storage) AuthRequestByID(_ context.Context, id string) (storm.AuthReque
 
 // authCodeTTL is the maximum lifetime of an authorization code.
 // RFC 6749 §4.1.2: The authorization code MUST expire after a brief
-// period of time. The OIDF FAPI 2.0 Security Profile specifies 60 seconds.
+// period of time. FAPI 2.0 Security Profile §5.3.2.1-11 requires 60 seconds.
 const authCodeTTL = 60 * time.Second
 
 func (s *Storage) AuthRequestByCode(_ context.Context, code string) (storm.AuthRequest, error) {
@@ -52,6 +52,11 @@ func (s *Storage) AuthRequestByCode(_ context.Context, code string) (storm.AuthR
 
 	authReqID, ok := s.codeToAuthReq[code]
 	if !ok {
+		// Check if code was already consumed — signal reuse so the
+		// caller can revoke previously issued tokens (RFC 6749 §4.1.2).
+		if _, used := s.usedCodes[code]; used {
+			return nil, fmt.Errorf("authorization code already used")
+		}
 		return nil, fmt.Errorf("code not found")
 	}
 
@@ -70,6 +75,14 @@ func (s *Storage) AuthRequestByCode(_ context.Context, code string) (storm.AuthR
 	if !ok {
 		return nil, fmt.Errorf("auth request not found: %s", authReqID)
 	}
+
+	// RFC 6749 §4.1.2: Codes MUST be single-use. Atomically consume
+	// the code so a concurrent duplicate request sees "already used".
+	delete(s.codeToAuthReq, code)
+	s.usedCodes[code] = authReqID
+	delete(s.authCodes, authReqID)
+	delete(s.codeCreatedAt, code)
+
 	return ar, nil
 }
 
@@ -135,4 +148,23 @@ func (s *Storage) RevokeTokensForUsedCode(code string) string {
 	}
 
 	return authRequestID
+}
+
+// SetAuthRequestDPoPJKT implements storm.DPoPCodeBindingStore.
+func (s *Storage) SetAuthRequestDPoPJKT(_ context.Context, authRequestID string, jkt string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.dpopJKTs[authRequestID] = jkt
+	return nil
+}
+
+// GetAuthRequestDPoPJKT implements storm.DPoPCodeBindingStore.
+func (s *Storage) GetAuthRequestDPoPJKT(_ context.Context, authRequestID string) (string, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	jkt, ok := s.dpopJKTs[authRequestID]
+	if !ok {
+		return "", fmt.Errorf("dpop_jkt not found for auth request: %s", authRequestID)
+	}
+	return jkt, nil
 }

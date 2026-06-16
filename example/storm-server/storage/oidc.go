@@ -41,6 +41,7 @@ type AuthRequest struct {
 	CodeChallenge *OIDCCodeChallenge
 	ACRValues     []string
 	Claims        *protocol.ClaimsRequest
+	Resources     []string // RFC 8707: Resource Indicators
 
 	// extraIDTokenClaims holds claims requested via claims.id_token (OIDC §5.5)
 	// that should be merged into the ID token.
@@ -95,6 +96,10 @@ func (a *AuthRequest) GetSubject() string                     { return a.UserID 
 func (a *AuthRequest) GetClaims() *protocol.ClaimsRequest     { return a.Claims }
 func (a *AuthRequest) Done() bool                             { return a.done }
 
+// GetResources implements storm.ResourceIndicator (RFC 8707).
+// Returns the resource indicator values from the authorization request.
+func (a *AuthRequest) GetResources() []string { return a.Resources }
+
 // ExtraIDTokenClaims implements idTokenClaimsExtender for the token plugin.
 // Returns claims requested via the OIDC §5.5 claims.id_token parameter.
 func (a *AuthRequest) ExtraIDTokenClaims() map[string]any {
@@ -146,6 +151,7 @@ func authRequestToInternal(authReq *protocol.AuthRequest, userID string, user *U
 		CodeChallenge:      codeChallenge,
 		ACRValues:          authReq.ACRValues,
 		Claims:             authReq.Claims,
+		Resources:          authReq.Resource,
 		extraIDTokenClaims: buildIDTokenClaims(authReq.Scopes, authReq.Claims, user, authReq.ResponseType),
 		sessionID:          uuid.NewString(),
 	}
