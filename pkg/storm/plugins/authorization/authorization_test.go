@@ -486,7 +486,10 @@ func TestCopyRequestObjectToAuthRequest(t *testing.T) {
 	assert.Equal(t, "new-state", authReq.State)
 	assert.Equal(t, "new-nonce", authReq.Nonce)
 	assert.Equal(t, "https://example.com/new-callback", authReq.RedirectURI)
-	assert.Empty(t, authReq.RequestParam) // RequestParam should be cleared
+	// RequestParam is cleared after the request object is applied — per
+	// OIDC Core §6.1 / RFC 9101 the request JWT is a transport envelope;
+	// once verified and copied it has no further use.
+	assert.Empty(t, authReq.RequestParam)
 }
 
 func TestCopyRequestObjectToAuthRequest_EmptyScopesNotOverwritten(t *testing.T) {
@@ -495,15 +498,16 @@ func TestCopyRequestObjectToAuthRequest_EmptyScopesNotOverwritten(t *testing.T) 
 	}
 	requestObject := &protocol.RequestObject{
 		AuthRequest: protocol.AuthRequest{
-			// Scopes is empty, should not overwrite
+			// Scopes is empty — per FAPI 2.0 §5.3.1 the request object
+			// values are used unconditionally, so empty scopes overwrite.
 			State: "new-state",
 		},
 	}
 
 	shared.CopyRequestObjectToAuthRequest(authReq, requestObject)
 
-	// Scopes should remain unchanged since request object has no scopes
-	assert.Equal(t, protocol.SpaceDelimitedArray{"openid", "profile"}, authReq.Scopes)
+	// Scopes are overwritten by the (empty) request object value per FAPI 2.0.
+	assert.Empty(t, authReq.Scopes)
 	assert.Equal(t, "new-state", authReq.State)
 }
 

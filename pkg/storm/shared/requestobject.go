@@ -140,6 +140,12 @@ func ParseAndValidateRequestObject(ctx context.Context, authReq *protocol.AuthRe
 // parameter values from the request object. Therefore all fields are
 // unconditionally assigned from the request object — any query-string-only
 // values (e.g. state) that are absent from the request object are cleared.
+//
+// Per OIDC Core §6.1 and RFC 9101, the request object is a transport envelope
+// for authorization request parameters. Once the signature is verified and the
+// claims are copied, the original RequestParam (the raw JWT string) has no
+// further use — no downstream flow reads it. Clearing it avoids accidentally
+// re-processing the same JWT and keeps the AuthRequest semantically clean.
 func CopyRequestObjectToAuthRequest(authReq *protocol.AuthRequest, requestObject *protocol.RequestObject) {
 	authReq.ResponseType = requestObject.ResponseType
 	authReq.ClientID = requestObject.ClientID
@@ -166,6 +172,10 @@ func CopyRequestObjectToAuthRequest(authReq *protocol.AuthRequest, requestObject
 	authReq.Resource = requestObject.Resource
 	authReq.AuthorizationDetails = requestObject.AuthorizationDetails
 	authReq.RequestURI = requestObject.RequestURI
+	// Clear the raw request JWT — its signature has been verified and its
+	// claims copied above; no downstream consumer reads RequestParam after
+	// this point (OIDC Core §6.1, RFC 9101).
+	authReq.RequestParam = ""
 }
 
 // verifyRequestObjectSignature verifies a JWT signature using the client's JWKS keys.

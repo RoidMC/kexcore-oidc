@@ -35,7 +35,7 @@ The most important packages of the library:
 /pkg
     /protocol          OAuth 2.1 / OIDC types, errors, verifiers (zero dependency)
     /storm             Plugin-based OIDC server engine
-        /plugins       Individual RFC endpoint plugins (14 plugins)
+        /plugins       Individual RFC endpoint plugins (17 plugins)
     /client            RP client (based on zitadel/oidc)
         /rp            OIDC Relying Party
         /rs            OAuth Resource Server
@@ -101,7 +101,7 @@ Example server allows extra configuration using environment variables and could 
 | REDIRECT_URI       | Comma-separated URIs             | List of allowed redirect URIs                                    |
 | USERS_FILE         | Path to json in local filesystem | Users with their data and credentials                            |
 | ISSUER             | URL                              | Issuer identifier (e.g. `https://your-domain.com/`)              |
-| SIGNING_ALGORITHMS | Comma-separated algorithms       | Enabled JWS algorithms (default: `RS256,RS384,RS512,EdDSA,SGD_SM3_SM2,SGD_SM3_SM9`) |
+| SIGNING_ALGORITHMS | Comma-separated algorithms       | Enabled JWS algorithms (default: `RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512,EdDSA,HS256,HS384,HS512,SGD_SM3_SM2,SGD_SM3_SM9`) |
 
 Here is json equivalent for one of the default users
 
@@ -157,14 +157,42 @@ Plugin-based OIDC server framework.
 | Hybrid Flow (可选) | `authorization` | OpenID Connect Core 1.0, [Section 3.3][3] | ✅ 默认关闭 |
 | Back-Channel Logout | `backchannel` | OpenID Connect [Back-Channel Logout][12] 1.0 | ✅ |
 | Resource Indicators | `token` | [RFC 8707][24] | ✅ |
+| Rich Authorization Requests (RAR) | `authorization` | [RFC 9396][30] | ✅ 可通过 `AuthorizationDetailsTypes` 配置支持的 type |
+| DCR Management | `dcr` | [RFC 7592][31] | ✅ GET/PUT/DELETE `/register/{client_id}` |
+| WebFinger | `webfinger` | [RFC 7033][32] | ✅ `/.well-known/webfinger` issuer 发现 |
+| CIBA (Client-Initiated Backchannel Auth) | `ciba` + `token` | [CIBA Core 1.0][33] | ✅ `POST /bc-authorize` + ping/poll + `slow_down` + 审批 UI + 通知回调 |
 | HTTPS redirect_uri 强制 | `authorization` | OpenID Connect Core 1.0, [Section 15.6.3][25] | ✅ (localhost 豁免) |
 | Pairwise Subject | `pairwise` | OpenID Connect Core 1.0, [Section 8.1][26] | ✅ |
-| ID Token 签名 (RSA/ECDSA/EdDSA) | `token` | [RFC 7515][27] | ✅ |
-| ID Token 签名 (SM2/SM9 国密) | `token` | [GM/T 0125][GM/T 0125.3-2022] | ✅ |
-| JWE ID Token Encryption | `token` | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022] | ✅ |
+| ID Token 签名 (RSA/ECDSA/EdDSA/HMAC) | `token` | [RFC 7515][27] + [RFC 7518][34] | ✅ RS256/384/512, PS256/384/512, ES256/384/512, EdDSA, HS256/384/512 |
+| ID Token 签名 (SM2/SM9 国密) | `token` | [GM/T 0125.1-2022] | ✅ `SGD_SM3_SM2` (SM2+SM3), `SGD_SM3_SM9` (SM9 identity-based) |
+| JWE ID Token Encryption | `token` | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022][GM/T 0125.3-2022] | ✅ Key wrapping: `dir`, `A128KW`/`A192KW`/`A256KW`, `A128GCMKW`/`A192GCMKW`/`A256GCMKW`, `ECDH-ES`/`ECDH-ES+A128KW`/`+A192KW`/`+A256KW`, `SGD_SM2_3` (SM2), `SGD_SM9_3` (SM9). Content encryption: `A128GCM`/`A192GCM`/`A256GCM`, `A128CBC-HS256`/`A192CBC-HS384`/`A256CBC-HS512`, `SGD_SM4_GCM`, `SGD_SM4_CCM` |
 | OAuth 2.1 合规 Discovery | `discovery` | OAuth 2.1 | ✅ |
 | Front-Channel Logout | — | OIDC Front-Channel | ❌ 不实现（纯后端 API 不需要） |
 | Session Management (iframe) | — | OIDC Session Management §3 | ❌ 不实现（纯后端 API 不需要） |
+
+#### FAPI Profiles (Financial-grade API)
+
+StormEngine 实现 [FAPI 1.0 Advanced][35] 与 [FAPI 2.0 Security Profile][36] 的核心安全要求，支持通过 OIDF Conformance Test Suite 认证。
+
+| Feature | Spec | Status |
+|---|---|---|
+| 强制 Request Object (签名 JWT) | [FAPI 2.0 §5.3.1][36] | ✅ FAPI client 必须使用 request object 或 PAR，否则拒绝 |
+| Request Object 签名算法强制 | [FAPI 2.0 §5.3.2.1][36] | ✅ client 注册 `request_object_signing_alg` 时拒绝未签名请求 |
+| Request Object 时间校验 | [FAPI 2.0 §5.3.2.2][36] | ✅ 必须含 `nbf`；`exp - nbf` ≤ 60 分钟 |
+| PAR 强制 (FAPI 2.0) | [RFC 9126][15] + [FAPI 2.0][36] | ✅ FAPI client 必须使用 PAR 或 request_uri |
+| PAR: 拒绝含 `request_uri` 的 request object | [RFC 9126 §2][15] | ✅ 返回 `invalid_request_object` |
+| PAR: 拒绝未签名 request object | [FAPI 2.0][36] | ✅ 配置 `request_object_signing_alg` 的 client |
+| PAR 生命周期可配置 | [RFC 9126 §2.2][15] | ✅ `WithPARLifetime()`，默认 90s |
+| Sender-constrained Tokens (DPoP) | [RFC 9449][14] + [FAPI 2.0][36] | ✅ per-client `RequireDPoP` 或全局 `WithRequireDPoP()` |
+| Sender-constrained Tokens (mTLS) | [RFC 8705][11] + [FAPI 2.0][36] | ✅ per-client `RequireMtls` 或全局 `WithRequireMtls()` |
+| DPoP Code Binding | [RFC 9449 §7.1][14] | ✅ authorization request 的 `dpop_jkt` 与 token 端点 DPoP proof JKT 必须匹配 |
+| mTLS Certificate-Bound Access Tokens | [RFC 8705 §3][11] | ✅ access token 绑定 client cert thumbprint |
+| per-client ID Token 签名算法 | [OIDC Core §5.1][37] + [FAPI 2.0][36] | ✅ `id_token_signed_response_alg`（FAPI client 默认 PS256） |
+| per-client Userinfo JWT 算法 | [OIDC Core §5.3.2][18] | ✅ `userinfo_signed_response_alg` |
+| JARM (JWT Secured Authorization Response) | [RFC 9101][28] | ✅ FAPI 1.0 推荐的响应模式 |
+| `iss` in Authorization Response | [RFC 9207][29] | ✅ Mix-up defense |
+| Private Key JWT Client Auth | [RFC 7523 §2.2][7] | ✅ FAPI 推荐的 client 认证方式 |
+| Authorization Code + PKCE | [RFC 7636][8] + [FAPI 2.0][36] | ✅ S256 强制 |
 
 ### Relying Party (`/pkg/client`)
 
@@ -178,12 +206,12 @@ Plugin-based OIDC server framework.
 | PKCE | [RFC 7636][8] | ✅ |
 | Token Exchange | [RFC 8693][9] | ✅ |
 | Device Authorization | [RFC 8628][10] | ✅ |
-| JWE ID Token Encryption | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022] (dir mode) | ✅ |
+| JWE ID Token Encryption | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022] | ✅ `dir` mode (SM4-GCM/SM4-CCM/AES-GCM/AES-CBC) |
 | Back-Channel Logout | OpenID Connect [Back-Channel Logout][12] 1.0 | ✅ |
 | DPoP | [RFC 9449][14] | planned |
 | Auto-refresh | Token lifecycle management | planned |
 
-> **Note on Chinese Commercial Cryptography (国密):** This library supports SM2, SM3, SM4, and SM9 algorithms via the `SGD_SM3_SM2`, `SGD_SM3_SM9`, and `SM4` identifiers. These are **not defined in RFC 7518** and therefore are **not recognized by the OpenID Foundation (OIDF) Conformance Test Suite**. When running OIDF certification tests, disable national-crypto algorithms by setting the environment variable `SIGNING_ALGORITHMS=RS256,RS384,RS512,EdDSA` so that the JWKS endpoint only returns standard JWKs.
+> **Note on Chinese Commercial Cryptography (国密):** This library supports SM2, SM3, SM4, and SM9 algorithms via the `SGD_SM3_SM2` (SM2+SM3 signature), `SGD_SM3_SM9` (SM9 identity-based signature), `SGD_SM2_3` (SM2 key wrapping), `SGD_SM9_3` (SM9 key wrapping), and `SGD_SM4_GCM`/`SGD_SM4_CCM` (SM4 content encryption) identifiers per [GM/T 0125.1-2022][GM/T 0125.1-2022] and [GM/T 0125.3-2022]. These are **not defined in RFC 7518** and therefore are **not recognized by the OpenID Foundation (OIDF) Conformance Test Suite**. When running OIDF certification tests, disable national-crypto algorithms by setting the environment variable `SIGNING_ALGORITHMS=RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512,EdDSA` so that the JWKS endpoint only returns standard JWKs.
 
 [1]: https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth "3.1. Authentication using the Authorization Code Flow"
 [2]: https://openid.net/specs/openid-connect-core-1_0.html#ImplicitFlowAuth "3.2. Authentication using the Implicit Flow"
@@ -213,8 +241,17 @@ Plugin-based OIDC server framework.
 [25]: https://openid.net/specs/openid-connect-core-1_0.html#HTTPSRequirements "15.6.3. TLS Requirements"
 [26]: https://openid.net/specs/openid-connect-core-1_0.html#SubjectIDTypes "8.1. Pairwise Identifier Algorithm"
 [27]: https://www.rfc-editor.org/rfc/rfc7515.html "JSON Web Signature (JWS)"
+[34]: https://www.rfc-editor.org/rfc/rfc7518.html "JSON Web Algorithms (JWA)"
+[GM/T 0125.1-2022]: http://www.gmbz.org.cn/file/2023-06-21/a34ff879-563b-4e91-96ea-57e4c15c944a.pdf "GM/T 0125.1-2022 JWS (国密 JWS 签名)"
 [28]: https://www.rfc-editor.org/rfc/rfc9101.html "JWT Secured Authorization Response Mode for OAuth 2.0 (JARM)"
 [29]: https://www.rfc-editor.org/rfc/rfc9207.html "OAuth 2.0 Authorization Server Issuer Identification"
+[30]: https://www.rfc-editor.org/rfc/rfc9396.html "OAuth 2.0 Rich Authorization Requests"
+[31]: https://www.rfc-editor.org/rfc/rfc7592.html "OAuth 2.0 Dynamic Client Registration Management Protocol"
+[32]: https://www.rfc-editor.org/rfc/rfc7033.html "WebFinger"
+[33]: https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html "OpenID Connect Client-Initiated Backchannel Authentication Flow - Core 1.0"
+[35]: https://openid.net/specs/openid-financial-api-part-2-1_0.html "Financial-grade API Security Profile 1.0 - Part 2: Advanced"
+[36]: https://openid.net/specs/fapi-security-profile-2_0.html "FAPI 2.0 Security Profile"
+[37]: https://openid.net/specs/openid-connect-core-1_0.html#IDToken "5.1. Standard Claims"
 
 ## Contributors
 
@@ -247,20 +284,20 @@ RP client based on [zitadel/oidc]. OP entirely self-developed with StormEngine p
 
 ### Goals
 
-- [Certify this library as OP](https://openid.net/certification/#OPs)
+- [Certify this library as OP](https://openid.net/certification/#OPs) (incl. [FAPI 2.0 Security Profile](https://openid.net/certification/#OPs))
 - Provide the **most RFC-complete** embeddable Go OIDC SDK
 - **First-class Chinese national standards** (GM/T 0125) alongside international standards
 - **Storage-agnostic** — never lock into a specific database
 
 ### Other Go OpenID Connect libraries
 
-| Library | OP | RP | Plugin-based | GM/T | DPoP | mTLS | PAR | JARM |
-|---|---|---|---|---|---|---|---|---|
-| [coreos/go-oidc](https://github.com/coreos/go-oidc) | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| [ory/fosite](https://github.com/ory/fosite) | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| [ory/hydra](https://github.com/ory/hydra) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| [zitadel/oidc](https://github.com/zitadel/oidc) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **kexcore-oidc** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** |
+| Library | OP | RP | Plugin-based | GM/T | FAPI 2.0 | DPoP | mTLS | PAR | JARM | RAR | Resource | WebFinger | CIBA |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| [coreos/go-oidc](https://github.com/coreos/go-oidc) | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| [ory/fosite](https://github.com/ory/fosite) | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| [ory/hydra](https://github.com/ory/hydra) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| [zitadel/oidc](https://github.com/zitadel/oidc) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **kexcore-oidc** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** | **✅** |
 
 ## License
 
@@ -278,6 +315,8 @@ language governing permissions and limitations under the License.
 
 [oidf-basic]: https://www.certification.openid.net/log-detail.html?log=SpSbfydiglCBorB&public=true
 [oidf-basic-dynamic]: https://www.certification.openid.net/plan-detail.html?plan=sF23YfvEbhrKt&public=true
-[oidf-config]: https://www.certification.openid.net/plan-detail.html?plan=IpAOg0FjFhnGQ&public=true
+[oidf-config]: https://www.certification.openid.net/plan-detail.html?plan=WIrTjPzpepZxP&public=true
 [oidf-backchannel]: https://www.certification.openid.net/plan-detail.html?plan=eD4txBOvstik4&public=true
 [oidf-backchannel-dynamic]: https://www.certification.openid.net/log-detail.html?log=kXMjAHzAHyqaItK&public=true
+[oidf-3rdparty-init-login]: https://www.certification.openid.net/plan-detail.html?plan=CL0WAfURJnc5a&public=true
+[oidf-dynamic]: https://www.certification.openid.net/plan-detail.html?plan=sgIlsSj6Kf70z&public=true 
