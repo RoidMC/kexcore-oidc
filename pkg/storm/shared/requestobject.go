@@ -95,30 +95,46 @@ func ParseAndValidateRequestObject(ctx context.Context, authReq *protocol.AuthRe
 		return protocol.ErrInvalidRequestObject().WithDescription("invalid request object signature").WithParent(err)
 	}
 
-	// Validate time claims (OIDC Core §6.1, FAPI 2.0 §5.3.2.2).
+	// Determine whether the client is configured for FAPI requirements.
+	isFAPI := false
+	if fc, ok := client.(FAPIProfileClient); ok {
+		isFAPI = fc.FAPIProfile()
+	}
+
+	// Validate time claims (OIDC Core: exp/nbf are OPTIONAL; FAPI 2.0 §5.3.2.2 requires both).
 	now := time.Now()
 	const clockSkew = 10 * time.Second
 
-	// OIDC Core §6.1: The JWT MUST contain an exp claim.
-	if requestObject.ExpiresAt == 0 {
-		return protocol.ErrInvalidRequestObject().WithDescription("request object is missing required 'exp' claim")
-	}
-	if now.After(time.Unix(requestObject.ExpiresAt, 0).Add(clockSkew)) {
-		return protocol.ErrInvalidRequestObject().WithDescription("request object has expired")
-	}
+	if isFAPI {
+		// FAPI 2.0 §5.3.2.2: The request object MUST contain an exp claim.
+		if requestObject.ExpiresAt == 0 {
+			return protocol.ErrInvalidRequestObject().WithDescription("request object is missing required 'exp' claim")
+		}
+		if now.After(time.Unix(requestObject.ExpiresAt, 0).Add(clockSkew)) {
+			return protocol.ErrInvalidRequestObject().WithDescription("request object has expired")
+		}
 
-	// FAPI 2.0 §5.3.2.2: The request object MUST contain a nbf claim.
-	if requestObject.NotBefore == 0 {
-		return protocol.ErrInvalidRequestObject().WithDescription("request object is missing required 'nbf' claim")
-	}
-	if now.Before(time.Unix(requestObject.NotBefore, 0).Add(-clockSkew)) {
-		return protocol.ErrInvalidRequestObject().WithDescription("request object is not yet valid (nbf)")
-	}
+		// FAPI 2.0 §5.3.2.2: The request object MUST contain a nbf claim.
+		if requestObject.NotBefore == 0 {
+			return protocol.ErrInvalidRequestObject().WithDescription("request object is missing required 'nbf' claim")
+		}
+		if now.Before(time.Unix(requestObject.NotBefore, 0).Add(-clockSkew)) {
+			return protocol.ErrInvalidRequestObject().WithDescription("request object is not yet valid (nbf)")
+		}
 
-	// FAPI 1.0/2.0: The request object lifetime (exp - nbf) MUST NOT exceed 60 minutes.
-	const maxRequestObjectLifetime = 60 * time.Minute
-	if time.Unix(requestObject.ExpiresAt, 0).Sub(time.Unix(requestObject.NotBefore, 0)) > maxRequestObjectLifetime {
-		return protocol.ErrInvalidRequestObject().WithDescription("request object lifetime exceeds 60 minutes")
+		// FAPI 1.0/2.0: The request object lifetime (exp - nbf) MUST NOT exceed 60 minutes.
+		const maxRequestObjectLifetime = 60 * time.Minute
+		if time.Unix(requestObject.ExpiresAt, 0).Sub(time.Unix(requestObject.NotBefore, 0)) > maxRequestObjectLifetime {
+			return protocol.ErrInvalidRequestObject().WithDescription("request object lifetime exceeds 60 minutes")
+		}
+	} else {
+		// OIDC Core: exp/nbf are not required, but if present, still validate them.
+		if requestObject.ExpiresAt != 0 && now.After(time.Unix(requestObject.ExpiresAt, 0).Add(clockSkew)) {
+			return protocol.ErrInvalidRequestObject().WithDescription("request object has expired")
+		}
+		if requestObject.NotBefore != 0 && now.Before(time.Unix(requestObject.NotBefore, 0).Add(-clockSkew)) {
+			return protocol.ErrInvalidRequestObject().WithDescription("request object is not yet valid (nbf)")
+		}
 	}
 
 	// OIDC Core §6.1: When both query-string and request object provide a
@@ -171,7 +187,14 @@ func CopyRequestObjectToAuthRequest(authReq *protocol.AuthRequest, requestObject
 	authReq.Claims = requestObject.Claims
 	authReq.Resource = requestObject.Resource
 	authReq.AuthorizationDetails = requestObject.AuthorizationDetails
-	authReq.RequestURI = requestObject.RequestURI
+	// Preserve the original request_uri when the request object does not
+	// carry one. For request_uri-based JAR, the original URI is the source
+	// of the request object and must remain available as a sentinel (e.g.
+	// to skip the signed-request-object-required check). For PAR, the PAR
+	// urn was already set before parsing.
+	if requestObject.RequestURI != "" {
+		authReq.RequestURI = requestObject.RequestURI
+	}
 	// Clear the raw request JWT — its signature has been verified and its
 	// claims copied above; no downstream consumer reads RequestParam after
 	// this point (OIDC Core §6.1, RFC 9101).
