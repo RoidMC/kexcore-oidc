@@ -259,8 +259,9 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 		cfg.CodeChallengeMethodsSupported = append(cfg.CodeChallengeMethodsSupported, "plain")
 	}
 
-	// Implicit/hybrid response types (only when enabled)
+	// Implicit/hybrid response types and grant type (only when enabled)
 	if p.enableImplicit {
+		cfg.GrantTypesSupported = append(cfg.GrantTypesSupported, "implicit")
 		cfg.ResponseTypesSupported = append(cfg.ResponseTypesSupported,
 			"id_token", "id_token token",
 			"code id_token", "code token", "code id_token token",

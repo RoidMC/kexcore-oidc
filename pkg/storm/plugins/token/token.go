@@ -128,7 +128,7 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 		"urn:ietf:params:oauth:grant-type:token-exchange",
 	)
 	cfg.TokenEndpointAuthMethodsSupported = append(cfg.TokenEndpointAuthMethodsSupported,
-		"client_secret_basic", "client_secret_post", "private_key_jwt",
+		"none", "client_secret_basic", "client_secret_post", "private_key_jwt",
 	)
 
 	// ID Token encryption support

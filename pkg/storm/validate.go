@@ -106,6 +106,9 @@ func (e *Engine) storageImplements(ifaceName string) bool {
 	case "DCRStore":
 		_, ok := e.storage.(DCRStore)
 		return ok
+	case "CIBAStore":
+		_, ok := e.storage.(CIBAStore)
+		return ok
 	default:
 		if e.logger != nil {
 			e.logger.Debug("unrecognized storage interface in Requires()", "name", ifaceName)
@@ -154,6 +157,7 @@ var knownStorageInterfaces = map[string]reflect.Type{
 	"PairwiseTransformer":     reflect.TypeOf((*PairwiseTransformer)(nil)).Elem(),
 	"AutoCompleteAuthRequest": reflect.TypeOf((*AutoCompleteAuthRequest)(nil)).Elem(),
 	"CodeReuseDetector":       reflect.TypeOf((*CodeReuseDetector)(nil)).Elem(),
+	"CIBAStore":               reflect.TypeOf((*CIBAStore)(nil)).Elem(),
 }
 
 // RegisterStorageInterface registers a third-party storage interface so that
