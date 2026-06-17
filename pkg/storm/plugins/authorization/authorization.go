@@ -1061,15 +1061,24 @@ func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRe
 		return "", err
 	}
 
-	// If the client specifies a preferred ID token signing algorithm, try to
-	// use a matching signing key (OIDC Core §2: id_token_signed_response_alg).
+	// Determine the ID token signing algorithm:
+	// 1. Client's explicit preference (OIDC Core §2: id_token_signed_response_alg)
+	// 2. FAPI 2.0 default: PS256 (§5.4 requires PS256, ES256, or EdDSA)
+	// 3. Server default (first signing key, typically RS256)
 	if client != nil {
+		preferredAlg := ""
 		if algProvider, ok := client.(shared.IDTokenSignedResponseAlgProvider); ok {
-			if alg := algProvider.IDTokenSignedResponseAlg(); alg != "" {
-				if algStore, ok := p.keyStore.(storm.SigningKeyByAlgProvider); ok {
-					if algKey, err := algStore.SigningKeyByAlg(ctx, alg); err == nil {
-						signingKey = algKey
-					}
+			preferredAlg = algProvider.IDTokenSignedResponseAlg()
+		}
+		if preferredAlg == "" {
+			if fapiClient, ok := client.(shared.FAPIProfileClient); ok && fapiClient.FAPIProfile() {
+				preferredAlg = "PS256"
+			}
+		}
+		if preferredAlg != "" {
+			if algStore, ok := p.keyStore.(storm.SigningKeyByAlgProvider); ok {
+				if algKey, err := algStore.SigningKeyByAlg(ctx, preferredAlg); err == nil {
+					signingKey = algKey
 				}
 			}
 		}
