@@ -177,16 +177,17 @@ func OIDFTestClient(id, secret string, redirectURIs ...string) *Client {
 func OIDFTestClientSecretPost(id, secret string, redirectURIs ...string) *Client {
 	c := OIDFTestClient(id, secret, redirectURIs...)
 	c.authMethod = protocol.AuthMethodPost
+
+	// OIDC tests (basic, implicit, hybrid, logout, etc.) do not require
+	// FAPI 2.0 sender-constraining. FAPI tests use dedicated clients.
+	c.requireDPoP = false
+	c.requireMtls = false
 	return c
 }
 
 func OIDFBackChannelLogoutTestClient(id, secret, backChannelLogoutURI string, redirectURIs ...string) *Client {
 	c := OIDFTestClientSecretPost(id, secret, redirectURIs...)
 	c.backChannelLogoutURI = backChannelLogoutURI
-	// Back-channel logout is an OIDC feature, not FAPI 2.0.
-	// Disable sender-constraining so plain OIDC clients can use the token endpoint.
-	c.requireDPoP = false
-	c.requireMtls = false
 	return c
 }
 
@@ -271,12 +272,13 @@ func FAPIClient(id string, clientJWKS []jwk.Key, redirectURIs ...string) *Client
 			protocol.GrantTypeRefreshToken,
 			protocol.GrantTypeClientCredentials,
 		},
-		clientJWKS:               clientJWKS,
-		fapiProfile:              true,
-		idTokenSignedResponseAlg: "PS256",
-		requestObjectSigningAlg:  "PS256",
-		requireDPoP:              true,
-		requireMtls:              true,
+		clientJWKS:  clientJWKS,
+		fapiProfile: true,
+		// idTokenSignedResponseAlg and requestObjectSigningAlg are intentionally
+		// left unset: FAPI 2.0 defaults (PS256 / signed request objects) are
+		// enforced by the framework when fapiProfile is true.
+		requireDPoP: true,
+		requireMtls: true,
 	}
 	// Derive post_logout_redirect_uri from the first redirect URI
 	for _, uri := range redirectURIs {

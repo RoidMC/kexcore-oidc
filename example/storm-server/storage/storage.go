@@ -89,6 +89,10 @@ type Storage struct {
 	// dpopJKTs stores DPoP JWK thumbprints for authorization code binding (RFC 9449 §7.1).
 	// Key: auth request ID, Value: JWK thumbprint.
 	dpopJKTs map[string]string
+
+	// cibaRequests stores CIBA backchannel authentication requests.
+	// Key: auth_req_id, Value: CIBA request.
+	cibaRequests map[string]*storm.CIBARequest
 }
 
 type signingKey struct {

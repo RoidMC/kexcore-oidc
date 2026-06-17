@@ -29,6 +29,7 @@ import (
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/endsession"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/introspection"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/keys"
+	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/mtls"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/revocation"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/token"
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/userinfo"
@@ -133,6 +134,9 @@ func main() {
 				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
 				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 			},
+			// Enable mTLS: request client certificate but don't require it
+			// (some tests use mTLS, others don't)
+			ClientAuth: tls.RequestClientCert,
 		},
 	}
 
