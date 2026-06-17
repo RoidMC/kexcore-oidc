@@ -1,0 +1,57 @@
+# OIDC Logout certification test plans
+oidc_logout:
+  # Backchannel RP Initiated Logout OP — code / hybrid / implicit flow
+  - planName: "oidcc-backchannel-rp-initiated-logout-certification-test-plan"
+    testcase:
+      dynamic_client:
+        variant:
+          client_registration: "dynamic_client"
+          response_type_range:
+            - "code"
+            - "id_token"
+            - "id_token token"
+            - "code id_token"
+            - "code token"
+            - "code id_token token"
+      static_client:
+        variant:
+          client_registration: "static_client"
+          response_type_range:
+            - "code"
+            - "id_token"
+            - "id_token token"
+            - "code id_token"
+            - "code token"
+            - "code id_token token"
+        client:
+          client_id: "BCL Client 1"
+          client_secret: "bcl-secret-1"
+        client_secret_post:
+          client_id: "BCL Client 1"
+          client_secret: "bcl-secret-1"
+        client2:
+          client_id: "BCL Client 2"
+          client_secret: "bcl-secret-2"
+  #
+  - planName: "oidcc-rp-initiated-logout-certification-test-plan"
+    testcase:
+      dynamic_client:
+        variant:
+          client_registration: "dynamic_client"
+          response_type_range:
+            - "code"
+            - "id_token"
+            - "id_token token"
+            - "code id_token"
+            - "code token"
+            - "code id_token token"
+      static_client:
+        variant:
+          client_registration: "static_client"
+          response_type_range:
+            - "code"
+            - "id_token"
+            - "id_token token"
+            - "code id_token"
+            - "code token"
+            - "code id_token token"

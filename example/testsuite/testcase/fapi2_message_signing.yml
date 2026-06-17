@@ -1,0 +1,65 @@
+# FAPI2 Message Signing — signed request object variants
+fapi2_message_signing:
+    - planName: "fapi2-message-signing-final-test-plan"
+      testcase:
+        dpop_jarm_oauth:
+          client: *fapi_client_oauth
+          client2: *fapi_client2_oauth
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "plain_fapi"
+            fapi_request_method: "signed_non_repudiation"
+            fapi_response_mode: "jarm"
+            sender_constrain: "dpop"
+            openid: "plain_oauth"
+        dpop_jarm_plain_oauth:
+          client: *fapi_client_oauth
+          client2: *fapi_client2_oauth
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "plain_fapi"
+            fapi_request_method: "signed_non_repudiation"
+            fapi_response_mode: "plain_response"
+            sender_constrain: "dpop"
+            openid: "plain_oauth"
+        dpop_jarm:
+          client: *fapi_client
+          client2: *fapi_client2
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "plain_fapi"
+            fapi_request_method: "signed_non_repudiation"
+            fapi_response_mode: "jarm"
+            sender_constrain: "dpop"
+            openid: "openid_connect"
+        dpop_plain:
+          client: *fapi_client
+          client2: *fapi_client2
+          variant:
+            client_auth_type: "private_key_jwt"
+            fapi_profile: "plain_fapi"
+            fapi_request_method: "signed_non_repudiation"
+            fapi_response_mode: "plain_response"
+            sender_constrain: "dpop"
+            openid: "openid_connect"
+        # --- mTLS sender-constrain variants (OIDF certification requires these) ---
+        mtls_jar:
+          client: *fapi_client_oauth
+          client2: *fapi_client2_oauth
+          variant:
+            client_auth_type: "mtls"
+            fapi_profile: "plain_fapi"
+            fapi_request_method: "signed_non_repudiation"
+            fapi_response_mode: "plain_response"
+            sender_constrain: "mtls"
+            openid: "plain_oauth"
+        mtls_jarm:
+          client: *fapi_client_oauth
+          client2: *fapi_client2_oauth
+          variant:
+            client_auth_type: "mtls"
+            fapi_profile: "plain_fapi"
+            fapi_request_method: "signed_non_repudiation"
+            fapi_response_mode: "jarm"
+            sender_constrain: "mtls"
+            openid: "plain_oauth"

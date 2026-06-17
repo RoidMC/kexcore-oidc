@@ -1,0 +1,90 @@
+# FAPI2 Security Profile — private_key_jwt client authentication variants
+fapi2_security_private_key_jwt:
+  - planName: "fapi2-security-profile-final-test-plan"
+    testcase:
+      # --- JARM (default) ---
+      pkj_dpop_oidc:
+        client: *fapi_client
+        client2: *fapi_client2
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_profile: "plain_fapi"
+          sender_constrain: "dpop"
+          openid: "openid_connect"
+      pkj_dpop_cc:
+        client: *fapi_client_oauth
+        client2: *fapi_client2_oauth
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_profile: "fapi_client_credentials_grant"
+          sender_constrain: "dpop"
+          openid: "plain_oauth"
+      pkj_dpop_plain:
+        client: *fapi_client_oauth
+        client2: *fapi_client2_oauth
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_profile: "plain_fapi"
+          sender_constrain: "dpop"
+          openid: "plain_oauth"
+      pkj_mtls_oidc:
+        client: *fapi_client
+        client2: *fapi_client2
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_profile: "plain_fapi"
+          sender_constrain: "mtls"
+          openid: "openid_connect"
+      pkj_mtls_cc:
+        client: *fapi_client_oauth
+        client2: *fapi_client2_oauth
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_profile: "fapi_client_credentials_grant"
+          sender_constrain: "mtls"
+          openid: "plain_oauth"
+      pkj_mtls_plain:
+        client: *fapi_client_oauth
+        client2: *fapi_client2_oauth
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_profile: "plain_fapi"
+          sender_constrain: "mtls"
+          openid: "plain_oauth"
+      # --- plain_response (plain_fapi only, cc has no authz endpoint) ---
+      pkj_dpop_oidc_plain_resp:
+        client: *fapi_client
+        client2: *fapi_client2
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_profile: "plain_fapi"
+          fapi_response_mode: "plain_response"
+          sender_constrain: "dpop"
+          openid: "openid_connect"
+      pkj_dpop_plain_resp:
+        client: *fapi_client_oauth
+        client2: *fapi_client2_oauth
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_profile: "plain_fapi"
+          fapi_response_mode: "plain_response"
+          sender_constrain: "dpop"
+          openid: "plain_oauth"
+      pkj_mtls_oidc_plain_resp:
+        client: *fapi_client
+        client2: *fapi_client2
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_profile: "plain_fapi"
+          fapi_response_mode: "plain_response"
+          sender_constrain: "mtls"
+          openid: "openid_connect"
+      pkj_mtls_plain_resp:
+        client: *fapi_client_oauth
+        client2: *fapi_client2_oauth
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_profile: "plain_fapi"
+          fapi_response_mode: "plain_response"
+          sender_constrain: "mtls"
+          openid: "plain_oauth"

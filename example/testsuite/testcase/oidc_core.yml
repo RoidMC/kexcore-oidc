@@ -1,0 +1,77 @@
+# OIDC Core certification test plans
+oidc_core:
+  # Config OP — discovery metadata validation
+  - planName: "oidcc-config-certification-test-plan"
+    variant: {}
+  # 3rd-party init login OP — code flow
+  - planName: "oidcc-3rdparty-init-login-certification-test-plan"
+    testcase:
+      dynamic_client:
+        variant:
+          response_type_range:
+            - "code"
+            - "id_token"
+            - "id_token token"
+            - "code id_token"
+            - "code token"
+            - "code id_token token"
+  # Basic OP — code flow
+  - planName: "oidcc-basic-certification-test-plan"
+    testcase:
+      dynamic_client:
+        variant:
+          server_metadata: "discovery"
+          client_registration: "dynamic_client"
+      static_client:
+        variant:
+          server_metadata: "discovery"
+          client_registration: "static_client"
+  # Implicit OP — plan itself defines response_type, server_metadata, client_registration
+  # OAuth 2.0 / OIDC Core 1.0 compatible (implicit flow deprecated in OAuth 2.1)
+  - planName: "oidcc-implicit-certification-test-plan"
+    testcase:
+      dynamic_client:
+        variant:
+          server_metadata: "discovery"
+          client_registration: "dynamic_client"
+      static_client:
+        variant:
+          server_metadata: "discovery"
+          client_registration: "static_client"
+  # Hybrid OP — plan itself defines response_type, server_metadata, client_registration
+  # OAuth 2.0 / OIDC Core 1.0 compatible
+  - planName: "oidcc-hybrid-certification-test-plan"
+    testcase:
+      dynamic_client:
+        variant:
+          server_metadata: "discovery"
+          client_registration: "dynamic_client"
+      static_client:
+        variant:
+          server_metadata: "discovery"
+          client_registration: "static_client"
+  # FormPost OP — code flow
+  # The hybrid and implicit standards have been phased out in Oauth2.1, and the SDK only supports Code for this feature
+  - planName: "oidcc-formpost-basic-certification-test-plan"
+    testcase:
+      dynamic_client:
+        variant:
+          server_metadata: "discovery"
+          client_registration: "dynamic_client"
+      static_client:
+        variant:
+          server_metadata: "discovery"
+          client_registration: "static_client"
+  # Dynamic OP — plan defines server_metadata and client_registration,
+  # only response_type can be overridden
+  - planName: "oidcc-dynamic-certification-test-plan"
+    testcase:
+      dynamic_client:
+        variant:
+          response_type_range:
+            - "code"
+            - "id_token"
+            - "id_token token"
+            - "code id_token"
+            - "code token"
+            - "code id_token token"
