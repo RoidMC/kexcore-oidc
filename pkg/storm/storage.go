@@ -50,6 +50,21 @@
 //   - [TokenCNFStore]         — RFC 8705/9449 Token Binding (cnf claim)
 //   - [PairwiseTransformer]   — OIDC Core §8.1 Pairwise Subject Identifiers
 //
+// ## Sender-constraining extensions (FAPI 2.0 / RFC 9449)
+//
+// These interfaces bind tokens to the client's cryptographic key or certificate,
+// preventing stolen tokens from being replayed by a different party.
+//
+// The cnf claim is now passed directly to [TokenStore.CreateAccessToken] and
+// [TokenStore.CreateAccessAndRefreshTokens] at issuance time, so storage can
+// bind refresh tokens (via [RefreshTokenRequest.GetDPoPJKT]) without a separate
+// post-creation store step.
+//
+//   - [TokenCNFLookup]            — query cnf claim for introspection / userinfo
+//   - [DPoPCodeBindingStore]      — DPoP authorization code binding (RFC 9449 §7.1)
+//   - [RefreshTokenRequest]       — exposes GetDPoPJKT for RFC 9449 §7.2 refresh token binding
+//   - [JARMSigner]                — JWT Secured Authorization Response Mode (RFC 9101)
+//
 // ## Optional extensions on Client
 //
 // Clients can implement additional interfaces for per-client behavior:
@@ -291,8 +306,17 @@ type ResourceIndicator interface {
 // and UserinfoStore to look up token metadata. It can be a UUID, database
 // primary key, or any opaque string — the SDK never inspects it.
 type TokenStore interface {
-	CreateAccessToken(ctx context.Context, req TokenRequest) (tokenID string, expiration time.Time, err error)
-	CreateAccessAndRefreshTokens(ctx context.Context, req TokenRequest, currentRefreshToken string) (accessTokenID, newRefreshToken string, expiration time.Time, err error)
+	// CreateAccessToken creates an access token. The cnf map contains the
+	// token's confirmation claim (e.g. jkt for DPoP, x5t#S256 for mTLS).
+	// It may be nil if the token is not sender-constrained.
+	CreateAccessToken(ctx context.Context, req TokenRequest, cnf map[string]any) (tokenID string, expiration time.Time, err error)
+
+	// CreateAccessAndRefreshTokens creates an access token and a refresh token.
+	// The cnf map contains the access token's confirmation claim and is also
+	// used to bind the refresh token (e.g. RFC 9449 §7.2 DPoP binding).
+	// currentRefreshToken is non-empty when rotating an existing refresh token.
+	CreateAccessAndRefreshTokens(ctx context.Context, req TokenRequest, currentRefreshToken string, cnf map[string]any) (accessTokenID, newRefreshToken string, expiration time.Time, err error)
+
 	TokenRequestByRefreshToken(ctx context.Context, refreshToken string) (RefreshTokenRequest, error)
 }
 
@@ -392,6 +416,10 @@ type RefreshTokenRequest interface {
 	GetNonce() string
 	GetID() string
 	SetCurrentScopes(scopes []string)
+	// GetDPoPJKT returns the DPoP JWK thumbprint bound to this refresh token
+	// (RFC 9449 §7.2). Returns empty string if the refresh token is not
+	// DPoP-bound.
+	GetDPoPJKT() string
 }
 
 // IntrospectStore is required by the Introspection plugin.
@@ -677,9 +705,11 @@ type JARMSigner interface {
 	// SignAuthResponse signs the authorization response parameters
 	// as a JWT. The ctx is used to derive the issuer URL. The params
 	// map contains the response fields (code, state, etc.). The
-	// clientID is used for audience validation.
+	// clientID is used for audience validation. The signingAlg is the
+	// client's preferred signing algorithm (e.g. "PS256" for FAPI);
+	// if empty, the server's default is used.
 	// Returns the compact JWT string.
-	SignAuthResponse(ctx context.Context, params map[string]string, clientID string) (string, error)
+	SignAuthResponse(ctx context.Context, params map[string]string, clientID string, signingAlg string) (string, error)
 }
 
 // EndSessionRequest represents a parsed RP-initiated logout request.

@@ -236,7 +236,7 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, redirectURI, state s
 				}
 			}
 			clientID := jarmClientIDFromContext(r.Context())
-			jwt, signErr := jarmSigner.SignAuthResponse(r.Context(), errorParams, clientID)
+			jwt, signErr := jarmSigner.SignAuthResponse(r.Context(), errorParams, clientID, shared.JARMPreferredAlgFromContext(r.Context()))
 			if signErr == nil {
 				writeJARMResponse(w, r, redirectURI, jwt, effectiveRM)
 				return

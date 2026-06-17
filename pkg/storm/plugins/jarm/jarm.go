@@ -112,14 +112,16 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 //
 // The context is used to derive the issuer URL. If no issuer is found
 // in the context, an error is returned.
-func (p *Plugin) SignAuthResponse(ctx context.Context, params map[string]string, clientID string) (string, error) {
+func (p *Plugin) SignAuthResponse(ctx context.Context, params map[string]string, clientID string, signingAlg string) (string, error) {
 	// Get issuer from context
 	issuer := shared.IssuerFromContext(ctx)
 	if issuer == "" {
 		return "", fmt.Errorf("jarm: issuer not found in context")
 	}
 
-	signingKey, err := p.keyStore.SigningKey(ctx)
+	// Use client's preferred signing algorithm if provided (e.g. PS256 for FAPI).
+	// Falls back to the server's default signing key.
+	signingKey, err := p.signingKeyForAlg(ctx, signingAlg)
 	if err != nil {
 		return "", err
 	}
@@ -156,4 +158,19 @@ func determineAlg(alg string) jwa.SignatureAlgorithm {
 		return jwaAlg
 	}
 	return jwa.RS256()
+}
+
+// signingKeyForAlg returns a signing key matching the requested algorithm,
+// or falls back to the server's default key.
+func (p *Plugin) signingKeyForAlg(ctx context.Context, alg string) (storm.SigningKey, error) {
+	if alg != "" {
+		if provider, ok := p.keyStore.(storm.SigningKeyByAlgProvider); ok {
+			key, err := provider.SigningKeyByAlg(ctx, alg)
+			if err == nil {
+				return key, nil
+			}
+			// Fall through to default if the preferred alg is not available.
+		}
+	}
+	return p.keyStore.SigningKey(ctx)
 }

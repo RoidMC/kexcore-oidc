@@ -81,6 +81,14 @@ type IDTokenSignedResponseAlgProvider interface {
 	IDTokenSignedResponseAlg() string
 }
 
+// UserInfoSignedResponseAlgProvider is an optional interface for clients that
+// specify a preferred UserInfo signing algorithm (userinfo_signed_response_alg).
+// When implemented and returning a non-empty string, the userinfo endpoint uses
+// this algorithm to sign the JWT response instead of the default.
+type UserInfoSignedResponseAlgProvider interface {
+	UserInfoSignedResponseAlg() string
+}
+
 // --- Exported validation functions ---
 
 // Application type constants (matching common OIDC implementations).

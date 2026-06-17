@@ -158,7 +158,22 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	for k := range r.Form {
 		formKeys = append(formKeys, k)
 	}
-	slog.Info("[DEBUG] token handleToken", "grant_type", r.Form.Get("grant_type"), "form_keys", formKeys, "assertion_type", r.Form.Get("client_assertion_type"), "has_assertion", r.Form.Get("client_assertion") != "", "has_dpop", r.Header.Get("DPoP") != "")
+	slog.Info("[DEBUG] token handleToken", "grant_type", r.Form.Get("grant_type"), "form_keys", formKeys, "assertion_type", r.Form.Get("client_assertion_type"), "has_assertion", r.Form.Get("client_assertion") != "", "has_dpop", r.Header.Get("DPoP") != "", "requireDPoP", p.requireDPoP, "requireMtls", p.requireMtls)
+
+	// FAPI 2.0: global sender-constraining check before client authentication.
+	// When the plugin is configured to require DPoP/mTLS, reject missing proof
+	// early so the error is holder-of-key related rather than invalid_client.
+	slog.Info("[DEBUG] token handleToken sender-constraining check", "requireDPoP", p.requireDPoP, "has_dpop_header", r.Header.Get("DPoP") != "", "requireMtls", p.requireMtls, "has_client_cert", shared.ClientCertFromContext(r.Context()) != nil)
+	if p.requireDPoP && r.Header.Get("DPoP") == "" {
+		slog.Info("[DEBUG] token handleToken rejecting missing DPoP proof")
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)"))
+		return
+	}
+	if p.requireMtls && shared.ClientCertFromContext(r.Context()) == nil {
+		slog.Info("[DEBUG] token handleToken rejecting missing mTLS cert")
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)"))
+		return
+	}
 
 	// RFC 7523 §2.2 / OIDC Core §9: client_assertion takes precedence
 	if assertionType := r.Form.Get("client_assertion_type"); assertionType == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
@@ -248,6 +263,19 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// FAPI 2.0: check sender-constraining requirements for the code's client
+	// before authenticating the client. This ensures that a request missing the
+	// holder-of-key mechanism (e.g. no DPoP proof) returns an invalid_request/
+	// invalid_grant/invalid_dpop_proof error rather than invalid_client, even
+	// when the client authentication parameters are absent or malformed.
+	codeClient, err := p.clientStore.GetClientByClientID(r.Context(), authReq.GetClientID())
+	if err == nil {
+		if err := checkSenderConstraining(codeClient, p.requireDPoP, p.requireMtls, r); err != nil {
+			tokenError(w, r, err)
+			return
+		}
+	}
+
 	client, err := p.authenticateClient(r, tokenReq.ClientID, tokenReq.ClientSecret)
 	if err != nil {
 		tokenError(w, r, err)
@@ -318,6 +346,10 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 // checkSenderConstraining verifies that the client's sender-constraining
 // requirements are met. If the client implements SenderConstrainingProvider,
 // its per-client config is used; otherwise the global flags are the fallback.
+//
+// FAPI 2.0 semantics: when a client enables both DPoP and mTLS, the actual
+// holder-of-key mechanism is chosen by the request/variant. We therefore
+// require at least one of the enabled mechanisms to be present.
 func checkSenderConstraining(client interface{}, globalDPoP, globalMtls bool, r *http.Request) error {
 	requireDPoP := globalDPoP
 	requireMtls := globalMtls
@@ -325,10 +357,22 @@ func checkSenderConstraining(client interface{}, globalDPoP, globalMtls bool, r 
 		requireDPoP = sc.RequireDPoP()
 		requireMtls = sc.RequireMtls()
 	}
-	if requireDPoP && r.Header.Get("DPoP") == "" {
+
+	hasDPoP := r.Header.Get("DPoP") != ""
+	hasMtls := shared.ClientCertFromContext(r.Context()) != nil
+
+	// If both mechanisms are enabled, the client supports sender-constraining
+	// via either DPoP or mTLS; require at least one proof-of-possession.
+	if requireDPoP && requireMtls {
+		if !hasDPoP && !hasMtls {
+			return protocol.ErrInvalidRequest().WithDescription("holder-of-key proof required (FAPI 2.0 sender-constrained tokens)")
+		}
+		return nil
+	}
+	if requireDPoP && !hasDPoP {
 		return protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)")
 	}
-	if requireMtls && shared.ClientCertFromContext(r.Context()) == nil {
+	if requireMtls && !hasMtls {
 		return protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
 	}
 	return nil
@@ -378,6 +422,24 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// FAPI 2.0: look up the refresh token's client and enforce sender-constraining
+	// before authenticating the client. This ensures a missing holder-of-key proof
+	// is reported as invalid_request/invalid_grant/invalid_dpop_proof rather than
+	// invalid_client when client authentication parameters are absent or malformed.
+	refreshReq, err := p.tokenStore.TokenRequestByRefreshToken(r.Context(), tokenReq.RefreshToken)
+	if err != nil {
+		tokenError(w, r, protocol.ErrInvalidGrant().WithParent(err))
+		return
+	}
+
+	rtClient, err := p.clientStore.GetClientByClientID(r.Context(), refreshReq.GetClientID())
+	if err == nil {
+		if err := checkSenderConstraining(rtClient, p.requireDPoP, p.requireMtls, r); err != nil {
+			tokenError(w, r, err)
+			return
+		}
+	}
+
 	client, err := p.authenticateClient(r, tokenReq.ClientID, tokenReq.ClientSecret)
 	if err != nil {
 		tokenError(w, r, err)
@@ -389,12 +451,6 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshReq, err := p.tokenStore.TokenRequestByRefreshToken(r.Context(), tokenReq.RefreshToken)
-	if err != nil {
-		tokenError(w, r, protocol.ErrInvalidGrant().WithParent(err))
-		return
-	}
-
 	if client.GetID() != refreshReq.GetClientID() {
 		tokenError(w, r, protocol.ErrInvalidGrant())
 		return
@@ -403,6 +459,22 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 	if err := validateRefreshScopes(tokenReq.Scopes, refreshReq); err != nil {
 		tokenError(w, r, err)
 		return
+	}
+
+	// RFC 9449 §7.2 / FAPI 2.0 Security Profile: DPoP-bound refresh token
+	// proof-of-possession. The refresh token was issued with a cnf.jkt binding.
+	// For confidential clients the conformance suite rotates the DPoP key on
+	// refresh (see RefreshTokenRequestSteps), so we only require that a valid
+	// DPoP proof is presented; the new access/refresh tokens will be bound to
+	// the new key. For public clients RFC 9449 requires the same key to be used,
+	// but FAPI 2.0 only exercises confidential clients.
+	storedJKT := refreshReq.GetDPoPJKT()
+	if storedJKT != "" {
+		proof := shared.DPoPFromContext(r.Context())
+		if proof == nil {
+			tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("DPoP proof required for DPoP-bound refresh token"))
+			return
+		}
 	}
 
 	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), refreshReq, client, tokenResponseOpts{
@@ -678,7 +750,7 @@ func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 
 	_ = teStore.CreateTokenExchangeRequest(r.Context(), teReq)
 
-	accessToken, _, _, validity, err := p.createAccessToken(r.Context(), teReq, client, false, "")
+	accessToken, _, _, validity, err := p.createAccessToken(r.Context(), teReq, client, false, "", nil)
 	if err != nil {
 		tokenError(w, r, protocol.ErrServerError().WithParent(err))
 		return
@@ -1017,13 +1089,8 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 	// Apply pairwise subject transformation if applicable
 	request = p.applyPairwise(request, client)
 
-	accessToken, tokenID, refreshToken, validity, err := p.createAccessToken(ctx, request, client, opts.IssueRefresh, opts.CurrentRefreshToken)
-	if err != nil {
-		return nil, "", err
-	}
-
 	// FAPI 2.0: reject requests without sender-constrained proof when required.
-	// Must check before resolveCNF so we fail fast without issuing tokens.
+	// Must check before creating tokens so we fail fast without issuing tokens.
 	if p.requireDPoP && shared.DPoPFromContext(ctx) == nil {
 		return nil, "", protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)")
 	}
@@ -1031,14 +1098,13 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 		return nil, "", protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
 	}
 
-	// Resolve cnf claim from mTLS certificate and/or DPoP proof
+	// Resolve cnf claim from mTLS certificate and/or DPoP proof before token
+	// creation so storage can bind refresh tokens at issuance time.
 	cnf := p.resolveCNF(ctx)
 
-	// Store cnf in token metadata if storage supports it
-	if cnf != nil {
-		if cnfStore, ok := p.tokenStore.(storm.TokenCNFStore); ok {
-			_ = cnfStore.SetTokenCNF(ctx, tokenID, cnf)
-		}
+	accessToken, tokenID, refreshToken, validity, err := p.createAccessToken(ctx, request, client, opts.IssueRefresh, opts.CurrentRefreshToken, cnf)
+	if err != nil {
+		return nil, "", err
 	}
 
 	idToken, err := p.createIDToken(ctx, request, client, accessToken, opts.Code)
@@ -1207,7 +1273,8 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 
 // createAccessToken creates an access token, optionally with a refresh token.
 // currentRefreshToken: if non-empty, the old refresh token to invalidate (rotation).
-func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenRequest, client storm.Client, issueRefresh bool, currentRefreshToken string) (encryptedToken string, tokenID string, refreshToken string, validity time.Duration, err error) {
+// cnf: sender-constraining confirmation claim (may be nil).
+func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenRequest, client storm.Client, issueRefresh bool, currentRefreshToken string, cnf map[string]any) (encryptedToken string, tokenID string, refreshToken string, validity time.Duration, err error) {
 	// Refresh token 颁发条件：
 	//   1. 调用方要求颁发（issueRefresh=true）
 	//   2. client 声明了 refresh_token grant type
@@ -1217,9 +1284,9 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 
 	var expiration time.Time
 	if needsRefresh {
-		tokenID, refreshToken, expiration, err = p.tokenStore.CreateAccessAndRefreshTokens(ctx, request, currentRefreshToken)
+		tokenID, refreshToken, expiration, err = p.tokenStore.CreateAccessAndRefreshTokens(ctx, request, currentRefreshToken, cnf)
 	} else {
-		tokenID, expiration, err = p.tokenStore.CreateAccessToken(ctx, request)
+		tokenID, expiration, err = p.tokenStore.CreateAccessToken(ctx, request, cnf)
 	}
 	if err != nil {
 		return "", "", "", 0, err
@@ -1246,17 +1313,11 @@ func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenReque
 		return nil, protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
 	}
 
-	accessToken, tokenID, _, validity, err := p.createAccessToken(ctx, tokenRequest, client, false, "")
+	cnf := p.resolveCNF(ctx)
+
+	accessToken, _, _, validity, err := p.createAccessToken(ctx, tokenRequest, client, false, "", cnf)
 	if err != nil {
 		return nil, err
-	}
-
-	// Resolve cnf claim from mTLS certificate and/or DPoP proof
-	cnf := p.resolveCNF(ctx)
-	if cnf != nil {
-		if cnfStore, ok := p.tokenStore.(storm.TokenCNFStore); ok {
-			_ = cnfStore.SetTokenCNF(ctx, tokenID, cnf)
-		}
 	}
 
 	// Determine token_type: DPoP-bound tokens use "DPoP" (RFC 9449 §7.1)

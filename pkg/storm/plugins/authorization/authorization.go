@@ -412,6 +412,12 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	if authReq.ClientID != "" {
 		r = r.WithContext(contextWithJARMClientID(r.Context(), authReq.ClientID))
 	}
+	// Store client's preferred signing algorithm for JARM signing.
+	if algProvider, ok := client.(shared.IDTokenSignedResponseAlgProvider); ok {
+		if alg := algProvider.IDTokenSignedResponseAlg(); alg != "" {
+			r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
+		}
+	}
 
 	// Validate redirect_uri first — separately from other params.
 	// Per OIDC Core §3.1.2.4: if redirect_uri is not registered, the OP
@@ -699,6 +705,14 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if authReq.GetClientID() != "" {
 		r = r.WithContext(contextWithJARMClientID(r.Context(), authReq.GetClientID()))
 	}
+	// Store client's preferred signing algorithm for JARM signing.
+	if jarmClient, err := p.clientStore.GetClientByClientID(r.Context(), authReq.GetClientID()); err == nil {
+		if algProvider, ok := jarmClient.(shared.IDTokenSignedResponseAlgProvider); ok {
+			if alg := algProvider.IDTokenSignedResponseAlg(); alg != "" {
+				r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
+			}
+		}
+	}
 
 	// If the login UI passed an error (e.g. user cancelled), return it
 	// via the authorization error response (JARM-aware).
@@ -809,7 +823,7 @@ func (p *Plugin) authResponseCode(w http.ResponseWriter, r *http.Request, authRe
 			slog.String("clientID", authReq.GetClientID()),
 			slog.Any("params", params),
 		)
-		jwt, err := p.jarmSigner.SignAuthResponse(r.Context(), params, authReq.GetClientID())
+		jwt, err := p.jarmSigner.SignAuthResponse(r.Context(), params, authReq.GetClientID(), shared.JARMPreferredAlgFromContext(r.Context()))
 		if err != nil {
 			slog.Error("authorize: JARM signing failed", slog.Any("error", err))
 			writeAuthError(w, r, redirectURI, authReq.GetState(), responseMode,
@@ -1010,7 +1024,7 @@ func (p *Plugin) createImplicitAccessToken(ctx context.Context, authReq storm.Au
 		return "", 0, nil
 	}
 
-	tokenID, expiration, err := p.tokenStore.CreateAccessToken(ctx, authReq)
+	tokenID, expiration, err := p.tokenStore.CreateAccessToken(ctx, authReq, nil)
 	if err != nil {
 		return "", 0, err
 	}
@@ -1044,6 +1058,20 @@ func (p *Plugin) createImplicitIDToken(ctx context.Context, authReq storm.AuthRe
 	signingKey, err := p.keyStore.SigningKey(ctx)
 	if err != nil {
 		return "", err
+	}
+
+	// If the client specifies a preferred ID token signing algorithm, try to
+	// use a matching signing key (OIDC Core §2: id_token_signed_response_alg).
+	if client != nil {
+		if algProvider, ok := client.(shared.IDTokenSignedResponseAlgProvider); ok {
+			if alg := algProvider.IDTokenSignedResponseAlg(); alg != "" {
+				if algStore, ok := p.keyStore.(storm.SigningKeyByAlgProvider); ok {
+					if algKey, err := algStore.SigningKeyByAlg(ctx, alg); err == nil {
+						signingKey = algKey
+					}
+				}
+			}
+		}
 	}
 
 	// Determine ID token lifetime: per-client override or default (1 hour).

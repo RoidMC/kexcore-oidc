@@ -165,6 +165,12 @@ func OIDFTestClient(id, secret string, redirectURIs ...string) *Client {
 	// Always include the official certification URL
 	c.postLogoutRedirectURIs = append(c.postLogoutRedirectURIs,
 		"https://www.certification.openid.net/test/a/kexcore-test/post_logout_redirect")
+	// FAPI 2.0 security profile: enable both DPoP and mTLS sender-constraining
+	// by default. The actual holder-of-key mechanism used is determined by the
+	// client's request (DPoP proof vs mTLS certificate) and the conformance
+	// variant under test.
+	c.requireDPoP = true
+	c.requireMtls = true
 	return c
 }
 
@@ -264,6 +270,9 @@ func FAPIClient(id string, clientJWKS []jwk.Key, redirectURIs ...string) *Client
 		clientJWKS:               clientJWKS,
 		fapiProfile:              true,
 		idTokenSignedResponseAlg: "PS256",
+		requestObjectSigningAlg:  "PS256",
+		requireDPoP:              true,
+		requireMtls:              true,
 	}
 	// Derive post_logout_redirect_uri from the first redirect URI
 	for _, uri := range redirectURIs {

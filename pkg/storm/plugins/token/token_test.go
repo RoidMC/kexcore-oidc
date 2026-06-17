@@ -106,6 +106,7 @@ func (r *fakeRefreshReq) GetAuthTime() time.Time                    { return r.a
 func (r *fakeRefreshReq) GetCodeChallenge() *protocol.CodeChallenge { return r.codeChallenge }
 func (r *fakeRefreshReq) GetAMR() []string                          { return r.amr }
 func (r *fakeRefreshReq) SetCurrentScopes(scopes []string)          { r.fakeTokenRequest.scopes = scopes }
+func (r *fakeRefreshReq) GetDPoPJKT() string                        { return "" }
 
 type fakeClientStore struct {
 	clients map[string]*fakeClient
@@ -206,7 +207,7 @@ func newFakeTokenStore() *fakeTokenStore {
 	}
 }
 
-func (s *fakeTokenStore) CreateAccessToken(_ context.Context, req storm.TokenRequest) (string, time.Time, error) {
+func (s *fakeTokenStore) CreateAccessToken(_ context.Context, req storm.TokenRequest, _ map[string]any) (string, time.Time, error) {
 	id := s.nextTokenID
 	s.tokens[id] = &fakeTokenRequest{
 		subject:  req.GetSubject(),
@@ -216,7 +217,7 @@ func (s *fakeTokenStore) CreateAccessToken(_ context.Context, req storm.TokenReq
 	return id, time.Now().UTC().Add(1 * time.Hour), nil
 }
 
-func (s *fakeTokenStore) CreateAccessAndRefreshTokens(_ context.Context, req storm.TokenRequest, _ string) (string, string, time.Time, error) {
+func (s *fakeTokenStore) CreateAccessAndRefreshTokens(_ context.Context, req storm.TokenRequest, _ string, _ map[string]any) (string, string, time.Time, error) {
 	accessTokenID := s.nextTokenID
 	refreshTokenID := s.nextRefreshID
 	s.tokens[accessTokenID] = &fakeTokenRequest{

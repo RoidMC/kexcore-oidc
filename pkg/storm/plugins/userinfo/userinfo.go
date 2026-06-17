@@ -244,6 +244,18 @@ func (p *Plugin) writeJWTResponse(w http.ResponseWriter, r *http.Request, userIn
 		return err
 	}
 
+	// If the client specifies a preferred userinfo signing algorithm, try to
+	// use a matching signing key (OIDC Core §5.3.2: userinfo_signed_response_alg).
+	if p.responseAlgLookup != nil {
+		if alg, err := p.responseAlgLookup.UserInfoResponseAlg(r.Context(), clientID); err == nil && alg != "" {
+			if algStore, ok := p.keyStore.(storm.SigningKeyByAlgProvider); ok {
+				if algKey, err := algStore.SigningKeyByAlg(r.Context(), alg); err == nil {
+					signingKey = algKey
+				}
+			}
+		}
+	}
+
 	now := time.Now()
 	token := jwt.New()
 	_ = token.Set("iss", issuer)

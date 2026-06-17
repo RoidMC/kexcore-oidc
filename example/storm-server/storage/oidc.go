@@ -301,5 +301,6 @@ func (r *RefreshTokenRequest) GetCodeChallenge() *protocol.CodeChallenge { retur
 func (r *RefreshTokenRequest) GetNonce() string                          { return "" }
 func (r *RefreshTokenRequest) GetID() string                             { return r.RefreshToken.ID }
 func (r *RefreshTokenRequest) GetSessionID() string                      { return r.SessionID }
+func (r *RefreshTokenRequest) GetDPoPJKT() string                        { return r.DPoPJKT }
 
 var _ storm.RefreshTokenRequest = (*RefreshTokenRequest)(nil)

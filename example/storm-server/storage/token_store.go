@@ -25,17 +25,17 @@ import (
 // storm.TokenStore
 // =================================================================
 
-func (s *Storage) CreateAccessToken(ctx context.Context, req storm.TokenRequest) (string, time.Time, error) {
-	return s.createAccessToken(ctx, req, nil)
+func (s *Storage) CreateAccessToken(ctx context.Context, req storm.TokenRequest, cnf map[string]any) (string, time.Time, error) {
+	return s.createAccessToken(ctx, req, cnf)
 }
 
-func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, req storm.TokenRequest, currentRefreshToken string) (accessTokenID, newRefreshToken string, expiration time.Time, err error) {
-	accessTokenID, expiration, err = s.createAccessToken(ctx, req, nil)
+func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, req storm.TokenRequest, currentRefreshToken string, cnf map[string]any) (accessTokenID, newRefreshToken string, expiration time.Time, err error) {
+	accessTokenID, expiration, err = s.createAccessToken(ctx, req, cnf)
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
 
-	refreshToken, err := s.createRefreshToken(ctx, accessTokenID, req)
+	refreshToken, err := s.createRefreshToken(ctx, accessTokenID, req, cnf)
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
@@ -44,17 +44,14 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, req storm.To
 	// OAuth 2.1 §6.1: invalidate old refresh token (rotation)
 	if currentRefreshToken != "" {
 		s.lock.Lock()
-		if old, ok := s.refreshTokens[currentRefreshToken]; ok {
-			old.AccessToken = accessTokenID
-			delete(s.refreshTokens, currentRefreshToken)
-		}
+		delete(s.refreshTokens, currentRefreshToken)
 		s.lock.Unlock()
 	}
 
 	return accessTokenID, newRefreshToken, expiration, nil
 }
 
-func (s *Storage) createAccessToken(_ context.Context, req storm.TokenRequest, prepare func(string)) (string, time.Time, error) {
+func (s *Storage) createAccessToken(_ context.Context, req storm.TokenRequest, cnf map[string]any) (string, time.Time, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -68,16 +65,13 @@ func (s *Storage) createAccessToken(_ context.Context, req storm.TokenRequest, p
 		Audience:      req.GetAudience(),
 		Expiration:    expiration,
 		Scopes:        req.GetScopes(),
+		CNF:           cnf,
 	}
 	// Preserve claims request from auth request (OIDC Core §5.5)
 	if authReq, ok := req.(storm.AuthRequest); ok {
 		token.Claims = authReq.GetClaims()
 	}
 	s.tokens[tokenID] = token
-
-	if prepare != nil {
-		prepare(tokenID)
-	}
 
 	return tokenID, expiration, nil
 }
@@ -145,11 +139,18 @@ func (s *Storage) UserInfoResponseAlg(_ context.Context, clientID string) (strin
 	return c.userInfoSignedResponseAlg, nil
 }
 
-func (s *Storage) createRefreshToken(_ context.Context, accessTokenID string, req storm.TokenRequest) (string, error) {
+func (s *Storage) createRefreshToken(_ context.Context, accessTokenID string, req storm.TokenRequest, cnf map[string]any) (string, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	refreshTokenID := uuid.NewString()
+
+	// If the access token is DPoP-bound, copy the jkt to the refresh token
+	// so the binding survives access token rotation (RFC 9449 §7.2).
+	var dpopJKT string
+	if cnf != nil {
+		dpopJKT, _ = cnf["jkt"].(string)
+	}
 
 	token := &RefreshToken{
 		ID:            refreshTokenID,
@@ -161,6 +162,7 @@ func (s *Storage) createRefreshToken(_ context.Context, accessTokenID string, re
 		Expiration:    time.Now().Add(s.refreshTTL),
 		Scopes:        req.GetScopes(),
 		AccessToken:   accessTokenID,
+		DPoPJKT:       dpopJKT,
 	}
 	s.refreshTokens[refreshTokenID] = token
 

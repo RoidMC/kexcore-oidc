@@ -35,4 +35,8 @@ type RefreshToken struct {
 	Scopes        []string
 	AccessToken   string
 	SessionID     string
+	// DPoPJKT stores the JWK thumbprint bound to this refresh token.
+	// Inherited from the associated access token's cnf.jkt when the token
+	// is DPoP-bound (RFC 9449 §7.2).
+	DPoPJKT string
 }

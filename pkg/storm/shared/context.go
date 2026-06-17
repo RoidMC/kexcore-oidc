@@ -148,3 +148,19 @@ func TracerSpan(ctx context.Context, tracer trace.Tracer, name string) (context.
 	}
 	return ctx, trace.SpanFromContext(ctx)
 }
+
+// --- JARM signing algorithm preference ---
+
+type jarmPreferredAlgContextKey struct{}
+
+// ContextWithJARMPreferredAlg stores the client's preferred signing algorithm
+// in the context so the JARM plugin can use it for signing.
+func ContextWithJARMPreferredAlg(ctx context.Context, alg string) context.Context {
+	return context.WithValue(ctx, jarmPreferredAlgContextKey{}, alg)
+}
+
+// JARMPreferredAlgFromContext retrieves the client's preferred signing algorithm.
+func JARMPreferredAlgFromContext(ctx context.Context) string {
+	s, _ := ctx.Value(jarmPreferredAlgContextKey{}).(string)
+	return s
+}
