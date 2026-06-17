@@ -41,6 +41,10 @@ const (
 	// OAuth 2.0 §4.1.1
 	ResponseTypeCode ResponseType = "code"
 
+	// ResponseTypeNone for checking authentication state without issuing tokens.
+	// OIDC Core 1.0 §3.2.2.1
+	ResponseTypeNone ResponseType = "none"
+
 	// ResponseTypeIDToken for the Implicit Flow returning id and access tokens.
 	// OIDC Core 1.0 §3.2.2.4
 	ResponseTypeIDToken ResponseType = "id_token token"
@@ -48,6 +52,10 @@ const (
 	// ResponseTypeIDTokenOnly for the Implicit Flow returning only id token.
 	// OIDC Core 1.0 §3.2.2.5
 	ResponseTypeIDTokenOnly ResponseType = "id_token"
+
+	// ResponseTypeToken for the Implicit Flow returning only access token.
+	// OAuth 2.0 §4.2.1
+	ResponseTypeToken ResponseType = "token"
 
 	// Hybrid Flow response types (OIDC Core §3.3).
 	// These return both an authorization code and tokens in the fragment.

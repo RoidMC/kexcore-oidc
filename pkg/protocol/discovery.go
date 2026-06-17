@@ -283,6 +283,18 @@ type DiscoveryConfiguration struct {
 	// RFC 9396 §6 (Rich Authorization Requests)
 	AuthorizationDetailsTypesSupported []string `json:"authorization_details_types_supported,omitempty"`
 
+	// OPTIONAL. List of supported CIBA token delivery modes.
+	// CIBA Core 1.0 §4 (Client-Initiated Backchannel Authentication)
+	BackchannelTokenDeliveryModesSupported []string `json:"backchannel_token_delivery_modes_supported,omitempty"`
+
+	// OPTIONAL. List of JWS signing algorithms supported for CIBA signed authentication requests.
+	// CIBA Core 1.0 §4
+	BackchannelAuthenticationRequestSigningAlgValuesSupported []string `json:"backchannel_authentication_request_signing_alg_values_supported,omitempty"`
+
+	// OPTIONAL. List of JWS signing algorithms supported for JARM authorization responses.
+	// JWT Secured Authorization Response Mode (JARM) §4
+	AuthorizationSigningAlgValuesSupported []string `json:"authorization_signing_alg_values_supported,omitempty"`
+
 	// Extra holds additional discovery fields contributed by plugins that
 	// are not part of the standard metadata registry.
 	Extra map[string]any `json:"-"`

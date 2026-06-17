@@ -103,7 +103,7 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 	cfg.SubjectTypesSupported = subjectTypes
 	cfg.ClaimTypesSupported = []string{"normal"}
 	cfg.ClaimsSupported = []string{
-		"sub", "aud", "exp", "iat", "auth_time", "nonce", "acr", "amr",
+		"sub", "aud", "exp", "iat", "iss", "auth_time", "nonce", "acr", "amr",
 		"c_hash", "at_hash", "name", "given_name", "family_name",
 		"middle_name", "nickname", "preferred_username", "profile",
 		"picture", "website", "email", "email_verified", "gender",
