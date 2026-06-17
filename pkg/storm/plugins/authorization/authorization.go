@@ -453,10 +453,11 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	// FAPI 2.0 signed_non_repudiation: if the client is configured with a
 	// request_object_signing_alg, a signed request object is required.
-	if algProvider, ok := client.(shared.RequestObjectSigningAlgProvider); ok && algProvider.RequestObjectSigningAlg() != "" {
-		if authReq.RequestParam == "" {
-			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode,
-				protocol.ErrInvalidRequest().WithDescription("signed request object is required for this client"))
+	// For PAR-based requests the request object was already validated at the
+	// PAR endpoint, so we only enforce this on direct authorization requests.
+	if authReq.RequestURI == "" {
+		if err := shared.ValidateSignedRequestObjectRequired(client, authReq.RequestParam != ""); err != nil {
+			writeAuthError(w, r, authReq.RedirectURI, authReq.State, resolvedMode, err)
 			return
 		}
 	}

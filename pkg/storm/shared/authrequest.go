@@ -64,6 +64,20 @@ type RequestObjectSigningAlgProvider interface {
 	RequestObjectSigningAlg() string
 }
 
+// ValidateSignedRequestObjectRequired returns an error if the client is
+// configured to require signed request objects but the request does not
+// contain one. It is used by both the PAR and authorization endpoints.
+func ValidateSignedRequestObjectRequired(client interface{}, hasRequestObject bool) error {
+	algProvider, ok := client.(RequestObjectSigningAlgProvider)
+	if !ok || algProvider.RequestObjectSigningAlg() == "" {
+		return nil
+	}
+	if !hasRequestObject {
+		return protocol.ErrInvalidRequest().WithDescription("signed request object is required for this client")
+	}
+	return nil
+}
+
 // SenderConstrainingProvider is an optional interface for clients that
 // require sender-constrained tokens (FAPI 2.0 Security Profile).
 // When RequireDPoP returns true, the token endpoint MUST require a DPoP proof.

@@ -124,11 +124,9 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 
 	// FAPI 2.0 signed_non_repudiation: if the client is configured with a
 	// request_object_signing_alg, a signed request object is required.
-	if algProvider, ok := client.(shared.RequestObjectSigningAlgProvider); ok && algProvider.RequestObjectSigningAlg() != "" {
-		if authReq.RequestParam == "" {
-			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("signed request object is required for this client"), nil)
-			return
-		}
+	if err := shared.ValidateSignedRequestObjectRequired(client, authReq.RequestParam != ""); err != nil {
+		shared.WriteError(w, r, err, nil)
+		return
 	}
 
 	// RFC 9101 / OIDC Core §6.1: Parse and validate request object if present.

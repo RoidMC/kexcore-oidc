@@ -196,7 +196,7 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	// FAPI 2.0: sender-constrained token check for private_key_jwt clients.
 	// For other auth methods, the check is performed in authenticateClient.
 	if c := shared.AuthenticatedClientFromContext(r.Context()); c != nil {
-		if err := checkSenderConstraining(c, p.requireDPoP, p.requireMtls, r); err != nil {
+		if err := shared.ValidateSenderConstraining(c, p.requireDPoP, p.requireMtls, r); err != nil {
 			tokenError(w, r, err)
 			return
 		}
@@ -270,7 +270,7 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 	// when the client authentication parameters are absent or malformed.
 	codeClient, err := p.clientStore.GetClientByClientID(r.Context(), authReq.GetClientID())
 	if err == nil {
-		if err := checkSenderConstraining(codeClient, p.requireDPoP, p.requireMtls, r); err != nil {
+		if err := shared.ValidateSenderConstraining(codeClient, p.requireDPoP, p.requireMtls, r); err != nil {
 			tokenError(w, r, err)
 			return
 		}
@@ -343,41 +343,6 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 	p.writeTokenResponse(w, r, resp)
 }
 
-// checkSenderConstraining verifies that the client's sender-constraining
-// requirements are met. If the client implements SenderConstrainingProvider,
-// its per-client config is used; otherwise the global flags are the fallback.
-//
-// FAPI 2.0 semantics: when a client enables both DPoP and mTLS, the actual
-// holder-of-key mechanism is chosen by the request/variant. We therefore
-// require at least one of the enabled mechanisms to be present.
-func checkSenderConstraining(client interface{}, globalDPoP, globalMtls bool, r *http.Request) error {
-	requireDPoP := globalDPoP
-	requireMtls := globalMtls
-	if sc, ok := client.(shared.SenderConstrainingProvider); ok {
-		requireDPoP = sc.RequireDPoP()
-		requireMtls = sc.RequireMtls()
-	}
-
-	hasDPoP := r.Header.Get("DPoP") != ""
-	hasMtls := shared.ClientCertFromContext(r.Context()) != nil
-
-	// If both mechanisms are enabled, the client supports sender-constraining
-	// via either DPoP or mTLS; require at least one proof-of-possession.
-	if requireDPoP && requireMtls {
-		if !hasDPoP && !hasMtls {
-			return protocol.ErrInvalidRequest().WithDescription("holder-of-key proof required (FAPI 2.0 sender-constrained tokens)")
-		}
-		return nil
-	}
-	if requireDPoP && !hasDPoP {
-		return protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)")
-	}
-	if requireMtls && !hasMtls {
-		return protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
-	}
-	return nil
-}
-
 // verifyDPoPCodeBinding verifies the DPoP authorization code binding (RFC 9449 §7.1).
 // If the authorization request included a dpop_jkt parameter, the token request
 // must include a DPoP proof with a matching JWK thumbprint.
@@ -434,7 +399,7 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 
 	rtClient, err := p.clientStore.GetClientByClientID(r.Context(), refreshReq.GetClientID())
 	if err == nil {
-		if err := checkSenderConstraining(rtClient, p.requireDPoP, p.requireMtls, r); err != nil {
+		if err := shared.ValidateSenderConstraining(rtClient, p.requireDPoP, p.requireMtls, r); err != nil {
 			tokenError(w, r, err)
 			return
 		}
@@ -1043,7 +1008,7 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 	slog.Info("[DEBUG] token authenticateClient: success", "client_id", client.GetID(), "auth_method", client.AuthMethod())
 
 	// FAPI 2.0: sender-constrained token check for non-private_key_jwt clients.
-	if err := checkSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
+	if err := shared.ValidateSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
 		return nil, err
 	}
 
