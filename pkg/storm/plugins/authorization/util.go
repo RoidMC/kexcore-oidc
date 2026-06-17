@@ -306,7 +306,8 @@ func writeFormPostError(w http.ResponseWriter, redirectURI string, params url.Va
 // (id_token only or id_token token). Does NOT include hybrid flows.
 func isImplicitResponseType(rt protocol.ResponseType) bool {
 	return rt == protocol.ResponseTypeIDTokenOnly ||
-		rt == protocol.ResponseTypeIDToken
+		rt == protocol.ResponseTypeIDToken ||
+		rt == protocol.ResponseTypeToken
 }
 
 // isHybridResponseType returns true if the response type is a hybrid flow

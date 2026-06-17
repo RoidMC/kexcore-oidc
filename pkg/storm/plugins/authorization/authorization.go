@@ -263,7 +263,7 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 	if p.enableImplicit {
 		cfg.GrantTypesSupported = append(cfg.GrantTypesSupported, "implicit")
 		cfg.ResponseTypesSupported = append(cfg.ResponseTypesSupported,
-			"id_token", "id_token token",
+			"none", "id_token", "token", "id_token token",
 			"code id_token", "code token", "code id_token token",
 		)
 	}
@@ -741,6 +741,11 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 // authResponse creates the successful authentication response.
 func (p *Plugin) authResponse(w http.ResponseWriter, r *http.Request, authReq storm.AuthRequest) {
+	if authReq.GetResponseType() == protocol.ResponseTypeNone {
+		p.authResponseNone(w, r, authReq)
+		return
+	}
+
 	if authReq.GetResponseType() == protocol.ResponseTypeCode {
 		p.authResponseCode(w, r, authReq)
 		return
@@ -759,6 +764,23 @@ func (p *Plugin) authResponse(w http.ResponseWriter, r *http.Request, authReq st
 	writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(),
 		resolveResponseMode(authReq.GetResponseMode(), authReq.GetResponseType()),
 		protocol.ErrServerError().WithDescription("unsupported response_type"))
+}
+
+// authResponseNone handles response_type=none (OIDC Core §3.2.2.1).
+// No authorization code, ID token, or access token is returned.
+func (p *Plugin) authResponseNone(w http.ResponseWriter, r *http.Request, authReq storm.AuthRequest) {
+	redirectURI, err := url.Parse(authReq.GetRedirectURI())
+	if err != nil {
+		writeAuthError(w, r, authReq.GetRedirectURI(), authReq.GetState(),
+			"", protocol.ErrServerError().WithDescription("invalid redirect_uri"))
+		return
+	}
+	if state := authReq.GetState(); state != "" {
+		q := redirectURI.Query()
+		q.Set("state", state)
+		redirectURI.RawQuery = q.Encode()
+	}
+	http.Redirect(w, r, redirectURI.String(), http.StatusFound)
 }
 
 // authResponseCode handles the authorization code response.
@@ -974,10 +996,10 @@ func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, au
 		fragment.Set("iss", iss)
 	}
 
-	// Per OIDC Core §3.2.2.5: access_token is returned when response_type is "id_token token"
+	// Per OIDC Core §3.2.2.5: access_token is returned when response_type is "id_token token" or "token"
 	// We create it first so we can pass it to createImplicitIDToken for at_hash computation.
 	var accessToken string
-	if authReq.GetResponseType() == protocol.ResponseTypeIDToken {
+	if authReq.GetResponseType() == protocol.ResponseTypeIDToken || authReq.GetResponseType() == protocol.ResponseTypeToken {
 		token, expiresIn, err := p.createImplicitAccessToken(r.Context(), authReq)
 		if err == nil && token != "" {
 			accessToken = token
@@ -989,7 +1011,7 @@ func (p *Plugin) authResponseImplicit(w http.ResponseWriter, r *http.Request, au
 		}
 	}
 
-	// Per OIDC Core §3.2.2.5: id_token is REQUIRED for both response types
+	// Per OIDC Core §3.2.2.5: id_token is REQUIRED for id_token and id_token token response types
 	// When access_token is present, id_token MUST include at_hash (§3.2.2.1)
 	if authReq.GetResponseType() == protocol.ResponseTypeIDTokenOnly ||
 		authReq.GetResponseType() == protocol.ResponseTypeIDToken {

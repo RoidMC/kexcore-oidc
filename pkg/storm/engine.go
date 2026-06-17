@@ -106,10 +106,10 @@ const (
 	PriorityDevice        = 900
 	PriorityPAR           = 950
 	PriorityDPoP          = 960
-	PriorityMTLS          = 970
 	PriorityJARM          = 975
 	PriorityDCR           = 1000
 	PriorityCIBA          = 1050
+	PriorityMTLS          = 1060
 	PriorityWebFinger     = 1100
 )
 
