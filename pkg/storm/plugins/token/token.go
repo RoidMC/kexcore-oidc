@@ -186,6 +186,11 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	// FAPI 2.0: sender-constrained token check for private_key_jwt clients.
 	// For other auth methods, the check is performed in authenticateClient.
 	if c := shared.AuthenticatedClientFromContext(r.Context()); c != nil {
+		rd, rm := p.requireDPoP, p.requireMtls
+		if sc, ok := c.(shared.SenderConstrainingProvider); ok {
+			rd, rm = sc.RequireDPoP(), sc.RequireMtls()
+		}
+		slog.Info("[DEBUG] token handleToken post-auth sender-constraining", "client_id", c.GetID(), "requireDPoP", rd, "requireMtls", rm, "has_dpop_header", r.Header.Get("DPoP") != "", "has_client_cert", shared.ClientCertFromContext(r.Context()) != nil)
 		if err := shared.ValidateSenderConstraining(c, p.requireDPoP, p.requireMtls, r); err != nil {
 			tokenError(w, r, err)
 			return
@@ -1063,13 +1068,15 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 	requireDPoP, requireMtls := p.senderConstrainingRequirements(client)
 	hasDPoP := shared.DPoPFromContext(ctx) != nil
 	hasMtls := shared.ClientCertFromContext(ctx) != nil
-	if requireDPoP && requireMtls && !hasDPoP && !hasMtls {
-		return nil, "", protocol.ErrInvalidRequest().WithDescription("holder-of-key proof required (FAPI 2.0 sender-constrained tokens)")
-	}
-	if requireDPoP && !hasDPoP {
+	slog.Info("[DEBUG] token createTokenResponseFromTokenRequest sender-constraining", "client_id", client.GetID(), "requireDPoP", requireDPoP, "requireMtls", requireMtls, "has_dpop_ctx", hasDPoP, "has_mtls_ctx", hasMtls)
+	// When both DPoP and mTLS are required (holder-of-key), either proof suffices.
+	if requireDPoP && requireMtls {
+		if !hasDPoP && !hasMtls {
+			return nil, "", protocol.ErrInvalidRequest().WithDescription("holder-of-key proof required (FAPI 2.0 sender-constrained tokens)")
+		}
+	} else if requireDPoP && !hasDPoP {
 		return nil, "", protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)")
-	}
-	if requireMtls && !hasMtls {
+	} else if requireMtls && !hasMtls {
 		return nil, "", protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
 	}
 
@@ -1290,13 +1297,14 @@ func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenReque
 	requireDPoP, requireMtls := p.senderConstrainingRequirements(client)
 	hasDPoP := shared.DPoPFromContext(ctx) != nil
 	hasMtls := shared.ClientCertFromContext(ctx) != nil
-	if requireDPoP && requireMtls && !hasDPoP && !hasMtls {
-		return nil, protocol.ErrInvalidRequest().WithDescription("holder-of-key proof required (FAPI 2.0 sender-constrained tokens)")
-	}
-	if requireDPoP && !hasDPoP {
+	// When both DPoP and mTLS are required (holder-of-key), either proof suffices.
+	if requireDPoP && requireMtls {
+		if !hasDPoP && !hasMtls {
+			return nil, protocol.ErrInvalidRequest().WithDescription("holder-of-key proof required (FAPI 2.0 sender-constrained tokens)")
+		}
+	} else if requireDPoP && !hasDPoP {
 		return nil, protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)")
-	}
-	if requireMtls && !hasMtls {
+	} else if requireMtls && !hasMtls {
 		return nil, protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
 	}
 

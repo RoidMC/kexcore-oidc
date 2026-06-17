@@ -1039,7 +1039,7 @@ func TestCreateTokenResponse_RequireDPoPAndMtls_EitherAccepted(t *testing.T) {
 	as := newFakeAuthStore()
 	ts := newFakeTokenStore()
 
-	// Both required — DPoP alone should satisfy requireDPoP, but requireMtls still rejects
+	// Both required (holder-of-key) — DPoP alone should suffice.
 	as.byCode["code-dpop"] = &fakeAuthRequest{
 		id: "auth-1", clientID: "client1", subject: "user1",
 		redirectURI: "https://example.com/callback", scopes: []string{"openid"}, responseType: protocol.ResponseTypeCode,
@@ -1051,9 +1051,7 @@ func TestCreateTokenResponse_RequireDPoPAndMtls_EitherAccepted(t *testing.T) {
 		"redirect_uri": {"https://example.com/callback"},
 	})
 	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
-	// Only DPoP, no mTLS — requireMtls should reject.
-	// Set DPoP header so the DPoP check in checkSenderConstraining passes,
-	// letting the mTLS check be the one that rejects.
+	// Only DPoP, no mTLS — holder-of-key should accept either proof.
 	r.Header.Set("DPoP", "fake-dpop-proof")
 	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{thumbprint: "abc"})
 	r = r.WithContext(ctx)
@@ -1061,10 +1059,9 @@ func TestCreateTokenResponse_RequireDPoPAndMtls_EitherAccepted(t *testing.T) {
 
 	p.handleAuthorizationCode(w, r)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	errResp := decodeError(t, w)
-	assert.Equal(t, "invalid_request", errResp["error"])
-	assert.Contains(t, errResp["error_description"], "mTLS client certificate required")
+	assert.Equal(t, http.StatusOK, w.Code)
+	resp := decodeTokenResponse(t, w)
+	assert.NotEmpty(t, resp.AccessToken)
 }
 
 func TestCreateTokenResponse_NoSenderConstraint_DefaultBehavior(t *testing.T) {
