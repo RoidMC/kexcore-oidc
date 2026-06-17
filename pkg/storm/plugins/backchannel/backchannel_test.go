@@ -157,6 +157,7 @@ func TestBackChannel_PushLogoutTokens(t *testing.T) {
 		"user-123",
 		"session-456",
 		slog.Default(),
+		false,
 	)
 
 	require.NoError(t, err)
@@ -191,6 +192,7 @@ func TestBackChannel_PushLogoutTokens_StoreError(t *testing.T) {
 		"user-123",
 		"session-456",
 		slog.Default(),
+		false,
 	)
 
 	require.Error(t, err)
@@ -228,6 +230,7 @@ func TestBackChannel_PushLogoutTokens_SkipsClientWithoutURI(t *testing.T) {
 		"user-123",
 		"session-456",
 		slog.Default(),
+		false,
 	)
 
 	require.NoError(t, err)
@@ -352,6 +355,7 @@ func TestBackChannel_PushLogoutTokens_NilLogger(t *testing.T) {
 		"user-123",
 		"session-456",
 		nil, // nil logger
+		false,
 	)
 
 	require.NoError(t, err)

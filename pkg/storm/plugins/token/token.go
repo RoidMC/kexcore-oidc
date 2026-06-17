@@ -1032,7 +1032,7 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 		// RFC 7523: token endpoint accepts issuer or token endpoint URL.
 		return []string{issuer, tokenEndpoint}
 	}
-	client, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences)
+	client, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences, p.skipTLSCertVerify, p.allowPrivateIPs)
 	if err != nil {
 		return nil, err
 	}

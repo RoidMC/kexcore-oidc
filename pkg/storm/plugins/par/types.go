@@ -9,12 +9,14 @@ import (
 
 // Plugin implements the Pushed Authorization Requests endpoint (RFC 9126).
 type Plugin struct {
-	store       storm.PARStore
-	clientStore storm.ClientStore
-	decoder     *protocol.Decoder
-	lifetime    time.Duration
-	requireDPoP bool
-	requireMtls bool
+	store             storm.PARStore
+	clientStore       storm.ClientStore
+	decoder           *protocol.Decoder
+	lifetime          time.Duration
+	requireDPoP       bool
+	requireMtls       bool
+	skipTLSCertVerify bool
+	allowPrivateIPs   bool
 }
 
 // Config holds the dependencies for the PAR plugin.
@@ -28,4 +30,8 @@ type Config struct {
 	RequireDPoP bool
 	// RequireMtls rejects requests without an mTLS client certificate when true (FAPI 2.0).
 	RequireMtls bool
+	// SkipTLSCertVerify disables TLS certificate verification on outbound HTTP (testing only).
+	SkipTLSCertVerify bool
+	// AllowPrivateIPs disables SSRF protection for outbound HTTP (testing only).
+	AllowPrivateIPs bool
 }

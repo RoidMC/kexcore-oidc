@@ -26,8 +26,12 @@ type RequestObjectClientLookup func(ctx context.Context, clientID string) (Clien
 //  4. Validates time claims (exp, nbf)
 //  5. Copies request object claims into the auth request
 //
+// skipTLSVerify controls whether TLS certificate verification is skipped when
+// fetching the client's JWKS from jwks_uri (testing only).
+// allowPrivateIPs controls whether SSRF validation is skipped for private IPs.
+//
 // Returns protocol.ErrInvalidRequestObject on any validation failure.
-func ParseAndValidateRequestObject(ctx context.Context, authReq *protocol.AuthRequest, lookupClient RequestObjectClientLookup) error {
+func ParseAndValidateRequestObject(ctx context.Context, authReq *protocol.AuthRequest, lookupClient RequestObjectClientLookup, skipTLSVerify, allowPrivateIPs bool) error {
 	requestObject := new(protocol.RequestObject)
 	payload, err := protocol.ParseToken(authReq.RequestParam, requestObject)
 	if err != nil {
@@ -76,7 +80,7 @@ func ParseAndValidateRequestObject(ctx context.Context, authReq *protocol.AuthRe
 
 	var clientKeys []jwk.Key
 	if uriProvider, ok := client.(JWKSURIProvider); ok && uriProvider.ClientJWKSURI() != "" {
-		fetchedKeys, err := FetchJWKSFromURI(uriProvider.ClientJWKSURI())
+		fetchedKeys, err := FetchJWKSFromURI(uriProvider.ClientJWKSURI(), skipTLSVerify, allowPrivateIPs)
 		if err != nil {
 			clientKeys = clientKS.ClientJWKS()
 		} else {
@@ -153,9 +157,12 @@ func ParseAndValidateRequestObject(ctx context.Context, authReq *protocol.AuthRe
 //
 // FAPI 2.0 §5.3.1: when a request object is present, the authorization server
 // SHALL NOT use any parameter values from the query string and SHALL only use
-// parameter values from the request object. Therefore all fields are
+// parameter values from the request object. Most fields are therefore
 // unconditionally assigned from the request object — any query-string-only
 // values (e.g. state) that are absent from the request object are cleared.
+// RequestURI is preserved when the request object does not carry one, because
+// it is needed downstream as a sentinel (e.g. to skip the
+// signed-request-object-required check for request_uri-based JAR).
 //
 // Per OIDC Core §6.1 and RFC 9101, the request object is a transport envelope
 // for authorization request parameters. Once the signature is verified and the

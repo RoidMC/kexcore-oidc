@@ -27,12 +27,14 @@ func NewWithConfig(cfg Config) *Plugin {
 		cfg.Lifetime = 90 * time.Second
 	}
 	return &Plugin{
-		store:       cfg.Store,
-		clientStore: cfg.ClientStore,
-		decoder:     cfg.Decoder,
-		lifetime:    cfg.Lifetime,
-		requireDPoP: cfg.RequireDPoP,
-		requireMtls: cfg.RequireMtls,
+		store:             cfg.Store,
+		clientStore:       cfg.ClientStore,
+		decoder:           cfg.Decoder,
+		lifetime:          cfg.Lifetime,
+		requireDPoP:       cfg.RequireDPoP,
+		requireMtls:       cfg.RequireMtls,
+		skipTLSCertVerify: cfg.SkipTLSCertVerify,
+		allowPrivateIPs:   cfg.AllowPrivateIPs,
 	}
 }
 
@@ -44,12 +46,14 @@ func init() {
 			return nil
 		}
 		return NewWithConfig(Config{
-			Store:       parStore,
-			ClientStore: ctx.Storage.(storm.ClientStore),
-			Decoder:     ctx.Decoder,
-			Lifetime:    ctx.PARLifetime,
-			RequireDPoP: ctx.RequireDPoP,
-			RequireMtls: ctx.RequireMtls,
+			Store:             parStore,
+			ClientStore:       ctx.Storage.(storm.ClientStore),
+			Decoder:           ctx.Decoder,
+			Lifetime:          ctx.PARLifetime,
+			RequireDPoP:       ctx.RequireDPoP,
+			RequireMtls:       ctx.RequireMtls,
+			SkipTLSCertVerify: ctx.SkipTLSCertVerify,
+			AllowPrivateIPs:   ctx.AllowPrivateIPs,
 		})
 	})
 }
@@ -136,7 +140,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		lookupClient := func(ctx context.Context, clientID string) (shared.Client, error) {
 			return p.clientStore.GetClientByClientID(ctx, clientID)
 		}
-		if err := shared.ParseAndValidateRequestObject(r.Context(), authReq, lookupClient); err != nil {
+		if err := shared.ParseAndValidateRequestObject(r.Context(), authReq, lookupClient, p.skipTLSCertVerify, p.allowPrivateIPs); err != nil {
 			slog.Error("PAR: request object validation failed", slog.Any("error", err))
 			shared.WriteError(w, r, err, nil)
 			return
@@ -238,7 +242,7 @@ func (p *Plugin) authenticateClient(r *http.Request) (storm.Client, error) {
 		if _, parseErr := protocol.ParseToken(assertion, req); parseErr == nil {
 			slog.Info("[DEBUG] PAR authenticateClient", "issuer", issuer, "assertion_aud", req.Audience)
 		}
-		client, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences)
+		client, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences, p.skipTLSCertVerify, p.allowPrivateIPs)
 		if err != nil {
 			return nil, err
 		}

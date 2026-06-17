@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
@@ -168,7 +169,7 @@ func ParseClientCredentials(r *http.Request) (clientID, clientSecret string, err
 // getAudiences is called after the client is resolved so the allowed aud
 // values can depend on the client's profile (e.g. FAPI 2.0 vs plain OAuth).
 // If nil, the assertion's audience is not checked (not recommended).
-func AuthenticatePrivateKeyJWT(r *http.Request, getClientByClientID func(ctx context.Context, clientID string) (Client, error), assertion string, getAudiences func(client Client) []string) (Client, error) {
+func AuthenticatePrivateKeyJWT(r *http.Request, getClientByClientID func(ctx context.Context, clientID string) (Client, error), assertion string, getAudiences func(client Client) []string, skipTLSVerify, allowPrivateIPs bool) (Client, error) {
 	// Step 1: Parse the unverified JWT to extract iss (client_id).
 	request := new(protocol.JWTTokenRequest)
 	if _, err := protocol.ParseToken(assertion, request); err != nil {
@@ -195,10 +196,25 @@ func AuthenticatePrivateKeyJWT(r *http.Request, getClientByClientID func(ctx con
 
 	var clientKeys []jwk.Key
 	if uriProvider, ok := client.(JWKSURIProvider); ok && uriProvider.ClientJWKSURI() != "" {
-		fetchedKeys, err := FetchJWKSFromURI(uriProvider.ClientJWKSURI())
+		slog.Info("AuthenticatePrivateKeyJWT: fetching jwks_uri",
+			slog.String("client_id", request.Issuer),
+			slog.String("jwks_uri", uriProvider.ClientJWKSURI()),
+			slog.Int("static_keys", len(clientKS.ClientJWKS())),
+			slog.Bool("skip_tls_verify", skipTLSVerify),
+		)
+		fetchedKeys, err := FetchJWKSFromURI(uriProvider.ClientJWKSURI(), skipTLSVerify, allowPrivateIPs)
 		if err != nil {
+			slog.Warn("AuthenticatePrivateKeyJWT: jwks_uri fetch failed, falling back to static keys",
+				slog.String("client_id", request.Issuer),
+				slog.String("jwks_uri", uriProvider.ClientJWKSURI()),
+				slog.Any("error", err),
+			)
 			clientKeys = clientKS.ClientJWKS()
 		} else {
+			slog.Info("AuthenticatePrivateKeyJWT: jwks_uri fetched",
+				slog.String("client_id", request.Issuer),
+				slog.Int("fetched_keys", len(fetchedKeys)),
+			)
 			clientKeys = fetchedKeys
 		}
 	} else {
@@ -224,8 +240,14 @@ func AuthenticatePrivateKeyJWT(r *http.Request, getClientByClientID func(ctx con
 }
 
 // FetchJWKSFromURI fetches and parses a JWKS from a remote URI.
-func FetchJWKSFromURI(uri string) ([]jwk.Key, error) {
-	client := NewHTTPClient(false)
+// If allowPrivateIPs is false, the URI is validated to prevent SSRF attacks.
+func FetchJWKSFromURI(uri string, skipTLSVerify, allowPrivateIPs bool) ([]jwk.Key, error) {
+	if !allowPrivateIPs {
+		if err := ValidateRemoteURL(uri); err != nil {
+			return nil, fmt.Errorf("invalid jwks_uri: %w", err)
+		}
+	}
+	client := NewHTTPClient(skipTLSVerify)
 	resp, err := client.Get(uri)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch jwks_uri: %w", err)

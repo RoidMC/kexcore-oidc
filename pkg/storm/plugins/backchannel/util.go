@@ -84,13 +84,11 @@ func createLogoutToken(issuer, subject, audience, sid string, signingKey storm.S
 
 // sendLogoutToken sends a logout token to a client's backchannel_logout_uri.
 // Per OIDC Back-Channel Logout §2.5, the token is sent as application/x-www-form-urlencoded.
+// The caller must provide a non-nil HTTP client.
 func sendLogoutToken(uri, logoutToken string, logger *slog.Logger, client *http.Client) {
 	form := url.Values{}
 	form.Set("logout_token", logoutToken)
 
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
-	}
 	resp, err := client.PostForm(uri, form)
 	if err != nil {
 		logger.Error("failed to send logout token to client",

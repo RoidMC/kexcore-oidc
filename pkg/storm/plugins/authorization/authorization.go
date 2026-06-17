@@ -1237,7 +1237,7 @@ func (p *Plugin) applyRequestObject(ctx context.Context, authReq *protocol.AuthR
 	lookupClient := func(ctx context.Context, clientID string) (shared.Client, error) {
 		return p.clientStore.GetClientByClientID(ctx, clientID)
 	}
-	return shared.ParseAndValidateRequestObject(ctx, authReq, lookupClient)
+	return shared.ParseAndValidateRequestObject(ctx, authReq, lookupClient, p.skipTLSCertVerify, p.allowPrivateIPs)
 }
 
 // applyRequestURI fetches and validates a signed JWT request object from a URL (OIDC Core §6.1).
@@ -1262,7 +1262,7 @@ func (p *Plugin) applyRequestURI(ctx context.Context, authReq *protocol.AuthRequ
 	lookupClient := func(ctx context.Context, clientID string) (shared.Client, error) {
 		return p.clientStore.GetClientByClientID(ctx, clientID)
 	}
-	return shared.ParseAndValidateRequestObject(ctx, authReq, lookupClient)
+	return shared.ParseAndValidateRequestObject(ctx, authReq, lookupClient, p.skipTLSCertVerify, p.allowPrivateIPs)
 }
 
 // applyPARRequest resolves a Pushed Authorization Request (RFC 9101 §5.2).

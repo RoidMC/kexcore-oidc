@@ -120,7 +120,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 //
 // This is the main entry point for triggering back-channel logout.
 // Call this when a session is terminated (e.g., from endsession plugin).
-func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer string, signingKey storm.SigningKey, subject, sid string, logger *slog.Logger) error {
+func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer string, signingKey storm.SigningKey, subject, sid string, logger *slog.Logger, skipTLSVerify bool) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -130,8 +130,9 @@ func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer 
 		return err
 	}
 
-	for _, client := range clients {
-		bc, ok := client.(BackChannelLogoutClient)
+	client := shared.NewHTTPClient(skipTLSVerify)
+	for _, c := range clients {
+		bc, ok := c.(BackChannelLogoutClient)
 		if !ok {
 			continue
 		}
@@ -140,10 +141,10 @@ func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer 
 			continue
 		}
 
-		logoutToken, err := createLogoutToken(issuer, subject, client.GetID(), sid, signingKey)
+		logoutToken, err := createLogoutToken(issuer, subject, c.GetID(), sid, signingKey)
 		if err != nil {
 			logger.Error("failed to create logout token",
-				slog.String("client_id", client.GetID()),
+				slog.String("client_id", c.GetID()),
 				slog.String("subject", subject),
 				slog.String("sid", sid),
 				slog.Any("error", err),
@@ -151,7 +152,7 @@ func PushLogoutTokens(ctx context.Context, store storm.BackChannelStore, issuer 
 			continue
 		}
 
-		go sendLogoutToken(uri, logoutToken, logger, nil)
+		go sendLogoutToken(uri, logoutToken, logger, client)
 	}
 
 	return nil
