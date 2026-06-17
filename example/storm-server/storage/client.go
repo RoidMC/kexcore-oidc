@@ -183,6 +183,10 @@ func OIDFTestClientSecretPost(id, secret string, redirectURIs ...string) *Client
 func OIDFBackChannelLogoutTestClient(id, secret, backChannelLogoutURI string, redirectURIs ...string) *Client {
 	c := OIDFTestClientSecretPost(id, secret, redirectURIs...)
 	c.backChannelLogoutURI = backChannelLogoutURI
+	// Back-channel logout is an OIDC feature, not FAPI 2.0.
+	// Disable sender-constraining so plain OIDC clients can use the token endpoint.
+	c.requireDPoP = false
+	c.requireMtls = false
 	return c
 }
 

@@ -94,10 +94,14 @@ func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *protocol.Use
 		return fmt.Errorf("user not found")
 	}
 
+	// OIDC Core §5.3.2: "sub" claim MUST always be returned in the UserInfo response.
+	// This is a MUST-level requirement, not gated by scope.
+	userinfo.Subject = user.ID
+
 	for _, scope := range token.Scopes {
 		switch scope {
 		case protocol.ScopeOpenID:
-			userinfo.Subject = user.ID
+			// No additional claims beyond "sub" for the openid scope alone.
 		case protocol.ScopeEmail:
 			userinfo.Email = user.Email
 			userinfo.EmailVerified = protocol.Bool(user.EmailVerified)

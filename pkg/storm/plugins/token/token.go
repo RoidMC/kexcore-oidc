@@ -1072,9 +1072,14 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 		return nil, "", err
 	}
 
-	idToken, err := p.createIDToken(ctx, request, client, accessToken, opts.Code)
-	if err != nil {
-		return nil, "", err
+	// Only create ID token if the request includes "openid" scope (OIDC Core §2.1.3).
+	// Plain OAuth requests without "openid" scope should not receive an ID token.
+	var idToken string
+	if slices.Contains(request.GetScopes(), protocol.ScopeOpenID) {
+		idToken, err = p.createIDToken(ctx, request, client, accessToken, opts.Code)
+		if err != nil {
+			return nil, "", err
+		}
 	}
 
 	// Determine token_type: DPoP-bound tokens use "DPoP" (RFC 9449 §7.1)
