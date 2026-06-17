@@ -31,8 +31,6 @@ func NewWithConfig(cfg Config) *Plugin {
 		clientStore:       cfg.ClientStore,
 		decoder:           cfg.Decoder,
 		lifetime:          cfg.Lifetime,
-		requireDPoP:       cfg.RequireDPoP,
-		requireMtls:       cfg.RequireMtls,
 		skipTLSCertVerify: cfg.SkipTLSCertVerify,
 		allowPrivateIPs:   cfg.AllowPrivateIPs,
 	}
@@ -50,8 +48,6 @@ func init() {
 			ClientStore:       ctx.Storage.(storm.ClientStore),
 			Decoder:           ctx.Decoder,
 			Lifetime:          ctx.PARLifetime,
-			RequireDPoP:       ctx.RequireDPoP,
-			RequireMtls:       ctx.RequireMtls,
 			SkipTLSCertVerify: ctx.SkipTLSCertVerify,
 			AllowPrivateIPs:   ctx.AllowPrivateIPs,
 		})

@@ -13,8 +13,6 @@ type Plugin struct {
 	clientStore       storm.ClientStore
 	decoder           *protocol.Decoder
 	lifetime          time.Duration
-	requireDPoP       bool
-	requireMtls       bool
 	skipTLSCertVerify bool
 	allowPrivateIPs   bool
 }
@@ -26,10 +24,6 @@ type Config struct {
 	Decoder     *protocol.Decoder
 	// Lifetime is the request_uri expiration duration (default: 5m).
 	Lifetime time.Duration
-	// RequireDPoP rejects requests without a DPoP proof when true (FAPI 2.0).
-	RequireDPoP bool
-	// RequireMtls rejects requests without an mTLS client certificate when true (FAPI 2.0).
-	RequireMtls bool
 	// SkipTLSCertVerify disables TLS certificate verification on outbound HTTP (testing only).
 	SkipTLSCertVerify bool
 	// AllowPrivateIPs disables SSRF protection for outbound HTTP (testing only).

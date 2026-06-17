@@ -158,22 +158,12 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	for k := range r.Form {
 		formKeys = append(formKeys, k)
 	}
-	slog.Info("[DEBUG] token handleToken", "grant_type", r.Form.Get("grant_type"), "form_keys", formKeys, "assertion_type", r.Form.Get("client_assertion_type"), "has_assertion", r.Form.Get("client_assertion") != "", "has_dpop", r.Header.Get("DPoP") != "", "requireDPoP", p.requireDPoP, "requireMtls", p.requireMtls)
+	slog.Info("[DEBUG] token handleToken", "grant_type", r.Form.Get("grant_type"), "form_keys", formKeys, "assertion_type", r.Form.Get("client_assertion_type"), "has_assertion", r.Form.Get("client_assertion") != "", "has_dpop", r.Header.Get("DPoP") != "", "global_requireDPoP", p.requireDPoP, "global_requireMtls", p.requireMtls)
 
-	// FAPI 2.0: global sender-constraining check before client authentication.
-	// When the plugin is configured to require DPoP/mTLS, reject missing proof
-	// early so the error is holder-of-key related rather than invalid_client.
-	slog.Info("[DEBUG] token handleToken sender-constraining check", "requireDPoP", p.requireDPoP, "has_dpop_header", r.Header.Get("DPoP") != "", "requireMtls", p.requireMtls, "has_client_cert", shared.ClientCertFromContext(r.Context()) != nil)
-	if p.requireDPoP && r.Header.Get("DPoP") == "" {
-		slog.Info("[DEBUG] token handleToken rejecting missing DPoP proof")
-		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)"))
-		return
-	}
-	if p.requireMtls && shared.ClientCertFromContext(r.Context()) == nil {
-		slog.Info("[DEBUG] token handleToken rejecting missing mTLS cert")
-		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)"))
-		return
-	}
+	// Sender-constraining is validated after the client is authenticated so that
+	// per-client configuration (via shared.SenderConstrainingProvider) can override
+	// the plugin-wide defaults. This avoids a global-only gate rejecting clients
+	// that do not require DPoP/mTLS.
 
 	// RFC 7523 §2.2 / OIDC Core §9: client_assertion takes precedence
 	if assertionType := r.Form.Get("client_assertion_type"); assertionType == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
@@ -1049,6 +1039,19 @@ type tokenResponseOpts struct {
 	CurrentRefreshToken string // old refresh token to invalidate (rotation)
 }
 
+// senderConstrainingRequirements returns the effective DPoP/mTLS requirements
+// for a client. Per-client configuration via shared.SenderConstrainingProvider
+// takes precedence over the plugin-wide defaults.
+func (p *Plugin) senderConstrainingRequirements(client storm.Client) (requireDPoP, requireMtls bool) {
+	requireDPoP = p.requireDPoP
+	requireMtls = p.requireMtls
+	if sc, ok := client.(shared.SenderConstrainingProvider); ok {
+		requireDPoP = sc.RequireDPoP()
+		requireMtls = sc.RequireMtls()
+	}
+	return
+}
+
 // createTokenResponseFromTokenRequest creates a token response from any TokenRequest implementation.
 func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, request storm.TokenRequest, client storm.Client, opts tokenResponseOpts) (*protocol.AccessTokenResponse, string, error) {
 	// Apply pairwise subject transformation if applicable
@@ -1056,10 +1059,17 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 
 	// FAPI 2.0: reject requests without sender-constrained proof when required.
 	// Must check before creating tokens so we fail fast without issuing tokens.
-	if p.requireDPoP && shared.DPoPFromContext(ctx) == nil {
+	// Per-client configuration takes precedence over plugin-wide defaults.
+	requireDPoP, requireMtls := p.senderConstrainingRequirements(client)
+	hasDPoP := shared.DPoPFromContext(ctx) != nil
+	hasMtls := shared.ClientCertFromContext(ctx) != nil
+	if requireDPoP && requireMtls && !hasDPoP && !hasMtls {
+		return nil, "", protocol.ErrInvalidRequest().WithDescription("holder-of-key proof required (FAPI 2.0 sender-constrained tokens)")
+	}
+	if requireDPoP && !hasDPoP {
 		return nil, "", protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)")
 	}
-	if p.requireMtls && shared.ClientCertFromContext(ctx) == nil {
+	if requireMtls && !hasMtls {
 		return nil, "", protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
 	}
 
@@ -1276,10 +1286,17 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 // createClientCredentialsResponse creates a token response for client_credentials grant.
 func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenRequest storm.TokenRequest, client storm.Client) (*protocol.AccessTokenResponse, error) {
 	// FAPI 2.0: reject requests without sender-constrained proof when required.
-	if p.requireDPoP && shared.DPoPFromContext(ctx) == nil {
+	// Per-client configuration takes precedence over plugin-wide defaults.
+	requireDPoP, requireMtls := p.senderConstrainingRequirements(client)
+	hasDPoP := shared.DPoPFromContext(ctx) != nil
+	hasMtls := shared.ClientCertFromContext(ctx) != nil
+	if requireDPoP && requireMtls && !hasDPoP && !hasMtls {
+		return nil, protocol.ErrInvalidRequest().WithDescription("holder-of-key proof required (FAPI 2.0 sender-constrained tokens)")
+	}
+	if requireDPoP && !hasDPoP {
 		return nil, protocol.ErrInvalidRequest().WithDescription("DPoP proof required (FAPI 2.0 sender-constrained tokens)")
 	}
-	if p.requireMtls && shared.ClientCertFromContext(ctx) == nil {
+	if requireMtls && !hasMtls {
 		return nil, protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
 	}
 
