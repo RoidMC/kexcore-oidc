@@ -54,10 +54,10 @@ func (s *authStoreStub) DeleteAuthRequest(ctx context.Context, id string) error 
 // tokenStoreStub additionally implements TokenStore
 type tokenStoreStub struct{ authStoreStub }
 
-func (s *tokenStoreStub) CreateAccessToken(ctx context.Context, req storm.TokenRequest) (string, time.Time, error) {
+func (s *tokenStoreStub) CreateAccessToken(ctx context.Context, req storm.TokenRequest, cnf map[string]any) (string, time.Time, error) {
 	return "", time.Time{}, errors.New("not implemented")
 }
-func (s *tokenStoreStub) CreateAccessAndRefreshTokens(ctx context.Context, req storm.TokenRequest, currentRefreshToken string) (string, string, time.Time, error) {
+func (s *tokenStoreStub) CreateAccessAndRefreshTokens(ctx context.Context, req storm.TokenRequest, currentRefreshToken string, cnf map[string]any) (string, string, time.Time, error) {
 	return "", "", time.Time{}, errors.New("not implemented")
 }
 func (s *tokenStoreStub) TokenRequestByRefreshToken(ctx context.Context, refreshToken string) (storm.RefreshTokenRequest, error) {
@@ -363,8 +363,6 @@ func TestValidate_UserinfoStoreHint(t *testing.T) {
 }
 
 // --- optional interface discovery tests ---
-
-
 
 // --- helper ---
 
