@@ -227,6 +227,10 @@ const (
 	// RFC 8628 §3.5 (OAuth 2.0 Device Authorization Grant)
 	ExpiredToken errorType = "expired_token"
 
+	// InvalidBindingMessage: The binding_message is invalid or cannot be displayed.
+	// CIBA Core 1.0 §7.1
+	InvalidBindingMessage errorType = "invalid_binding_message"
+
 	// ---- RFC 8693 OAuth 2.0 Token Exchange (§2.2.2) ----
 
 	// InvalidTarget: The requested target resource is invalid, unknown, or
@@ -343,6 +347,12 @@ var (
 		return &Error{
 			ErrorType:   ExpiredToken,
 			Description: "The \"device_code\" has expired.",
+		}
+	}
+	ErrInvalidBindingMessage = func() *Error {
+		return &Error{
+			ErrorType:   InvalidBindingMessage,
+			Description: "The binding_message is invalid or cannot be displayed.",
 		}
 	}
 

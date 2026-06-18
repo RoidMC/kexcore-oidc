@@ -1,6 +1,9 @@
 package protocol
 
 import (
+	"encoding/json"
+	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -17,7 +20,7 @@ type BackchannelAuthRequest struct {
 	LoginHint               string   `json:"login_hint,omitempty"             schema:"login_hint"`
 	BindingMessage          string   `json:"binding_message,omitempty"        schema:"binding_message"`
 	UserCode                string   `json:"user_code,omitempty"              schema:"user_code"`
-	RequestedExpiry         int      `json:"requested_expiry,omitempty"       schema:"requested_expiry"`
+	RequestedExpiry         FlexInt  `json:"requested_expiry,omitempty"       schema:"requested_expiry"`
 	AcrValues               string   `json:"acr_values,omitempty"             schema:"acr_values"`
 	Claims                  string   `json:"claims,omitempty"                 schema:"claims"`
 	Resources               Audience `json:"resource,omitempty"               schema:"resource"`
@@ -79,6 +82,31 @@ const (
 	CIBAModePoll CIBADeliveryMode = "poll"
 )
 
+// FlexInt is an int that can be unmarshalled from both JSON string and number.
+// CIBA Core 1.0 §7.1.1: requested_expiry may be sent as either a JSON string
+// or a JSON number; the OP must accept either type.
+type FlexInt int
+
+func (fi *FlexInt) UnmarshalJSON(data []byte) error {
+	// Try number first
+	var n int
+	if err := json.Unmarshal(data, &n); err == nil {
+		*fi = FlexInt(n)
+		return nil
+	}
+	// Try string
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return err
+		}
+		*fi = FlexInt(n)
+		return nil
+	}
+	return fmt.Errorf("cannot unmarshal %s into FlexInt", string(data))
+}
+
 // CIBAStatus represents the status of a CIBA authentication request.
 type CIBAStatus string
 
@@ -86,6 +114,7 @@ const (
 	CIBAStatusPending  CIBAStatus = "pending"
 	CIBAStatusApproved CIBAStatus = "approved"
 	CIBAStatusDenied   CIBAStatus = "denied"
+	CIBAStatusConsumed CIBAStatus = "consumed" // Token already issued; auth_req_id cannot be reused.
 )
 
 // CIBAAuthRequestInfo contains information about a pending CIBA request

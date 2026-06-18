@@ -302,14 +302,17 @@ func (s SpaceDelimitedArray) Value() (driver.Value, error) {
 type AuthMethod string
 
 const (
-	AuthMethodBasic         AuthMethod = "client_secret_basic"
-	AuthMethodPost          AuthMethod = "client_secret_post"
-	AuthMethodNone          AuthMethod = "none"
-	AuthMethodPrivateKeyJWT AuthMethod = "private_key_jwt"
+	AuthMethodBasic             AuthMethod = "client_secret_basic"
+	AuthMethodPost              AuthMethod = "client_secret_post"
+	AuthMethodNone              AuthMethod = "none"
+	AuthMethodPrivateKeyJWT     AuthMethod = "private_key_jwt"
+	AuthMethodTLSClientAuth     AuthMethod = "tls_client_auth"             // RFC 8705 §2
+	AuthMethodSelfSignedTLSAuth AuthMethod = "self_signed_tls_client_auth" // RFC 8705 §2
 )
 
 var AllAuthMethods = []AuthMethod{
 	AuthMethodBasic, AuthMethodPost, AuthMethodNone, AuthMethodPrivateKeyJWT,
+	AuthMethodTLSClientAuth, AuthMethodSelfSignedTLSAuth,
 }
 
 // ---------------------------------------------------------------------------

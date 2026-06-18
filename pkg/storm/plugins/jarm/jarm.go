@@ -96,8 +96,16 @@ func (p *Plugin) Register(r chi.Router) {}
 // Contribute returns discovery fields for JARM.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
 	cfg.ResponseModesSupported = append(cfg.ResponseModesSupported,
-		"jwt", "query.jwt", "fragment.jwt", "form_post.jwt",
+		string(protocol.ResponseModeJWT),
+		string(protocol.ResponseModeQueryJWT),
+		string(protocol.ResponseModeFragmentJWT),
+		string(protocol.ResponseModeFormPostJWT),
 	)
+	// Advertise signing algorithms supported for JARM authorization responses.
+	// Reuse the same algorithms as request objects since they share the same key infrastructure.
+	if len(cfg.RequestObjectSigningAlgValuesSupported) > 0 {
+		cfg.AuthorizationSigningAlgValuesSupported = cfg.RequestObjectSigningAlgValuesSupported
+	}
 }
 
 // SignAuthResponse implements the JARMSigner interface.

@@ -1,4 +1,4 @@
-// Package introspection implements the OAuth 2.0 Token Introspection endpoint plugin.
+﻿// Package introspection implements the OAuth 2.0 Token Introspection endpoint plugin.
 //
 // It handles POST /introspect (RFC 7662 §2), allowing authorized clients
 // to determine the active state and meta-information of an OAuth 2.0 token.
@@ -83,7 +83,9 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 
 	// Introspection endpoint capabilities
 	cfg.IntrospectionEndpointAuthMethodsSupported = append(cfg.IntrospectionEndpointAuthMethodsSupported,
-		"client_secret_basic", "client_secret_post", "private_key_jwt",
+		string(protocol.AuthMethodBasic),
+		string(protocol.AuthMethodPost),
+		string(protocol.AuthMethodPrivateKeyJWT),
 	)
 }
 

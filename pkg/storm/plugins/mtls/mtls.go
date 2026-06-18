@@ -53,11 +53,39 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 		"revocation_endpoint":    shared.EndpointURL(ctx, protocol.NewEndpoint("/revoke")),
 		"introspection_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/introspect")),
 	}
+	// Only add aliases for endpoints that other plugins have actually registered.
+	aliases := cfg.MTLSEndpointAliases.(map[string]string)
+	if cfg.RegistrationEndpoint != "" {
+		aliases["registration_endpoint"] = cfg.RegistrationEndpoint
+	}
+	if cfg.DeviceAuthorizationEndpoint != "" {
+		aliases["device_authorization_endpoint"] = cfg.DeviceAuthorizationEndpoint
+	}
+	if cfg.PushedAuthorizationRequestEndpoint != "" {
+		aliases["pushed_authorization_request_endpoint"] = cfg.PushedAuthorizationRequestEndpoint
+	}
+	if cfg.BackchannelAuthenticationEndpoint != "" {
+		aliases["backchannel_authentication_endpoint"] = cfg.BackchannelAuthenticationEndpoint
+	}
 	cfg.TLSClientCertificateBoundAccessTokens = true
 	cfg.TokenEndpointAuthMethodsSupported = append(cfg.TokenEndpointAuthMethodsSupported,
-		"tls_client_auth",
-		"self_signed_tls_client_auth",
+		string(protocol.AuthMethodTLSClientAuth),
+		string(protocol.AuthMethodSelfSignedTLSAuth),
 	)
+	// Also add mTLS auth methods to introspection and revocation endpoints
+	// if those plugins have registered their endpoints.
+	if cfg.IntrospectionEndpoint != "" {
+		cfg.IntrospectionEndpointAuthMethodsSupported = append(cfg.IntrospectionEndpointAuthMethodsSupported,
+			string(protocol.AuthMethodTLSClientAuth),
+			string(protocol.AuthMethodSelfSignedTLSAuth),
+		)
+	}
+	if cfg.RevocationEndpoint != "" {
+		cfg.RevocationEndpointAuthMethodsSupported = append(cfg.RevocationEndpointAuthMethodsSupported,
+			string(protocol.AuthMethodTLSClientAuth),
+			string(protocol.AuthMethodSelfSignedTLSAuth),
+		)
+	}
 }
 
 // --- Middleware ---
