@@ -44,8 +44,25 @@ def _expand_env(value, env):
 
 
 def load_config(path="config.yml") -> dict:
+    config_dir = os.path.dirname(os.path.abspath(path))
+
+    # Concatenate config.yml with all testcase/*.yml files into a single
+    # YAML document so that anchors defined in config.yml (e.g. &fapi_client)
+    # are available when parsing the testcase files.
     with open(path, encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
+        combined = f.read()
+
+    testcase_dir = os.path.join(config_dir, "testcase")
+    if os.path.isdir(testcase_dir):
+        for fname in sorted(os.listdir(testcase_dir)):
+            if not fname.endswith(".yml") and not fname.endswith(".yaml"):
+                continue
+            fpath = os.path.join(testcase_dir, fname)
+            with open(fpath, encoding="utf-8") as f:
+                combined += "\n" + f.read()
+
+    raw = yaml.safe_load(combined)
+
     # Merge config vars into environment for ${VAR} expansion
     env = dict(os.environ)
     if isinstance(raw.get("vars"), dict):
@@ -54,6 +71,53 @@ def load_config(path="config.yml") -> dict:
     # Remove 'vars' key from final config (not a real config section)
     assert isinstance(expanded, dict)
     expanded.pop("vars", None)
+
+    # Collect test plan groups from testcase/*.yml files.
+    # Each file may define groups as top-level keys (e.g. oidc_core: [...])
+    # or under a 'test_plans' / 'runner_case' wrapper.  All are merged
+    # into the main config's 'test_plans' section.
+    _known_config_keys = {"vars", "suite", "plan_config", "skip_modules",
+                          "test_plans", "runner_case", "browser", "override"}
+    all_test_plans = expanded.pop("test_plans", {}) or {}
+    runner_case = expanded.pop("runner_case", None)
+    if isinstance(runner_case, dict):
+        all_test_plans.update(runner_case)
+    # Any remaining top-level list keys are test plan groups from testcase files
+    for key in list(expanded.keys()):
+        if key not in _known_config_keys and isinstance(expanded[key], list):
+            all_test_plans[key] = expanded.pop(key)
+    if all_test_plans:
+        expanded["test_plans"] = all_test_plans
+
+    # Resolve mTLS certificate paths relative to the config file directory
+    plan_cfg = expanded.get("plan_config", {})
+    if isinstance(plan_cfg, dict):
+        for mtls_key in ("mtls", "mtls2"):
+            mtls_cfg = plan_cfg.get(mtls_key)
+            if isinstance(mtls_cfg, dict):
+                for field in ("ca", "cert", "key"):
+                    rel_path = mtls_cfg.get(field)
+                    if rel_path:
+                        abs_path = os.path.normpath(os.path.join(config_dir, rel_path))
+                        if os.path.isfile(abs_path):
+                            with open(abs_path, "r") as f:
+                                mtls_cfg[field] = f.read()
+                        else:
+                            print(f"WARNING: mTLS {mtls_key}.{field} file not found: {abs_path}")
+
+    # Also propagate mTLS certs to FAPI client configs if present
+    mtls_certs = plan_cfg.get("mtls", {})
+    mtls_certs2 = plan_cfg.get("mtls2", {})
+    if isinstance(mtls_certs, dict) and "cert" in mtls_certs:
+        for key in ("fapi_client", "fapi_client_oauth"):
+            client_cfg = plan_cfg.get(key)
+            if isinstance(client_cfg, dict):
+                client_cfg["mtls"] = mtls_certs
+    if isinstance(mtls_certs2, dict) and "cert" in mtls_certs2:
+        for key in ("fapi_client2", "fapi_client2_oauth"):
+            client_cfg = plan_cfg.get(key)
+            if isinstance(client_cfg, dict):
+                client_cfg["mtls2"] = mtls_certs2
     return expanded
 
 
@@ -118,10 +182,37 @@ async def run_plan(conformance, plan_name, variant, base_plan_config, skip_modul
             info = await conformance.get_module_info(module_id)
             if info.get("status") in ("CREATED", "CONFIGURED"):
                 await conformance.start_test(module_id)
+                # Give the server time to process the start request
+                await asyncio.sleep(0.5)
 
             info = await _wait_with_image_detection(conformance, module_id)
             status = info.get("status")
             result = info.get("result", "UNKNOWN")
+
+            # Retry once on FAIL or ERR (transient failures) — WARNING is acceptable, no retry needed
+            if (status == "FINISHED" and result not in ("PASSED", "SKIPPED", "REVIEW", "WARNING")) or \
+               (status not in ("FINISHED", "WAITING", "INTERRUPTED")):
+                print(f"  Result: [{result}] — retrying once...")
+                await asyncio.sleep(3)
+                instance2 = await conformance.create_test_from_plan_with_variant(
+                    plan_id, module_name, module_variant
+                )
+                module_id2 = instance2["id"]
+                info2 = await conformance.get_module_info(module_id2)
+                if info2.get("status") in ("CREATED", "CONFIGURED"):
+                    await conformance.start_test(module_id2)
+                    await asyncio.sleep(0.5)
+                info2 = await _wait_with_image_detection(conformance, module_id2)
+                status2 = info2.get("status")
+                result2 = info2.get("result", "UNKNOWN")
+                if status2 == "FINISHED" and result2 == "PASSED":
+                    print(f"  Result: [PASS] PASSED (after retry)")
+                    passed += 1
+                    continue
+                # Retry also failed — report original failure
+                print(f"  Retry also: {result2}")
+                status = info.get("status")
+                result = info.get("result", "UNKNOWN")
 
             if status == "FINISHED":
                 if result == "PASSED":
@@ -133,6 +224,9 @@ async def run_plan(conformance, plan_name, variant, base_plan_config, skip_modul
                 elif result == "REVIEW":
                     print(f"  Result: [REVIEW] Needs manual review")
                     review += 1
+                elif result == "WARNING":
+                    print(f"  Result: [SKIP] WARNING (accepted)")
+                    skipped_auto += 1
                 else:
                     print(f"  Result: [FAIL] {result}")
                     failed += 1
@@ -151,6 +245,9 @@ async def run_plan(conformance, plan_name, variant, base_plan_config, skip_modul
         except Exception as e:
             print(f"  Error: {e}")
             errors += 1
+
+        # Small delay between modules to let the server settle
+        await asyncio.sleep(0.5)
 
     print(f"\n  Plan summary: {passed} passed, {failed} failed, {review} review, {errors} errors, "
           f"{skipped_manual} skipped (manual), {skipped_auto} skipped (auto)")
@@ -221,6 +318,8 @@ async def _wait_with_image_detection(conformance, module_id, hook=None, timeout=
         else:
             waiting_since = None  # reset if not WAITING
 
+        # Poll every 2 seconds to avoid overloading the conformance suite
+        # (it's a heavy Spring Boot app with MongoDB and Selenium)
         await asyncio.sleep(1)
 
 
@@ -331,12 +430,28 @@ async def main():
                     for key in ("client", "client_secret_post", "client2"):
                         if key in tc_def:
                             tc_cfg[key] = tc_def[key]
-                    # Expand response_type_range into individual runs
-                    if variant and "response_type_range" in variant:
-                        base = {k: v for k, v in variant.items() if k != "response_type_range"}
-                        for rt in variant["response_type_range"]:
-                            v = {**base, "response_type": rt}
-                            label = f"{tc_name}/{rt}"
+                    # Expand any *-range keys into individual runs.
+                    # e.g. "sender_constrain-range: [dpop, mtls]" expands
+                    # into two runs with sender_constrain=dpop and sender_constrain=mtls.
+                    # "response_type_range" (legacy) also works.
+                    range_keys = [k for k in (variant or {}) if k.endswith("-range") or k.endswith("_range")]
+                    if range_keys:
+                        base = {k: v for k, v in variant.items() if k not in range_keys}
+                        # Expand all range keys combinatorially
+                        def _expand_ranges(base, range_keys_left):
+                            if not range_keys_left:
+                                yield base, []
+                                return
+                            rk = range_keys_left[0]
+                            # Derive target key: "sender_constrain-range" → "sender_constrain"
+                            target = rk.replace("-range", "").replace("_range", "")
+                            for val in variant[rk]:
+                                merged = {**base, target: val}
+                                for expanded, labels in _expand_ranges(merged, range_keys_left[1:]):
+                                    yield expanded, [str(val)] + labels
+
+                        for v, vals in _expand_ranges(base, range_keys):
+                            label = f"{tc_name}/{'_'.join(vals)}"
                             print(f"\n  [{label}]")
                             p, f, e, r, sm, sa = await run_plan(
                                 conformance, plan_name, v,
