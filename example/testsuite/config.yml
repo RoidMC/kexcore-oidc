@@ -138,6 +138,20 @@ plan_config:
   fapi_client2_ms_oauth: &fapi_client2_ms_oauth
     <<: *fapi_client2_ms
     scope: "profile"
+  fapi_client_ms_mtls: &fapi_client_ms_mtls
+    <<: *fapi_client_ms
+    client_id: "FAPI Client 1 MS MTLS"
+    token_endpoint_auth_method: "tls_client_auth"
+  fapi_client2_ms_mtls: &fapi_client2_ms_mtls
+    <<: *fapi_client2_ms
+    client_id: "FAPI Client 2 MS MTLS"
+    token_endpoint_auth_method: "tls_client_auth"
+  fapi_client_ms_mtls_oauth: &fapi_client_ms_mtls_oauth
+    <<: *fapi_client_ms_mtls
+    scope: "profile"
+  fapi_client2_ms_mtls_oauth: &fapi_client2_ms_mtls_oauth
+    <<: *fapi_client2_ms_mtls
+    scope: "profile"
   # FAPI mTLS clients (tls_client_auth authentication, no client_assertion)
   # Used for CIBA mtls variants where client authenticates via TLS certificate.
   # JWKS is still needed for request object signing/verification.
@@ -175,6 +189,26 @@ plan_config:
           x: "0YCniv9r1v7a95GbMZzxtz3w09clH7QhhKi65A2KvLw"
           y: "rG_x865khWLke14qOmogZlnSvJzvQ5yvxXdT0ySqjtw"
           d: "rurglw6JTgh3Ijy-UiNQCPswBYsnxrnDRyP1Xde39lc"
+  fapi_client_mtls_oauth: &fapi_client_mtls_oauth
+    <<: *fapi_client_mtls
+    scope: "profile"
+  fapi_client2_mtls_oauth: &fapi_client2_mtls_oauth
+    <<: *fapi_client2_mtls
+    scope: "profile"
+  # FAPI mTLS clients for sender_constrain=dpop variants.
+  # Same TLS cert authentication, but server-side only requires DPoP (not mTLS).
+  fapi_client_mtls_dpop: &fapi_client_mtls_dpop
+    <<: *fapi_client_mtls
+    client_id: "FAPI Client 1 MTLS DPoP"
+  fapi_client2_mtls_dpop: &fapi_client2_mtls_dpop
+    <<: *fapi_client2_mtls
+    client_id: "FAPI Client 2 MTLS DPoP"
+  fapi_client_mtls_dpop_oauth: &fapi_client_mtls_dpop_oauth
+    <<: *fapi_client_mtls_dpop
+    scope: "profile"
+  fapi_client2_mtls_dpop_oauth: &fapi_client2_mtls_dpop_oauth
+    <<: *fapi_client2_mtls_dpop
+    scope: "profile"
   # publish: "summary"  # uncomment to publish results to certification.openid.net
 
   # Browser automation — controls the conformance suite's built-in Selenium

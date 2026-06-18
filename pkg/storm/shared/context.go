@@ -96,8 +96,44 @@ func VerifyTokenBinding(ctx context.Context, cnf map[string]any) error {
 		return nil
 	}
 
-	// DPoP binding: cnf.jkt must match the DPoP proof's jkt
-	if jkt, ok := cnf["jkt"].(string); ok && jkt != "" {
+	hasDPoPBinding := false
+	hasMtlsBinding := false
+
+	// Check if cnf has DPoP and/or mTLS binding claims
+	jkt, hasJKT := cnf["jkt"].(string)
+	x5t, hasX5T := cnf["x5t#S256"].(string)
+	if hasJKT && jkt != "" {
+		hasDPoPBinding = true
+	}
+	if hasX5T && x5t != "" {
+		hasMtlsBinding = true
+	}
+
+	// When both DPoP and mTLS bindings are present (holder-of-key mode),
+	// either proof of possession suffices — the variant determines which
+	// mechanism the client actually uses.
+	if hasDPoPBinding && hasMtlsBinding {
+		dpopOK := false
+		mtlsOK := false
+
+		if proof := DPoPFromContext(ctx); proof != nil {
+			if proof.JWKThumbprint() == jkt {
+				dpopOK = true
+			}
+		}
+		if cert := ClientCertFromContext(ctx); cert != nil {
+			if CertThumbprint(cert) == x5t {
+				mtlsOK = true
+			}
+		}
+		if !dpopOK && !mtlsOK {
+			return protocol.ErrInvalidRequest().WithDescription("holder-of-key proof required (DPoP jkt or mTLS certificate)")
+		}
+		return nil
+	}
+
+	// DPoP binding only: cnf.jkt must match the DPoP proof's jkt
+	if hasDPoPBinding {
 		proof := DPoPFromContext(ctx)
 		if proof == nil {
 			return protocol.ErrInvalidRequest().WithDescription("DPoP proof required for this token")
@@ -107,8 +143,8 @@ func VerifyTokenBinding(ctx context.Context, cnf map[string]any) error {
 		}
 	}
 
-	// mTLS binding: cnf.x5t#S256 must match the client certificate fingerprint
-	if x5t, ok := cnf["x5t#S256"].(string); ok && x5t != "" {
+	// mTLS binding only: cnf.x5t#S256 must match the client certificate fingerprint
+	if hasMtlsBinding {
 		cert := ClientCertFromContext(ctx)
 		if cert == nil {
 			return protocol.ErrInvalidRequest().WithDescription("client certificate required for this token")

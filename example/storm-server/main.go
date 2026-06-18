@@ -112,6 +112,22 @@ func main() {
 			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
 		).WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint").
 			WithCertCN("FAPI Client 2"),
+		// FAPI test clients — mTLS auth + DPoP sender constraining only (requireDPoP=true, requireMtls=false)
+		// Used for sender_constrain=dpop variants where the server must reject
+		// requests without DPoP proof even when mTLS certificates are present.
+		storage.FAPIClientMTLSDPoP("FAPI Client 1 MTLS DPoP", []jwk.Key{fapiJWK1},
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+		).WithCertCN("FAPI Client 1"),
+		storage.FAPIClientMTLSDPoP("FAPI Client 2 MTLS DPoP", []jwk.Key{fapiJWK2},
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+		).WithCertCN("FAPI Client 2"),
+		// FAPI test clients — Message Signing mTLS (tls_client_auth, request_object_signing_alg=PS256)
+		storage.FAPIClientMTLS("FAPI Client 1 MS MTLS", []jwk.Key{fapiJWK1},
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+		).WithRequestObjectSigningAlg("PS256").WithCertCN("FAPI Client 1"),
+		storage.FAPIClientMTLS("FAPI Client 2 MS MTLS", []jwk.Key{fapiJWK2},
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+		).WithRequestObjectSigningAlg("PS256").WithCertCN("FAPI Client 2"),
 	}
 
 	var userStore storage.UserStore

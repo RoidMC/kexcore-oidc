@@ -156,7 +156,7 @@ func TestPAR_UnknownClient(t *testing.T) {
 	r := newFormRequest(form)
 	w := serveRequest(p, r)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Contains(t, w.Body.String(), "invalid_client")
 }
 
@@ -179,7 +179,7 @@ func TestPAR_ClientAuthFailed(t *testing.T) {
 	r := newFormRequest(form)
 	w := serveRequest(p, r)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Contains(t, w.Body.String(), "invalid_client")
 }
 

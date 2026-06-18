@@ -37,10 +37,12 @@ type Config struct {
 func New(ctx *storm.PluginContext) *Plugin {
 	cs := ctx.Storage.(storm.ClientStore)
 	return &Plugin{
-		store:      ctx.Storage.(storm.RevocationStore),
-		clientAuth: storm.NewClientAuthHelper(cs),
-		crypto:     ctx.Crypto,
-		keyStore:   ctx.Storage.(storm.KeyStore),
+		store: ctx.Storage.(storm.RevocationStore),
+		clientAuth: storm.NewClientAuthHelper(cs).
+			WithTLSSkipVerify(ctx.SkipTLSCertVerify).
+			WithAllowPrivateIPs(ctx.AllowPrivateIPs),
+		crypto:   ctx.Crypto,
+		keyStore: ctx.Storage.(storm.KeyStore),
 	}
 }
 
@@ -88,6 +90,7 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 		string(protocol.AuthMethodBasic),
 		string(protocol.AuthMethodPost),
 		string(protocol.AuthMethodPrivateKeyJWT),
+		string(protocol.AuthMethodTLSClientAuth),
 	)
 }
 

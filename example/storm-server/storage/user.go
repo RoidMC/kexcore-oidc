@@ -27,6 +27,7 @@ type User struct {
 	PhoneVerified     bool
 	PreferredLanguage language.Tag
 	IsAdmin           bool
+	UpdatedAt         int64 // Unix timestamp of last profile update
 }
 
 type Service struct {
@@ -71,6 +72,7 @@ func NewUserStore(issuer string) UserStore {
 				PhoneVerified:     false,
 				PreferredLanguage: language.German,
 				IsAdmin:           true,
+				UpdatedAt:         1700000000, // fixed timestamp for consistent id_token/userinfo
 			},
 			"id2": {
 				ID:                "id2",
@@ -84,6 +86,7 @@ func NewUserStore(issuer string) UserStore {
 				PhoneVerified:     false,
 				PreferredLanguage: language.German,
 				IsAdmin:           false,
+				UpdatedAt:         1700000000,
 			},
 		},
 	}

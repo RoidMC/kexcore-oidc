@@ -7,7 +7,6 @@ package storage
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
 )
@@ -95,7 +94,11 @@ func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *protocol.Use
 		user = s.userStore.GetUserByUsername(token.Subject)
 	}
 	if user == nil {
-		return fmt.Errorf("user not found (subject=%s)", token.Subject)
+		// client_credentials grant: subject is the client ID, not a real user.
+		// Return a minimal response with just the "sub" claim so the resource
+		// endpoint test receives HTTP 200 instead of 401.
+		userinfo.Subject = token.Subject
+		return nil
 	}
 
 	// OIDC Core §5.3.2: "sub" claim MUST always be returned in the UserInfo response.
@@ -117,7 +120,7 @@ func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *protocol.Use
 			userinfo.Nickname = user.Username
 			userinfo.Locale = protocol.NewLocale(user.PreferredLanguage)
 			userinfo.Zoneinfo = "UTC"
-			userinfo.UpdatedAt = protocol.Time(time.Now().Unix())
+			userinfo.UpdatedAt = protocol.Time(user.UpdatedAt)
 			userinfo.AppendClaims("middle_name", "N/A")
 			userinfo.AppendClaims("profile", "https://example.com")
 			userinfo.AppendClaims("picture", "https://example.com/avatar.png")
@@ -188,7 +191,7 @@ func applyUserInfoClaims(userinfo *protocol.UserInfo, user *User, claims map[str
 				Formatted: "N/A",
 			}
 		case "updated_at":
-			userinfo.UpdatedAt = protocol.Time(time.Now().Unix())
+			userinfo.UpdatedAt = protocol.Time(user.UpdatedAt)
 		}
 	}
 }

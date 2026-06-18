@@ -159,6 +159,14 @@ type NotificationEndpointProvider interface {
 	NotificationEndpoint() string
 }
 
+// FAPIProfileProvider is an optional interface that clients may implement
+// to indicate they are configured for FAPI (Financial-grade API) compliance.
+// Plugins that enforce FAPI-specific requirements (e.g., signed request objects
+// for FAPI-CIBA) check for this interface via type assertion.
+type FAPIProfileProvider interface {
+	FAPIProfile() bool
+}
+
 // KeyStore provides cryptographic key access.
 // It extends protocol.KeyStore with SigningKey for OP-side token signing.
 //

@@ -258,6 +258,20 @@ func (p *Plugin) authenticateClient(r *http.Request) (storm.Client, error) {
 		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
+	// tls_client_auth: require mTLS certificate
+	if client.AuthMethod() == protocol.AuthMethodTLSClientAuth {
+		cert := shared.ClientCertFromContext(r.Context())
+		if cert == nil {
+			return nil, protocol.ErrInvalidClient().WithDescription("mTLS client certificate is required for tls_client_auth client")
+		}
+		if v, ok := client.(shared.ClientCertBoundAuthenticator); ok {
+			if err := v.ValidateClientCert(cert, clientID); err != nil {
+				return nil, protocol.ErrInvalidClient().WithParent(err)
+			}
+		}
+		return client, nil
+	}
+
 	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
 			return nil, err

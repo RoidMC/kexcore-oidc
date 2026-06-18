@@ -188,7 +188,7 @@ func TestDCR_GetClient(t *testing.T) {
 	assert.Equal(t, "client-123", resp.ClientID)
 }
 
-// GET without token returns 400 (invalid_client).
+// GET without token returns 401 (invalid_client).
 func TestDCR_GetClient_NoToken(t *testing.T) {
 	store := &fakeDCRStore{}
 	p := newTestPlugin(store)
@@ -203,10 +203,10 @@ func TestDCR_GetClient_NoToken(t *testing.T) {
 	w := httptest.NewRecorder()
 	p.handleGet(w, r)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-// GET with wrong token returns 400 (invalid_client).
+// GET with wrong token returns 401 (invalid_client).
 func TestDCR_GetClient_WrongToken(t *testing.T) {
 	registration := &storm.ClientRegistration{
 		ClientID:                "client-123",
@@ -226,7 +226,7 @@ func TestDCR_GetClient_WrongToken(t *testing.T) {
 	w := httptest.NewRecorder()
 	p.handleGet(w, r)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 // PUT /register/{client_id} updates client.
@@ -381,5 +381,5 @@ func TestDCR_ClientIDMismatch(t *testing.T) {
 	w := httptest.NewRecorder()
 	p.handleGet(w, r)
 
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 }

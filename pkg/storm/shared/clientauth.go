@@ -58,17 +58,34 @@ func (f *clientStoreFunc) AuthorizeClientIDSecret(ctx context.Context, clientID,
 }
 
 // ClientAuthHelper extracts and verifies client credentials from HTTP requests.
-// It supports both Basic Auth and POST body credentials.
+// It supports Basic Auth, POST body, private_key_jwt (client_assertion),
+// and tls_client_auth (mTLS certificate).
 //
 // Plugins that need client authentication can use this helper or implement
 // their own logic for special cases (e.g., JWT Profile grants).
 type ClientAuthHelper struct {
-	store ClientStore
+	store             ClientStore
+	skipTLSCertVerify bool // skip TLS cert verification for JWKS fetches (testing only)
+	allowPrivateIPs   bool // allow private IPs in JWKS URIs (testing only)
 }
 
 // NewClientAuthHelper creates a helper backed by the given store.
 func NewClientAuthHelper(store ClientStore) *ClientAuthHelper {
 	return &ClientAuthHelper{store: store}
+}
+
+// WithTLSSkipVerify enables skipping TLS certificate verification for JWKS fetches.
+// Use ONLY for testing with self-signed certificates.
+func (h *ClientAuthHelper) WithTLSSkipVerify(skip bool) *ClientAuthHelper {
+	h.skipTLSCertVerify = skip
+	return h
+}
+
+// WithAllowPrivateIPs allows private IPs in JWKS URIs.
+// Use ONLY for testing/development environments.
+func (h *ClientAuthHelper) WithAllowPrivateIPs(allow bool) *ClientAuthHelper {
+	h.allowPrivateIPs = allow
+	return h
 }
 
 // NewClientAuthHelperFromFuncs creates a helper backed by function references.
@@ -82,12 +99,32 @@ func NewClientAuthHelperFromFuncs(
 }
 
 // AuthenticateClient extracts client credentials from the request and
-// verifies them against the store.
+// verifies them against the store. Supports three authentication methods
+// in order of precedence:
+//  1. client_assertion (private_key_jwt) — RFC 7523 §2.2
+//  2. mTLS certificate (tls_client_auth) — RFC 8705 §2
+//  3. Basic Auth or form body (client_secret_basic / client_secret_post)
 //
 // Returns protocol.ErrInvalidClient if authentication fails.
 func (h *ClientAuthHelper) AuthenticateClient(r *http.Request) (Client, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
+	}
+
+	// --- Method 1: client_assertion (private_key_jwt) ---
+	if assertionType := r.Form.Get("client_assertion_type"); assertionType == protocol.ClientAssertionTypeJWTAssertion {
+		assertion := r.Form.Get("client_assertion")
+		if assertion == "" {
+			return nil, protocol.ErrInvalidClient().WithDescription("client_assertion is missing")
+		}
+		getClient := func(ctx context.Context, cid string) (Client, error) {
+			return h.store.GetClientByClientID(ctx, cid)
+		}
+		client, err := AuthenticatePrivateKeyJWT(r, getClient, assertion, nil, h.skipTLSCertVerify, h.allowPrivateIPs)
+		if err != nil {
+			return nil, protocol.ErrInvalidClient().WithParent(err)
+		}
+		return client, nil
 	}
 
 	clientID, clientSecret := r.Form.Get("client_id"), r.Form.Get("client_secret")
@@ -114,6 +151,22 @@ func (h *ClientAuthHelper) AuthenticateClient(r *http.Request) (Client, error) {
 		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
+	// --- Method 2: tls_client_auth (mTLS certificate) ---
+	if client.AuthMethod() == protocol.AuthMethodTLSClientAuth {
+		cert := ClientCertFromContext(r.Context())
+		if cert == nil {
+			return nil, protocol.ErrInvalidClient().WithDescription("mTLS client certificate is required for tls_client_auth client")
+		}
+		// Optional: client-level certificate identity validation (RFC 8705 §2.1)
+		if v, ok := client.(ClientCertBoundAuthenticator); ok {
+			if err := v.ValidateClientCert(cert, clientID); err != nil {
+				return nil, protocol.ErrInvalidClient().WithParent(err)
+			}
+		}
+		return client, nil
+	}
+
+	// --- Method 3: Basic Auth / form body (client_secret_basic / client_secret_post) ---
 	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := h.store.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
 			return nil, err

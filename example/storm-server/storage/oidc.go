@@ -190,7 +190,7 @@ func buildIDTokenClaims(scopes []string, cr *protocol.ClaimsRequest, user *User,
 			claims["birthdate"] = "2000-01-01"
 			claims["zoneinfo"] = "UTC"
 			claims["locale"] = user.PreferredLanguage
-			claims["updated_at"] = time.Now().Unix()
+			claims["updated_at"] = user.UpdatedAt
 		}
 		if slices.Contains(scopes, protocol.ScopeEmail) {
 			claims["email"] = user.Email
@@ -250,7 +250,7 @@ func buildIDTokenClaims(scopes []string, cr *protocol.ClaimsRequest, user *User,
 			case "address":
 				setClaimValue(claims, "address", req, map[string]string{"formatted": "N/A"})
 			case "updated_at":
-				setClaimValue(claims, "updated_at", req, time.Now().Unix())
+				setClaimValue(claims, "updated_at", req, user.UpdatedAt)
 			}
 		}
 	}

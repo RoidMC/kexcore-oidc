@@ -3,24 +3,24 @@ fapi2_security_mtls:
     testcase:
       # --- JARM (default) ---
       mtls_dpop_oidc:
-        client: *fapi_client_mtls
-        client2: *fapi_client2_mtls
+        client: *fapi_client_mtls_dpop
+        client2: *fapi_client2_mtls_dpop
         variant:
           client_auth_type: "mtls"
           fapi_profile: "plain_fapi"
           sender_constrain: "dpop"
           openid: "openid_connect"
       mtls_dpop_cc:
-        client: *fapi_client_mtls_oauth
-        client2: *fapi_client2_mtls_oauth
+        client: *fapi_client_mtls_dpop_oauth
+        client2: *fapi_client2_mtls_dpop_oauth
         variant:
           client_auth_type: "mtls"
           fapi_profile: "fapi_client_credentials_grant"
           sender_constrain: "dpop"
           openid: "plain_oauth"
       mtls_dpop_plain:
-        client: *fapi_client_mtls_oauth
-        client2: *fapi_client2_mtls_oauth
+        client: *fapi_client_mtls_dpop_oauth
+        client2: *fapi_client2_mtls_dpop_oauth
         variant:
           client_auth_type: "mtls"
           fapi_profile: "plain_fapi"
@@ -52,16 +52,16 @@ fapi2_security_mtls:
           openid: "plain_oauth"
       # --- plain_response (plain_fapi only, cc has no authz endpoint) ---
       mtls_dpop_oidc_plain_resp:
-        client: *fapi_client_mtls
-        client2: *fapi_client2_mtls
+        client: *fapi_client_mtls_dpop
+        client2: *fapi_client2_mtls_dpop
         variant:
           client_auth_type: "mtls"
           fapi_profile: "plain_fapi"
           sender_constrain: "dpop"
           openid: "openid_connect"
       mtls_dpop_plain_resp:
-        client: *fapi_client_mtls_oauth
-        client2: *fapi_client2_mtls_oauth
+        client: *fapi_client_mtls_dpop_oauth
+        client2: *fapi_client2_mtls_dpop_oauth
         variant:
           client_auth_type: "mtls"
           fapi_profile: "plain_fapi"

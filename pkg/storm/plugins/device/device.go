@@ -32,9 +32,12 @@ func init() {
 		return &Plugin{
 			store:       das,
 			clientStore: cs,
-			lifetime:    15 * time.Minute,
-			interval:    5 * time.Second,
-			deviceTmpl:  deviceTmpl,
+			clientAuth: storm.NewClientAuthHelper(cs).
+				WithTLSSkipVerify(ctx.SkipTLSCertVerify).
+				WithAllowPrivateIPs(ctx.AllowPrivateIPs),
+			lifetime:   15 * time.Minute,
+			interval:   5 * time.Second,
+			deviceTmpl: deviceTmpl,
 		}
 	})
 }
@@ -72,29 +75,21 @@ func (p *Plugin) handleDeviceAuthorization(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	clientID, clientSecret, scopes, err := validateDeviceAuthorizationRequest(r)
+	// Extract scopes from the request (client_id/client_secret may come from form or assertion).
+	scopes := r.Form["scope"]
+
+	// Authenticate the client using the shared helper (supports private_key_jwt, tls_client_auth, basic/form).
+	client, err := p.clientAuth.AuthenticateClient(r)
 	if err != nil {
 		shared.WriteError(w, r, err, nil)
 		return
 	}
-
-	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
-	if err != nil {
-		shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
-		return
-	}
+	clientID := client.GetID()
 
 	// RFC 8628 §3.1: client must have device_code grant type
-	if !validateDeviceGrantType(client) {
+	if sc, ok := client.(storm.Client); ok && !validateDeviceGrantType(sc) {
 		shared.WriteError(w, r, protocol.ErrUnauthorizedClient().WithDescription("client missing grant_type device_code"), nil)
 		return
-	}
-
-	if client.AuthMethod() != protocol.AuthMethodNone {
-		if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
-			shared.WriteError(w, r, err, nil)
-			return
-		}
 	}
 
 	deviceCode := generateRandomCode(32)

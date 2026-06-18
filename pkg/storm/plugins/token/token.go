@@ -157,12 +157,47 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// DEBUG: dump all form keys
-	formKeys := make([]string, 0, len(r.Form))
+	// DEBUG: dump all form keys AND values (truncated)
+	formDump := make(map[string]string, len(r.Form))
 	for k := range r.Form {
-		formKeys = append(formKeys, k)
+		v := r.Form.Get(k)
+		if len(v) > 80 {
+			v = v[:80] + "..."
+		}
+		formDump[k] = v
 	}
-	slog.Info("[DEBUG] token handleToken", "grant_type", r.Form.Get("grant_type"), "form_keys", formKeys, "assertion_type", r.Form.Get("client_assertion_type"), "has_assertion", r.Form.Get("client_assertion") != "", "has_dpop", r.Header.Get("DPoP") != "", "global_requireDPoP", p.requireDPoP, "global_requireMtls", p.requireMtls)
+	// DEBUG: dump relevant headers
+	headersDump := make(map[string]string)
+	for _, h := range []string{"Authorization", "DPoP", "Content-Type", "client_id"} {
+		if v := r.Header.Get(h); v != "" {
+			if len(v) > 120 {
+				v = v[:120] + "..."
+			}
+			headersDump[h] = v
+		}
+	}
+	// dump TLS info
+	hasTLS := r.TLS != nil
+	peerCerts := 0
+	if r.TLS != nil {
+		peerCerts = len(r.TLS.PeerCertificates)
+	}
+	slog.Info("[DEBUG] token handleToken",
+		"grant_type", r.Form.Get("grant_type"),
+		"form_dump", formDump,
+		"assertion_type", r.Form.Get("client_assertion_type"),
+		"assertion_len", len(r.Form.Get("client_assertion")),
+		"has_dpop", r.Header.Get("DPoP") != "",
+		"global_requireDPoP", p.requireDPoP,
+		"global_requireMtls", p.requireMtls,
+		"headers", headersDump,
+		"has_tls", hasTLS,
+		"peer_certs", peerCerts,
+		"content_length", r.ContentLength,
+		"method", r.Method,
+		"remote_addr", r.RemoteAddr,
+		"url", r.URL.String(),
+	)
 
 	// Sender-constraining is validated after the client is authenticated so that
 	// per-client configuration (via shared.SenderConstrainingProvider) can override
@@ -196,6 +231,19 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.Info("[DEBUG] token handleToken post-auth sender-constraining", "client_id", c.GetID(), "requireDPoP", rd, "requireMtls", rm, "has_dpop_header", r.Header.Get("DPoP") != "", "has_client_cert", shared.ClientCertFromContext(r.Context()) != nil)
 		if err := shared.ValidateSenderConstraining(c, p.requireDPoP, p.requireMtls, r); err != nil {
+			tokenError(w, r, err)
+			return
+		}
+	}
+
+	// FAPI 2.0: global sender-constraining check before client authentication.
+	// When DPoP or mTLS is globally required, reject requests missing the proof
+	// BEFORE client authentication — so the error is invalid_request /
+	// invalid_dpop_proof (not invalid_client).  This satisfies the conformance
+	// test "ensure-holder-of-key-required" which expects sender-constraining
+	// errors to take precedence over missing client_id.
+	if (p.requireDPoP || p.requireMtls) && shared.AuthenticatedClientFromContext(r.Context()) == nil {
+		if err := shared.ValidateSenderConstraining(nil, p.requireDPoP, p.requireMtls, r); err != nil {
 			tokenError(w, r, err)
 			return
 		}
@@ -1051,20 +1099,40 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 	}
 
 	// FAPI 2.0 / RFC 7523: private_key_jwt clients MUST authenticate via
-	// client_assertion. If the client's registered auth method requires an
-	// assertion but none was provided (i.e. the client is not in context),
-	// check for mTLS client certificate as an alternative authentication
-	// method (RFC 8705 §3, tls_client_auth). This allows the same client to
-	// be tested with both private_key_jwt and mTLS client_auth_type variants.
-	// For tls_client_auth the TLS layer has already validated the certificate
-	// chain; we only need to verify that a client certificate is present.
+	// client_assertion. If the client's registered auth method is
+	// private_key_jwt but the assertion was already verified upstream
+	// (pre-authenticated context), allow mTLS certificate as sender-
+	// constraining evidence. Without a pre-authenticated context, reject
+	// because the mandatory client_assertion was not provided.
 	if client.AuthMethod() == protocol.AuthMethodPrivateKeyJWT {
-		cert := shared.ClientCertFromContext(r.Context())
-		if cert == nil {
+		if c := shared.AuthenticatedClientFromContext(r.Context()); c == nil {
 			return nil, protocol.ErrInvalidClient().WithDescription("client_assertion required for private_key_jwt client")
 		}
-		slog.Info("[DEBUG] token authenticateClient: private_key_jwt client authenticated via mTLS tls_client_auth", "client_id", clientID, "cert_cn", cert.Subject.CommonName)
-		// Sender-constraining check for mTLS-authenticated clients.
+		// Pre-authenticated via assertion — verify mTLS cert for sender-constraining.
+		cert := shared.ClientCertFromContext(r.Context())
+		if cert == nil {
+			return nil, protocol.ErrInvalidClient().WithDescription("mTLS client certificate required for sender-constraining")
+		}
+		slog.Info("[DEBUG] token authenticateClient: private_key_jwt client authenticated via assertion + mTLS", "client_id", clientID, "cert_cn", cert.Subject.CommonName)
+		if err := shared.ValidateSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
+			return nil, err
+		}
+		return client, nil
+	}
+
+	// tls_client_auth: require mTLS certificate and validate certificate identity
+	if client.AuthMethod() == protocol.AuthMethodTLSClientAuth {
+		cert := shared.ClientCertFromContext(r.Context())
+		if cert == nil {
+			return nil, protocol.ErrInvalidClient().WithDescription("mTLS client certificate is required for tls_client_auth client")
+		}
+		// Client-level certificate identity validation (RFC 8705 §2.1)
+		if v, ok := client.(shared.ClientCertBoundAuthenticator); ok {
+			if err := v.ValidateClientCert(cert, clientID); err != nil {
+				return nil, protocol.ErrInvalidClient().WithParent(err)
+			}
+		}
+		slog.Info("[DEBUG] token authenticateClient: tls_client_auth client authenticated via certificate", "client_id", clientID, "cert_cn", cert.Subject.CommonName)
 		if err := shared.ValidateSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
 			return nil, err
 		}
@@ -1124,13 +1192,17 @@ type tokenResponseOpts struct {
 // for a client. Per-client configuration via shared.SenderConstrainingProvider
 // takes precedence over the plugin-wide defaults.
 func (p *Plugin) senderConstrainingRequirements(client storm.Client) (requireDPoP, requireMtls bool) {
-	requireDPoP = p.requireDPoP
-	requireMtls = p.requireMtls
-	if sc, ok := client.(shared.SenderConstrainingProvider); ok {
-		requireDPoP = sc.RequireDPoP()
-		requireMtls = sc.RequireMtls()
+	// Global settings take precedence when explicitly configured (either flag true).
+	// This allows server-wide policy (e.g., from test variant sender_constrain
+	// setting) to override per-client defaults.
+	// When global is unset (both false), fall back to per-client settings.
+	if p.requireDPoP || p.requireMtls {
+		return p.requireDPoP, p.requireMtls
 	}
-	return
+	if sc, ok := client.(shared.SenderConstrainingProvider); ok {
+		return sc.RequireDPoP(), sc.RequireMtls()
+	}
+	return false, false
 }
 
 // createTokenResponseFromTokenRequest creates a token response from any TokenRequest implementation.
@@ -1158,7 +1230,19 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 
 	// Resolve cnf claim from mTLS certificate and/or DPoP proof before token
 	// creation so storage can bind refresh tokens at issuance time.
+	// Filter: only include keys that correspond to the required sender-constraining
+	// method. Without this, a DPoP-only token would still carry x5t#S256 if the
+	// mtls middleware injected a certificate into the context.
 	cnf := shared.ResolveCNF(ctx)
+	if !requireMtls {
+		delete(cnf, "x5t#S256")
+	}
+	if !requireDPoP {
+		delete(cnf, "jkt")
+	}
+	if len(cnf) == 0 {
+		cnf = nil
+	}
 
 	accessToken, tokenID, refreshToken, validity, err := p.createAccessToken(ctx, request, client, opts.IssueRefresh, opts.CurrentRefreshToken, cnf)
 	if err != nil {
@@ -1369,6 +1453,15 @@ func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenReque
 	}
 
 	cnf := shared.ResolveCNF(ctx)
+	if !requireMtls {
+		delete(cnf, "x5t#S256")
+	}
+	if !requireDPoP {
+		delete(cnf, "jkt")
+	}
+	if len(cnf) == 0 {
+		cnf = nil
+	}
 
 	accessToken, _, _, validity, err := p.createAccessToken(ctx, tokenRequest, client, false, "", cnf)
 	if err != nil {

@@ -194,6 +194,8 @@ StormEngine 实现 [FAPI 1.0 Advanced][35] 与 [FAPI 2.0 Security Profile][36] �
 | Private Key JWT Client Auth | [RFC 7523 §2.2][7] | ✅ FAPI 推荐的 client 认证方式 |
 | Authorization Code + PKCE | [RFC 7636][8] + [FAPI 2.0][36] | ✅ S256 强制 |
 
+> **Known Conformance Suite Issues:** StormEngine implements mTLS client certificate reading per [RFC 8705 §2][11] (from `tls.PeerCertificates`). The OIDF Conformance Suite has a bug where `env.mapKey("mutual_tls_authentication")` does not prevent the HTTP client from sending certificates in the TLS handshake, causing `ensure-holder-of-key-required` and `refresh-token` tests to fail for `client_auth_type=mtls + sender_constrain=dpop` variants. This affects any implementation that reads certificates directly from the TLS layer. See [example/testsuite/docs/issues.md](example/testsuite/docs/issues.md) for details and proposed fix.
+
 ### Relying Party (`/pkg/client`)
 
 | Feature | Specification | Status |

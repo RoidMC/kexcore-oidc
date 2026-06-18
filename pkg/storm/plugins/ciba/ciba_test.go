@@ -338,8 +338,8 @@ func TestBackchannelAuth_InvalidCredentials(t *testing.T) {
 
 	p.handleBackchannelAuth(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", w.Code)
 	}
 }
 
@@ -556,6 +556,11 @@ func TestApprovalAction_AlreadyProcessed(t *testing.T) {
 func TestApprovalAction_PingNotification(t *testing.T) {
 	cs := newMockCIBAStore()
 	cls := newMockClientStore()
+	cls.clients["test-client"] = &mockClient{
+		id:         "test-client",
+		secret:     "secret",
+		grantTypes: []protocol.GrantType{protocol.GrantTypeCIBA},
+	}
 	notifier := &mockNotifier{}
 	p := setupPlugin(cs, cls, notifier)
 

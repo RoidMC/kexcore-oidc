@@ -253,8 +253,8 @@ func TestHandleDeviceAuthorization_ClientNotFound(t *testing.T) {
 
 	p.handleDeviceAuthorization(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var errResp protocol.Error

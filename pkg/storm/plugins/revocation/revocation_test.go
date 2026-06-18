@@ -235,8 +235,8 @@ func TestRevocation_UnknownClient_Error(t *testing.T) {
 	r := newFormRequest(http.MethodPost, "/revoke", form)
 	w := serveRequest(p, r)
 
-	// WriteError maps ErrInvalidClient to 400 (default)
-	require.Equal(t, http.StatusBadRequest, w.Code)
+	// WriteError maps ErrInvalidClient to 401 per RFC 6749 §5.2
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 // Chi router: POST /revoke route registered.

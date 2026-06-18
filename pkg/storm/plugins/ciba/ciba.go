@@ -189,10 +189,12 @@ func (p *Plugin) handleBackchannelAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// FAPI-CIBA: signed request object is required
-	if r.Form.Get("request") == "" {
-		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("signed request object is required for FAPI-CIBA"), nil)
-		return
+	// FAPI-CIBA: signed request object is required for FAPI clients
+	if fapi, ok := client.(storm.FAPIProfileProvider); ok && fapi.FAPIProfile() {
+		if r.Form.Get("request") == "" {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("signed request object is required for FAPI-CIBA"), nil)
+			return
+		}
 	}
 
 	// At least one hint required

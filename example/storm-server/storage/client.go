@@ -329,6 +329,17 @@ func FAPIClient(id string, clientJWKS []jwk.Key, redirectURIs ...string) *Client
 	return c
 }
 
+// FAPIClientMTLSDPoP creates a FAPI-compliant client using tls_client_auth
+// authentication with DPoP sender constraining only (requireDPoP=true, requireMtls=false).
+// Used for sender_constrain=dpop variants where the server should reject
+// requests without a DPoP proof, even if mTLS certificates are present.
+func FAPIClientMTLSDPoP(id string, clientJWKS []jwk.Key, redirectURIs ...string) *Client {
+	c := FAPIClientMTLS(id, clientJWKS, redirectURIs...)
+	c.requireDPoP = true
+	c.requireMtls = false
+	return c
+}
+
 // FAPIClientWithJWKSURI creates a FAPI-compliant client using private_key_jwt
 // authentication with a jwks_uri for key discovery.
 func FAPIClientWithJWKSURI(id, jwksURI string, redirectURIs ...string) *Client {

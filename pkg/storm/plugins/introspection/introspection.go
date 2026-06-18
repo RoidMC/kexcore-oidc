@@ -1,4 +1,4 @@
-﻿// Package introspection implements the OAuth 2.0 Token Introspection endpoint plugin.
+// Package introspection implements the OAuth 2.0 Token Introspection endpoint plugin.
 //
 // It handles POST /introspect (RFC 7662 §2), allowing authorized clients
 // to determine the active state and meta-information of an OAuth 2.0 token.
@@ -35,10 +35,12 @@ type Config struct {
 func New(ctx *storm.PluginContext) *Plugin {
 	cs := ctx.Storage.(storm.ClientStore)
 	return &Plugin{
-		store:      ctx.Storage.(storm.IntrospectStore),
-		clientAuth: storm.NewClientAuthHelper(cs),
-		crypto:     ctx.Crypto,
-		keyStore:   ctx.Storage.(storm.KeyStore),
+		store: ctx.Storage.(storm.IntrospectStore),
+		clientAuth: storm.NewClientAuthHelper(cs).
+			WithTLSSkipVerify(ctx.SkipTLSCertVerify).
+			WithAllowPrivateIPs(ctx.AllowPrivateIPs),
+		crypto:   ctx.Crypto,
+		keyStore: ctx.Storage.(storm.KeyStore),
 	}
 }
 
@@ -86,6 +88,7 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 		string(protocol.AuthMethodBasic),
 		string(protocol.AuthMethodPost),
 		string(protocol.AuthMethodPrivateKeyJWT),
+		string(protocol.AuthMethodTLSClientAuth),
 	)
 }
 

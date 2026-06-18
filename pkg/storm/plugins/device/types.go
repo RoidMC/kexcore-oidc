@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
 	httputil "github.com/roidmc/kexcore-oidc/pkg/util/http"
 )
 
@@ -19,6 +20,7 @@ var deviceTmpl = template.Must(template.New("device").Parse(deviceHtmlTemplate))
 type Plugin struct {
 	store              storm.DeviceAuthStore
 	clientStore        storm.ClientStore
+	clientAuth         *shared.ClientAuthHelper
 	lifetime           time.Duration
 	interval           time.Duration
 	deviceTmpl         *template.Template
@@ -64,6 +66,7 @@ func NewWithConfig(cfg Config) *Plugin {
 	p := &Plugin{
 		store:              cfg.Store,
 		clientStore:        cfg.ClientStore,
+		clientAuth:         storm.NewClientAuthHelper(cfg.ClientStore),
 		lifetime:           cfg.Lifetime,
 		interval:           cfg.Interval,
 		deviceTmpl:         deviceTmpl,
