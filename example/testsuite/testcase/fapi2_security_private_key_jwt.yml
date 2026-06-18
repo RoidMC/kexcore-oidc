@@ -62,7 +62,6 @@ fapi2_security_private_key_jwt:
         variant:
           client_auth_type: "private_key_jwt"
           fapi_profile: "plain_fapi"
-          fapi_response_mode: "plain_response"
           sender_constrain: "dpop"
           openid: "openid_connect"
       pkj_dpop_plain_resp:
@@ -71,7 +70,6 @@ fapi2_security_private_key_jwt:
         variant:
           client_auth_type: "private_key_jwt"
           fapi_profile: "plain_fapi"
-          fapi_response_mode: "plain_response"
           sender_constrain: "dpop"
           openid: "plain_oauth"
       pkj_mtls_oidc_plain_resp:
@@ -80,7 +78,6 @@ fapi2_security_private_key_jwt:
         variant:
           client_auth_type: "private_key_jwt"
           fapi_profile: "plain_fapi"
-          fapi_response_mode: "plain_response"
           sender_constrain: "mtls"
           openid: "openid_connect"
       pkj_mtls_plain_resp:
@@ -89,6 +86,5 @@ fapi2_security_private_key_jwt:
         variant:
           client_auth_type: "private_key_jwt"
           fapi_profile: "plain_fapi"
-          fapi_response_mode: "plain_response"
           sender_constrain: "mtls"
           openid: "plain_oauth"

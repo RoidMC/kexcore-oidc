@@ -32,8 +32,8 @@ fapi2_message_signing:
             openid: "openid_connect"
         # --- mTLS client-auth variants ---
         mtls_oauth:
-          client: *fapi_client_ms_oauth
-          client2: *fapi_client2_ms_oauth
+          client: *fapi_client_ms_mtls_oauth
+          client2: *fapi_client2_ms_mtls_oauth
           variant:
             client_auth_type: "mtls"
             fapi_profile: "plain_fapi"
@@ -46,8 +46,8 @@ fapi2_message_signing:
               - "mtls"
             openid: "plain_oauth"
         mtls:
-          client: *fapi_client_ms
-          client2: *fapi_client2_ms
+          client: *fapi_client_ms_mtls
+          client2: *fapi_client2_ms_mtls
           variant:
             client_auth_type: "mtls"
             fapi_profile: "plain_fapi"
