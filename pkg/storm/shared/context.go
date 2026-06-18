@@ -121,6 +121,31 @@ func VerifyTokenBinding(ctx context.Context, cnf map[string]any) error {
 	return nil
 }
 
+// ResolveCNF builds the cnf (confirmation) claim from mTLS and DPoP context.
+// mTLS: cnf.x5t#S256 (RFC 8705 §3.1)
+// DPoP: cnf.jkt (RFC 9449 §7.1)
+// If both are present, both keys are included.
+// Returns nil if neither mTLS nor DPoP context is present.
+func ResolveCNF(ctx context.Context) map[string]any {
+	var cnf map[string]any
+
+	if cert := ClientCertFromContext(ctx); cert != nil {
+		if cnf == nil {
+			cnf = make(map[string]any)
+		}
+		cnf["x5t#S256"] = CertThumbprint(cert)
+	}
+
+	if proof := DPoPFromContext(ctx); proof != nil {
+		if cnf == nil {
+			cnf = make(map[string]any)
+		}
+		cnf["jkt"] = proof.JWKThumbprint()
+	}
+
+	return cnf
+}
+
 // ValidateDPoPProofATH validates the ath (access token hash) claim in a DPoP
 // proof against the actual access token (RFC 9449 §7.1).
 // The ath claim MUST equal base64url(SHA-256(access_token)).

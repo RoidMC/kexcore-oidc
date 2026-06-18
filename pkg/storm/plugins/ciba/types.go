@@ -20,13 +20,15 @@ var cibaTmpl = template.Must(template.New("ciba").Parse(cibaHtmlTemplate))
 // CIBA Core 1.0 §7 — Backchannel Authentication Endpoint
 // https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html#section-7
 type Plugin struct {
-	store       storm.CIBAStore
-	clientStore storm.ClientStore
-	notifier    storm.CIBANotificationCallback // optional, for ping delivery mode
-	lifetime    time.Duration
-	interval    time.Duration
-	cibaTmpl    *template.Template
-	csrfHandler *httputil.CookieHandler
+	store             storm.CIBAStore
+	clientStore       storm.ClientStore
+	notifier          storm.CIBANotificationCallback // optional, for ping delivery mode
+	lifetime          time.Duration
+	interval          time.Duration
+	cibaTmpl          *template.Template
+	csrfHandler       *httputil.CookieHandler
+	skipTLSCertVerify bool
+	allowPrivateIPs   bool
 }
 
 // Config holds the dependencies for the CIBA plugin.
@@ -36,6 +38,7 @@ type Config struct {
 	// ClientStore is the client storage (required).
 	ClientStore storm.ClientStore
 	// Lifetime is the auth_req_id expiration duration (default: 5m).
+	// Override for testing with slow browser automation.
 	Lifetime time.Duration
 	// Interval is the minimum polling interval in seconds (default: 5).
 	Interval time.Duration

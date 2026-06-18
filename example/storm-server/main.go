@@ -86,14 +86,32 @@ func main() {
 		storage.BackChannelLogoutWebClient("web-bcl", "secret", "http://localhost:9999/backchannel_logout",
 			cfg.RedirectURI...,
 		),
-		// FAPI test clients (private_key_jwt authentication)
-		// request_object_signing_alg is set via DCR when the conformance suite requires it.
+		// FAPI test clients — Security Profile (no request_object_signing_alg)
 		storage.FAPIClient("FAPI Client 1", []jwk.Key{fapiJWK1},
 			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
-		),
+		).WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint"),
 		storage.FAPIClient("FAPI Client 2", []jwk.Key{fapiJWK2},
 			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
-		),
+		).WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint"),
+		// FAPI test clients — Message Signing (request_object_signing_alg = PS256)
+		// Same JWK keys and mTLS certificates, but requires signed request objects.
+		storage.FAPIClient("FAPI Client 1 MS", []jwk.Key{fapiJWK1},
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+		).WithRequestObjectSigningAlg("PS256").WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint"),
+		storage.FAPIClient("FAPI Client 2 MS", []jwk.Key{fapiJWK2},
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+		).WithRequestObjectSigningAlg("PS256").WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint"),
+		// FAPI test clients — mTLS (tls_client_auth, no client_assertion)
+		// Used for CIBA mtls variants where client authenticates via TLS cert.
+		// JWKS is still needed for request object signature verification.
+		storage.FAPIClientMTLS("FAPI Client 1 MTLS", []jwk.Key{fapiJWK1},
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+		).WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint").
+			WithCertCN("FAPI Client 1"),
+		storage.FAPIClientMTLS("FAPI Client 2 MTLS", []jwk.Key{fapiJWK2},
+			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+		).WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint").
+			WithCertCN("FAPI Client 2"),
 	}
 
 	var userStore storage.UserStore
@@ -127,12 +145,14 @@ func main() {
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			CipherSuites: []uint16{
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				//tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				//tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+				// ChaCha20-Poly1305 excluded: BCP 195 (RFC 9325) §4.2 only
+				// recommends AES-GCM for TLS 1.2. FAPI 2.0 conformance tests
+				// enforce this strictly. TLS 1.3 cipher suites are handled
+				// automatically by Go's TLS stack and include ChaCha20.
 			},
 			// Enable mTLS: request client certificate but don't require it
 			// (some tests use mTLS, others don't)

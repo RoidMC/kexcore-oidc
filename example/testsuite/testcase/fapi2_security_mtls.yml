@@ -1,4 +1,3 @@
-# FAPI2 Security Profile — mTLS client authentication variants
 fapi2_security_mtls:
   - planName: "fapi2-security-profile-final-test-plan"
     testcase:

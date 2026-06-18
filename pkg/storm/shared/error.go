@@ -33,6 +33,13 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error, logger *slog.
 		statusCode = http.StatusInternalServerError
 	}
 
+	// RFC 6749 error type → HTTP status code mapping.
+	// The error itself carries its preferred status code (set by the
+	// protocol constructor). StatusError still takes precedence.
+	if oidcErr.HTTPStatusCode() > 0 {
+		statusCode = oidcErr.HTTPStatusCode()
+	}
+
 	logger.Log(r.Context(), oidcErr.LogLevel(), "request error",
 		slog.Any("oidc_error", oidcErr),
 		slog.Int("status_code", statusCode),

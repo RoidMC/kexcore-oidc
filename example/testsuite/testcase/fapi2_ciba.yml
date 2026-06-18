@@ -1,0 +1,40 @@
+# FAPI-CIBA-ID1 — Client-Initiated Backchannel Authentication
+fapi2_ciba:
+  - planName: "fapi-ciba-id1-test-plan"
+    testcase:
+      # --- private_key_jwt + poll ---
+      pkj_poll:
+        client: *fapi_client
+        client2: *fapi_client2
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_ciba_profile: "plain_fapi"
+          ciba_mode: "poll"
+          client_registration: "static_client"
+      # --- private_key_jwt + ping ---
+      pkj_ping:
+        client: *fapi_client
+        client2: *fapi_client2
+        variant:
+          client_auth_type: "private_key_jwt"
+          fapi_ciba_profile: "plain_fapi"
+          ciba_mode: "ping"
+          client_registration: "static_client"
+      # --- mtls + poll ---
+      mtls_poll:
+        client: *fapi_client_mtls
+        client2: *fapi_client2_mtls
+        variant:
+          client_auth_type: "mtls"
+          fapi_ciba_profile: "plain_fapi"
+          ciba_mode: "poll"
+          client_registration: "static_client"
+      # --- mtls + ping ---
+      mtls_ping:
+        client: *fapi_client_mtls
+        client2: *fapi_client2_mtls
+        variant:
+          client_auth_type: "mtls"
+          fapi_ciba_profile: "plain_fapi"
+          ciba_mode: "ping"
+          client_registration: "static_client"

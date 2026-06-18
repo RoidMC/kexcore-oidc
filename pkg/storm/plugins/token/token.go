@@ -123,12 +123,16 @@ func (p *Plugin) Register(r chi.Router) {
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
 	cfg.TokenEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/token"))
 	cfg.GrantTypesSupported = append(cfg.GrantTypesSupported,
-		"client_credentials", "refresh_token",
-		"urn:ietf:params:oauth:grant-type:jwt-bearer",
-		"urn:ietf:params:oauth:grant-type:token-exchange",
+		string(protocol.GrantTypeClientCredentials),
+		string(protocol.GrantTypeRefreshToken),
+		string(protocol.GrantTypeBearer),
+		string(protocol.GrantTypeTokenExchange),
 	)
 	cfg.TokenEndpointAuthMethodsSupported = append(cfg.TokenEndpointAuthMethodsSupported,
-		"none", "client_secret_basic", "client_secret_post", "private_key_jwt",
+		string(protocol.AuthMethodNone),
+		string(protocol.AuthMethodBasic),
+		string(protocol.AuthMethodPost),
+		string(protocol.AuthMethodPrivateKeyJWT),
 	)
 
 	// ID Token encryption support
@@ -166,7 +170,7 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	// that do not require DPoP/mTLS.
 
 	// RFC 7523 §2.2 / OIDC Core §9: client_assertion takes precedence
-	if assertionType := r.Form.Get("client_assertion_type"); assertionType == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
+	if assertionType := r.Form.Get("client_assertion_type"); assertionType == protocol.ClientAssertionTypeJWTAssertion {
 		assertion := r.Form.Get("client_assertion")
 		if assertion == "" {
 			slog.Warn("[DEBUG] token client_assertion missing")
@@ -860,10 +864,61 @@ func (p *Plugin) handleCIBA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := p.authenticateClient(r, r.Form.Get("client_id"), r.Form.Get("client_secret"))
-	if err != nil {
-		tokenError(w, r, err)
-		return
+	// CIBA Core 1.0 §8: client authentication is required for CIBA token requests
+	// The authentication method depends on the client's registered token_endpoint_auth_method:
+	// - private_key_jwt: requires client_assertion (already handled by handleToken)
+	// - tls_client_auth: accepts mTLS client certificate
+
+	// If the client was already authenticated via client_assertion (private_key_jwt)
+	// in handleToken, reuse that identity instead of re-authenticating.
+	var client storm.Client
+	if c := shared.AuthenticatedClientFromContext(r.Context()); c != nil {
+		client = c.(storm.Client)
+		// Verify the form client_id matches the authenticated client (if provided)
+		if formClientID := r.Form.Get("client_id"); formClientID != "" && formClientID != client.GetID() {
+			tokenError(w, r, protocol.ErrInvalidClient().WithDescription("client_id does not match authenticated client"))
+			return
+		}
+	} else {
+		// No client_assertion was provided — check client's registered auth method
+		clientID := r.Form.Get("client_id")
+		if clientID == "" {
+			tokenError(w, r, protocol.ErrInvalidClient().WithDescription("client_id is required when client_assertion is not provided"))
+			return
+		}
+		c, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
+		if err != nil {
+			tokenError(w, r, protocol.ErrInvalidClient().WithParent(err))
+			return
+		}
+		cert := shared.ClientCertFromContext(r.Context())
+		if c.AuthMethod() == protocol.AuthMethodTLSClientAuth {
+			// tls_client_auth: require mTLS certificate
+			if cert == nil {
+				tokenError(w, r, protocol.ErrInvalidClient().WithDescription("mTLS client certificate is required for tls_client_auth client"))
+				return
+			}
+			// Optional: client-level certificate identity validation (RFC 8705 §2.1)
+			if v, ok := c.(shared.ClientCertBoundAuthenticator); ok {
+				if err := v.ValidateClientCert(cert, clientID); err != nil {
+					tokenError(w, r, protocol.ErrInvalidClient().WithParent(err))
+					return
+				}
+			}
+			// Sender-constraining check
+			if err := shared.ValidateSenderConstraining(c, p.requireDPoP, p.requireMtls, r); err != nil {
+				tokenError(w, r, err)
+				return
+			}
+		} else if c.AuthMethod() == protocol.AuthMethodPrivateKeyJWT {
+			// private_key_jwt: require client_assertion, no mTLS fallback
+			tokenError(w, r, protocol.ErrInvalidClient().WithDescription("client_assertion is required for private_key_jwt client"))
+			return
+		} else {
+			tokenError(w, r, protocol.ErrInvalidClient().WithDescription("unsupported auth method for CIBA"))
+			return
+		}
+		client = c
 	}
 
 	if !validateGrantType(client, protocol.GrantTypeCIBA) {
@@ -877,7 +932,10 @@ func (p *Plugin) handleCIBA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// CIBA Core 1.0 §8.1: verify the client owns this request
+	// CIBA Core 1.0 §8.1: verify the client owns this request.
+	// ensure-wrong-auth-req-id: authenticated as client 2, auth_req_id from client 1
+	//   → form client_id matches auth client → ownership check → invalid_grant
+	// ensure-wrong-client-id: form client_id ≠ auth client → invalid_client (caught above)
 	if cibaReq.ClientID != client.GetID() {
 		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("auth_req_id does not belong to this client"))
 		return
@@ -889,43 +947,45 @@ func (p *Plugin) handleCIBA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// CIBA Core 1.0 §10.1: slow_down detection
-	// If the client polls faster than the interval, return slow_down error
-	// and increase the interval by 5 seconds for all subsequent requests.
-	now := time.Now()
-	interval := p.devicePollInterval // reuse the same default interval
-	if cibaReq.Interval > 0 {
-		interval = time.Duration(cibaReq.Interval) * time.Second
-	}
-
-	if !cibaReq.LastPoll.IsZero() {
-		elapsed := now.Sub(cibaReq.LastPoll)
-		if elapsed < interval {
-			if err := p.cibaStore.UpdateCIBAInterval(r.Context(), authReqID, 5); err != nil {
-				p.logger.Warn("failed to increase CIBA poll interval", "error", err)
-			}
-			tokenError(w, r, protocol.ErrSlowDown())
-			return
-		}
-	}
-
-	// Update last poll time
-	if err := p.cibaStore.UpdateCIBAPoll(r.Context(), authReqID, now); err != nil {
-		p.logger.Warn("failed to update CIBA poll time", "error", err)
-	}
-
-	// Check status
+	// Check status first — denied/approved requests should not trigger slow_down.
 	switch cibaReq.Status {
-	case protocol.CIBAStatusPending:
-		// CIBA Core 1.0 §8.2: return authorization_pending
-		tokenError(w, r, protocol.ErrAuthorizationPending())
-		return
 	case protocol.CIBAStatusDenied:
-		// CIBA Core 1.0 §8.2: return access_denied
 		tokenError(w, r, protocol.ErrAccessDenied())
+		return
+	case protocol.CIBAStatusConsumed:
+		// CIBA Core 1.0: auth_req_id cannot be reused after token issuance.
+		tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("auth_req_id has already been consumed"))
 		return
 	case protocol.CIBAStatusApproved:
 		// Continue to token creation
+	case protocol.CIBAStatusPending:
+		// CIBA Core 1.0 §10.1: slow_down detection
+		// If the client polls faster than the interval, return slow_down error
+		// and increase the interval by 5 seconds for all subsequent requests.
+		now := time.Now()
+		interval := p.devicePollInterval // reuse the same default interval
+		if cibaReq.Interval > 0 {
+			interval = time.Duration(cibaReq.Interval) * time.Second
+		}
+
+		if !cibaReq.LastPoll.IsZero() {
+			elapsed := now.Sub(cibaReq.LastPoll)
+			if elapsed < interval {
+				if err := p.cibaStore.UpdateCIBAInterval(r.Context(), authReqID, 5); err != nil {
+					p.logger.Warn("failed to increase CIBA poll interval", "error", err)
+				}
+				tokenError(w, r, protocol.ErrSlowDown())
+				return
+			}
+		}
+
+		// Update last poll time
+		if err := p.cibaStore.UpdateCIBAPoll(r.Context(), authReqID, now); err != nil {
+			p.logger.Warn("failed to update CIBA poll time", "error", err)
+		}
+
+		tokenError(w, r, protocol.ErrAuthorizationPending())
+		return
 	default:
 		tokenError(w, r, protocol.ErrServerError().WithDescription("unexpected CIBA request status"))
 		return
@@ -943,6 +1003,11 @@ func (p *Plugin) handleCIBA(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		tokenError(w, r, err)
 		return
+	}
+
+	// Mark the CIBA request as consumed to prevent reuse of auth_req_id.
+	if err := p.cibaStore.UpdateCIBARequestStatus(r.Context(), authReqID, protocol.CIBAStatusConsumed, cibaReq.ApprovedScopes); err != nil {
+		p.logger.Warn("failed to mark CIBA request as consumed", "error", err)
 	}
 
 	p.writeTokenResponse(w, r, resp)
@@ -988,9 +1053,22 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 	// FAPI 2.0 / RFC 7523: private_key_jwt clients MUST authenticate via
 	// client_assertion. If the client's registered auth method requires an
 	// assertion but none was provided (i.e. the client is not in context),
-	// reject the request immediately.
+	// check for mTLS client certificate as an alternative authentication
+	// method (RFC 8705 §3, tls_client_auth). This allows the same client to
+	// be tested with both private_key_jwt and mTLS client_auth_type variants.
+	// For tls_client_auth the TLS layer has already validated the certificate
+	// chain; we only need to verify that a client certificate is present.
 	if client.AuthMethod() == protocol.AuthMethodPrivateKeyJWT {
-		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion required for private_key_jwt client")
+		cert := shared.ClientCertFromContext(r.Context())
+		if cert == nil {
+			return nil, protocol.ErrInvalidClient().WithDescription("client_assertion required for private_key_jwt client")
+		}
+		slog.Info("[DEBUG] token authenticateClient: private_key_jwt client authenticated via mTLS tls_client_auth", "client_id", clientID, "cert_cn", cert.Subject.CommonName)
+		// Sender-constraining check for mTLS-authenticated clients.
+		if err := shared.ValidateSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
+			return nil, err
+		}
+		return client, nil
 	}
 
 	if client.AuthMethod() != protocol.AuthMethodNone {
@@ -1015,17 +1093,15 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (storm.Client, error) {
 	issuer := shared.IssuerFromContext(r.Context())
 	tokenEndpoint := shared.EndpointURL(r.Context(), protocol.NewEndpoint("/token"))
+	bcAuthorizeEndpoint := shared.EndpointURL(r.Context(), protocol.NewEndpoint("/bc-authorize"))
 	// Adapt storm.ClientStore.GetClientByClientID to shared.Client lookup.
 	getClient := func(ctx context.Context, clientID string) (shared.Client, error) {
 		return p.clientStore.GetClientByClientID(ctx, clientID)
 	}
 	getAudiences := func(client shared.Client) []string {
-		// FAPI 2.0 §5.3.2.1: aud must be issuer URL only.
-		if fapiClient, ok := client.(interface{ FAPIProfile() bool }); ok && fapiClient.FAPIProfile() {
-			return []string{issuer}
-		}
-		// RFC 7523: token endpoint accepts issuer or token endpoint URL.
-		return []string{issuer, tokenEndpoint}
+		// FAPI 2.0 §5.3.2.1: aud should be issuer URL.
+		// OIDF conformance suite may send token endpoint URL or bc-authorize endpoint URL.
+		return []string{issuer, tokenEndpoint, bcAuthorizeEndpoint}
 	}
 	client, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences, p.skipTLSCertVerify, p.allowPrivateIPs)
 	if err != nil {
@@ -1082,7 +1158,7 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 
 	// Resolve cnf claim from mTLS certificate and/or DPoP proof before token
 	// creation so storage can bind refresh tokens at issuance time.
-	cnf := p.resolveCNF(ctx)
+	cnf := shared.ResolveCNF(ctx)
 
 	accessToken, tokenID, refreshToken, validity, err := p.createAccessToken(ctx, request, client, opts.IssueRefresh, opts.CurrentRefreshToken, cnf)
 	if err != nil {
@@ -1130,9 +1206,6 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 	return resp, tokenID, nil
 }
 
-// resolveCNF builds the cnf (confirmation) claim from mTLS and DPoP context.
-// mTLS: cnf.x5t#S256 (RFC 8705 §3.1)
-
 // writeTokenResponse writes a successful token response with optional DPoP-Nonce header.
 // RFC 9449 §8: the server MAY include a DPoP-Nonce header in 200 responses.
 // Cache-Control: no-store is set by shared.JSONResponse per RFC 6749 §5.1.
@@ -1141,28 +1214,6 @@ func (p *Plugin) writeTokenResponse(w http.ResponseWriter, r *http.Request, resp
 		p.dpopNonceSender.WriteNonceHeader(w)
 	}
 	shared.JSONResponse(w, resp, http.StatusOK)
-}
-
-// DPoP: cnf.jkt (RFC 9449 §7.1)
-// If both are present, both keys are included.
-func (p *Plugin) resolveCNF(ctx context.Context) map[string]any {
-	var cnf map[string]any
-
-	if cert := shared.ClientCertFromContext(ctx); cert != nil {
-		if cnf == nil {
-			cnf = make(map[string]any)
-		}
-		cnf["x5t#S256"] = shared.CertThumbprint(cert)
-	}
-
-	if proof := shared.DPoPFromContext(ctx); proof != nil {
-		if cnf == nil {
-			cnf = make(map[string]any)
-		}
-		cnf["jkt"] = proof.JWKThumbprint()
-	}
-
-	return cnf
 }
 
 // createIDToken creates and signs an ID token.
@@ -1317,7 +1368,7 @@ func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenReque
 		return nil, protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
 	}
 
-	cnf := p.resolveCNF(ctx)
+	cnf := shared.ResolveCNF(ctx)
 
 	accessToken, _, _, validity, err := p.createAccessToken(ctx, tokenRequest, client, false, "", cnf)
 	if err != nil {

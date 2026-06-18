@@ -7,12 +7,14 @@ package userinfo
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 
@@ -116,6 +118,14 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
+	// FAPI 2.0 §6.2.1-11 / FAPI 1.0 Advanced §8.4.3: echo x-fapi-interaction-id.
+	// If not present in request, generate a new UUID for the response.
+	if interactionID := r.Header.Get("x-fapi-interaction-id"); interactionID != "" {
+		w.Header().Set("x-fapi-interaction-id", interactionID)
+	} else {
+		w.Header().Set("x-fapi-interaction-id", uuid.NewString())
+	}
+
 	// Extract access token from Authorization header or form body
 	accessToken := extractAccessToken(r)
 	if accessToken == "" {
@@ -127,9 +137,11 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	// Supports opaque tokens (standard + GM/T JWE) and JWT access tokens.
 	tokenID, subject, ok := storm.ResolveToken(r.Context(), p.crypto, p.keyStore, shared.IssuerFromContext(r.Context()), accessToken)
 	if !ok {
+		slog.Warn("[DEBUG] userinfo ResolveToken FAILED", "access_token_len", len(accessToken))
 		shared.WriteError(w, r, shared.NewStatusError(protocol.ErrInvalidRequest().WithDescription("invalid access token"), http.StatusUnauthorized), nil)
 		return
 	}
+	slog.Info("[DEBUG] userinfo ResolveToken PASSED", "tokenID", tokenID, "subject", subject)
 
 	// RFC 9449 §7.1: when a DPoP proof is presented to a resource server,
 	// the ath claim MUST be present and MUST match base64url(SHA-256(access_token)).
@@ -145,20 +157,35 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	// RFC 8705 §5 / RFC 9449 §7.2: verify sender-constrained token binding.
 	// If the token has a cnf claim, the request MUST prove possession of the
 	// corresponding key (DPoP jkt or mTLS x5t#S256).
+	slog.Info("[DEBUG] userinfo sender-constraining check",
+		"tokenID", tokenID,
+		"cnfLookup_nil", p.cnfLookup == nil,
+		"has_client_cert", shared.ClientCertFromContext(r.Context()) != nil,
+		"has_dpop", shared.DPoPFromContext(r.Context()) != nil,
+	)
 	if p.cnfLookup != nil {
 		if cnf, err := p.cnfLookup.TokenCNF(r.Context(), tokenID); err == nil && len(cnf) > 0 {
+			slog.Info("[DEBUG] userinfo cnf claim retrieved", "cnf", fmt.Sprintf("%v", cnf))
 			if err := shared.VerifyTokenBinding(r.Context(), cnf); err != nil {
+				slog.Warn("[DEBUG] userinfo VerifyTokenBinding FAILED", "error", err)
 				shared.WriteError(w, r, shared.NewStatusError(err, http.StatusUnauthorized), nil)
 				return
 			}
+			slog.Info("[DEBUG] userinfo VerifyTokenBinding PASSED")
+		} else {
+			slog.Info("[DEBUG] userinfo cnf claim empty or error", "err", err, "cnf_len", len(cnf))
 		}
+	} else {
+		slog.Warn("[DEBUG] userinfo cnfLookup is nil, skipping sender-constraining check")
 	}
 
 	userInfo := new(protocol.UserInfo)
 	if err := p.store.SetUserinfoFromToken(r.Context(), userInfo, tokenID, subject, r.Header.Get("Origin")); err != nil {
+		slog.Warn("[DEBUG] userinfo SetUserinfoFromToken FAILED", "tokenID", tokenID, "subject", subject, "error", err)
 		shared.WriteError(w, r, shared.NewStatusError(protocol.ErrInvalidRequest().WithDescription("invalid access token"), http.StatusUnauthorized), nil)
 		return
 	}
+	slog.Info("[DEBUG] userinfo SetUserinfoFromToken PASSED", "tokenID", tokenID, "subject", subject, "sub", userInfo.Subject)
 
 	// OIDC Core §5.3.2: response MUST contain the "sub" claim
 	if userInfo.Subject == "" {

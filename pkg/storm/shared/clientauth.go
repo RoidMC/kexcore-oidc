@@ -231,8 +231,15 @@ func AuthenticatePrivateKeyJWT(r *http.Request, getClientByClientID func(ctx con
 		allowedAudiences = getAudiences(client)
 	}
 
+	// Debug: log audience info
+	slog.Info("[DEBUG] AuthenticatePrivateKeyJWT: audience check",
+		"client_id", client.GetID(),
+		"allowed_audiences", allowedAudiences,
+	)
+
 	// Step 5: Verify the assertion with the client's keys.
 	if err := protocol.VerifyJWTAssertion(r.Context(), assertion, allowedAudiences, clientKeys, 10*time.Second); err != nil {
+		slog.Warn("[DEBUG] AuthenticatePrivateKeyJWT: assertion verification failed", "client_id", client.GetID(), "error", err)
 		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
 	}
 

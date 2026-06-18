@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -365,6 +366,7 @@ func CheckAudienceAny(claims Claims, allowed []string) error {
 			return nil
 		}
 	}
+	slog.Warn("[DEBUG] CheckAudienceAny: audience mismatch", "actual", claims.GetAudience(), "allowed", allowed)
 	return fmt.Errorf("%w: Audience must contain one of %v", ErrAudience, allowed)
 }
 

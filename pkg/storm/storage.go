@@ -150,6 +150,15 @@ type ScopeValidationClient interface {
 	StrictScopeValidation() bool
 }
 
+// NotificationEndpointProvider is an optional interface for clients that
+// register a notification endpoint for CIBA ping delivery mode (CIBA Core 1.0 §10).
+// When implemented, the SDK validates the endpoint URL for SSRF protection
+// before dispatching notification callbacks.
+type NotificationEndpointProvider interface {
+	// NotificationEndpoint returns the client's backchannel notification URL.
+	NotificationEndpoint() string
+}
+
 // KeyStore provides cryptographic key access.
 // It extends protocol.KeyStore with SigningKey for OP-side token signing.
 //

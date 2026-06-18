@@ -263,7 +263,7 @@ var (
 		return &Error{ErrorType: InvalidRequest, redirectDisabled: true}
 	}
 	ErrInvalidClient = func() *Error {
-		return &Error{ErrorType: InvalidClient}
+		return &Error{ErrorType: InvalidClient, httpStatusCode: 401}
 	}
 	ErrInvalidGrant = func() *Error {
 		return &Error{ErrorType: InvalidGrant}
@@ -398,6 +398,7 @@ type Error struct {
 	SessionState     string    `json:"session_state,omitempty" schema:"session_state,omitempty"`
 	redirectDisabled bool      `schema:"-"`
 	returnParent     bool      `schema:"-"`
+	httpStatusCode   int       `schema:"-"` // preferred HTTP status code (0 = use default)
 }
 
 // MarshalJSON serialises the error per RFC 6749 §5.2 JSON format.
@@ -474,6 +475,20 @@ func (e *Error) WithDescription(desc string, args ...any) *Error {
 // missing or invalid).
 func (e *Error) IsRedirectDisabled() bool {
 	return e.redirectDisabled
+}
+
+// HTTPStatusCode returns the preferred HTTP status code for this error.
+// Returns 0 if no specific status code has been set (caller should use default).
+func (e *Error) HTTPStatusCode() int {
+	return e.httpStatusCode
+}
+
+// WithHTTPStatusCode sets the preferred HTTP status code for this error.
+// This allows errors to carry their own RFC-mandated status code, so that
+// endpoints and WriteError don't need ad-hoc mapping logic.
+func (e *Error) WithHTTPStatusCode(code int) *Error {
+	e.httpStatusCode = code
+	return e
 }
 
 // ---------------------------------------------------------------------------

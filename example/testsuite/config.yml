@@ -40,17 +40,20 @@ plan_config:
   # The conformance suite uses this URL to verify access tokens by calling the resource.
   resource:
     resourceUrl: "${issuer_url}/userinfo"
+  # Automated CIBA approval endpoint for OIDF conformance testing.
+  # The suite calls this URL with {auth_req_id} and {action} substituted.
+  automated_ciba_approval_url: "${issuer_url}/ciba/approve?token={auth_req_id}&type={action}"
   client2:
     client_id: "Test Client 2"
     client_secret: "test-secret-2"
   mtls:
-    ca: "../storm-server/cert/ca.crt"
-    cert: "../storm-server/cert/client.crt"
-    key: "../storm-server/cert/client.key"
+    ca: "../storm-server/cert/mtls/ca.crt"
+    cert: "../storm-server/cert/mtls/client1.crt"
+    key: "../storm-server/cert/mtls/client1.key"
   mtls2:
-    ca: "../storm-server/cert/ca.crt"
-    cert: "../storm-server/cert/client.crt" 
-    key: "../storm-server/cert/client.key"
+    ca: "../storm-server/cert/mtls/ca.crt"
+    cert: "../storm-server/cert/mtls/client2.crt"
+    key: "../storm-server/cert/mtls/client2.key"
   # FAPI client (private_key_jwt authentication)
   # Private key (d): D0elCuLKMTS5M1Q1K-lhmfMiUjoDv-L-HPQz_Z9WY2Q
   # Must match the key registered in main.go mustParseFAPIKey()
@@ -59,6 +62,8 @@ plan_config:
     client_secret: ""
     scope: "openid profile"
     token_endpoint_auth_method: "private_key_jwt"
+    hint_type: "login_hint"
+    hint_value: "test-user@${issuer_host}"
     jwks:
       keys:
         - kty: "EC"
@@ -75,6 +80,8 @@ plan_config:
     scope: "openid profile"
     client_secret: ""
     token_endpoint_auth_method: "private_key_jwt"
+    hint_type: "login_hint"
+    hint_value: "test-user@${issuer_host}"
     jwks:
       keys:
         - kty: "EC"
@@ -92,6 +99,82 @@ plan_config:
   fapi_client2_oauth: &fapi_client2_oauth
     <<: *fapi_client2
     scope: "profile"
+  # FAPI Message Signing clients (require signed request objects)
+  # Same JWK keys as fapi_client/fapi_client2 but different client_id.
+  # The server-side client has request_object_signing_alg = "PS256".
+  fapi_client_ms: &fapi_client_ms
+    client_id: "FAPI Client 1 MS"
+    client_secret: ""
+    scope: "openid profile"
+    token_endpoint_auth_method: "private_key_jwt"
+    jwks:
+      keys:
+        - kty: "EC"
+          use: "sig"
+          kid: "fapi-test-key-1"
+          alg: "ES256"
+          crv: "P-256"
+          x: "-VA0fzoJpkWmuwRWilmc8xSrlrPVmAzlpMpQMiZetVc"
+          y: "sWwU5hohNPTkEuyCeVYWySYuU9a-dPkBeoAApG8UTpk"
+          d: "D0elCuLKMTS5M1Q1K-lhmfMiUjoDv-L-HPQz_Z9WY2Q"
+  fapi_client2_ms: &fapi_client2_ms
+    client_id: "FAPI Client 2 MS"
+    scope: "openid profile"
+    client_secret: ""
+    token_endpoint_auth_method: "private_key_jwt"
+    jwks:
+      keys:
+        - kty: "EC"
+          use: "sig"
+          kid: "fapi-test-key-2"
+          alg: "ES256"
+          crv: "P-256"
+          x: "0YCniv9r1v7a95GbMZzxtz3w09clH7QhhKi65A2KvLw"
+          y: "rG_x865khWLke14qOmogZlnSvJzvQ5yvxXdT0ySqjtw"
+          d: "rurglw6JTgh3Ijy-UiNQCPswBYsnxrnDRyP1Xde39lc"
+  fapi_client_ms_oauth: &fapi_client_ms_oauth
+    <<: *fapi_client_ms
+    scope: "profile"
+  fapi_client2_ms_oauth: &fapi_client2_ms_oauth
+    <<: *fapi_client2_ms
+    scope: "profile"
+  # FAPI mTLS clients (tls_client_auth authentication, no client_assertion)
+  # Used for CIBA mtls variants where client authenticates via TLS certificate.
+  # JWKS is still needed for request object signing/verification.
+  fapi_client_mtls: &fapi_client_mtls
+    client_id: "FAPI Client 1 MTLS"
+    client_secret: ""
+    scope: "openid profile"
+    token_endpoint_auth_method: "tls_client_auth"
+    hint_type: "login_hint"
+    hint_value: "test-user@${issuer_host}"
+    jwks:
+      keys:
+        - kty: "EC"
+          use: "sig"
+          kid: "fapi-test-key-1"
+          alg: "ES256"
+          crv: "P-256"
+          x: "-VA0fzoJpkWmuwRWilmc8xSrlrPVmAzlpMpQMiZetVc"
+          y: "sWwU5hohNPTkEuyCeVYWySYuU9a-dPkBeoAApG8UTpk"
+          d: "D0elCuLKMTS5M1Q1K-lhmfMiUjoDv-L-HPQz_Z9WY2Q"
+  fapi_client2_mtls: &fapi_client2_mtls
+    client_id: "FAPI Client 2 MTLS"
+    client_secret: ""
+    scope: "openid profile"
+    token_endpoint_auth_method: "tls_client_auth"
+    hint_type: "login_hint"
+    hint_value: "test-user@${issuer_host}"
+    jwks:
+      keys:
+        - kty: "EC"
+          use: "sig"
+          kid: "fapi-test-key-2"
+          alg: "ES256"
+          crv: "P-256"
+          x: "0YCniv9r1v7a95GbMZzxtz3w09clH7QhhKi65A2KvLw"
+          y: "rG_x865khWLke14qOmogZlnSvJzvQ5yvxXdT0ySqjtw"
+          d: "rurglw6JTgh3Ijy-UiNQCPswBYsnxrnDRyP1Xde39lc"
   # publish: "summary"  # uncomment to publish results to certification.openid.net
 
   # Browser automation — controls the conformance suite's built-in Selenium
@@ -311,6 +394,38 @@ plan_config:
                 - ["text", "name", "username", "test-user@${issuer_host}"]
                 - ["text", "name", "password", "verysecure"]
                 - ["click", "css", "button[type='submit']"]
+            - task: "Verify complete"
+              match: "*/test/*/callback*"
+              commands:
+                - ["wait", "id", "submission_complete", 30]
+
+    # FAPI CIBA: approve authentication request on the CIBA approval page
+    fapi-ciba-id1:
+      browser:
+        - match: "${issuer_url}/ciba*"
+          tasks:
+            - task: "Approve CIBA request"
+              match: "${issuer_url}/ciba*"
+              commands:
+                - ["click", "css", "button[value='approve']"]
+        - match: "*/test/*/callback*"
+          tasks:
+            - task: "Verify complete"
+              match: "*/test/*/callback*"
+              commands:
+                - ["wait", "id", "submission_complete", 5]
+
+    # FAPI CIBA user-rejects: deny instead of approve
+    fapi-ciba-id1-user-rejects-authentication:
+      browser:
+        - match: "${issuer_url}/ciba*"
+          tasks:
+            - task: "Deny CIBA request"
+              match: "${issuer_url}/ciba*"
+              commands:
+                - ["click", "css", "button[value='deny']"]
+        - match: "*/test/*/callback*"
+          tasks:
             - task: "Verify complete"
               match: "*/test/*/callback*"
               commands:

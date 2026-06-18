@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"net"
@@ -67,6 +68,13 @@ type RequestObjectSigningAlgProvider interface {
 // ValidateSignedRequestObjectRequired returns an error if the client is
 // configured to require signed request objects but the request does not
 // contain one. It is used by both the PAR and authorization endpoints.
+//
+// A signed request object is required when the client has
+// request_object_signing_alg configured.
+//
+// Note: FAPI 2.0 Security Profile does NOT mandate signed request objects.
+// Only FAPI 2.0 Message Signing (a separate profile) does, and that is
+// enforced via the client's request_object_signing_alg setting.
 func ValidateSignedRequestObjectRequired(client interface{}, hasRequestObject bool) error {
 	algProvider, ok := client.(RequestObjectSigningAlgProvider)
 	if !ok || algProvider.RequestObjectSigningAlg() == "" {
@@ -85,6 +93,24 @@ func ValidateSignedRequestObjectRequired(client interface{}, hasRequestObject bo
 type SenderConstrainingProvider interface {
 	RequireDPoP() bool
 	RequireMtls() bool
+}
+
+// ClientCertBoundAuthenticator is an optional interface for clients that
+// require the TLS client certificate to match a specific identity (e.g.,
+// certificate CN must match client_id). When ValidateClientCert returns
+// a non-nil error, the token/bc-authorize endpoint rejects the request.
+//
+// This is disabled by default (clients not implementing this interface
+// skip certificate identity validation). Implement this on your Client
+// struct to enable per-client mTLS identity verification per RFC 8705 §2.1.
+//
+// SECURITY: If you have multiple tls_client_auth clients sharing the same
+// TLS certificate infrastructure, you MUST implement this interface to prevent
+// cross-client access. Without it, any client holding a valid TLS certificate
+// can impersonate another tls_client_auth client by providing a different
+// client_id in the request.
+type ClientCertBoundAuthenticator interface {
+	ValidateClientCert(cert *x509.Certificate, clientID string) error
 }
 
 // IDTokenSignedResponseAlgProvider is an optional interface for clients that
@@ -495,6 +521,25 @@ func validateRedirectURINative(client AuthRequestClient, uri string, responseTyp
 	}
 
 	return protocol.ErrInvalidRequestRedirectURI().WithDescription("redirect_uri not registered")
+}
+
+// ResolvePreferredSigningAlg returns the client's preferred signing algorithm
+// for JARM authorization responses. It checks:
+//  1. The client's id_token_signed_response_alg (explicit configuration)
+//  2. FAPI 2.0 profile fallback: PS256 (FAPI 2.0 §5.3.2.2)
+//
+// Returns empty string if the client has no preference (server default will be used).
+func ResolvePreferredSigningAlg(client interface{}) string {
+	if algProvider, ok := client.(IDTokenSignedResponseAlgProvider); ok {
+		if alg := algProvider.IDTokenSignedResponseAlg(); alg != "" {
+			return alg
+		}
+	}
+	// FAPI 2.0 §5.3.2.2: JARM responses MUST be signed with PS256 or ES256.
+	if fc, ok := client.(FAPIProfileClient); ok && fc.FAPIProfile() {
+		return "PS256"
+	}
+	return ""
 }
 
 // checkRedirectURIAgainstClient checks the URI against registered redirect URIs

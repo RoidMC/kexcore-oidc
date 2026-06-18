@@ -91,7 +91,11 @@ func (s *Storage) SetUserinfoFromToken(_ context.Context, userinfo *protocol.Use
 
 	user := s.userStore.GetUserByID(token.Subject)
 	if user == nil {
-		return fmt.Errorf("user not found")
+		// Fallback: subject may be a username (e.g. from CIBA login_hint).
+		user = s.userStore.GetUserByUsername(token.Subject)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found (subject=%s)", token.Subject)
 	}
 
 	// OIDC Core §5.3.2: "sub" claim MUST always be returned in the UserInfo response.

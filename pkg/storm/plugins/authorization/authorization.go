@@ -247,13 +247,20 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 
 	// Authorization endpoint capabilities
 	cfg.ScopesSupported = append(cfg.ScopesSupported,
-		"openid", "profile", "email", "address", "phone", "offline_access",
+		protocol.ScopeOpenID,
+		protocol.ScopeProfile,
+		protocol.ScopeEmail,
+		protocol.ScopeAddress,
+		protocol.ScopePhone,
+		protocol.ScopeOfflineAccess,
 	)
-	cfg.ResponseTypesSupported = append(cfg.ResponseTypesSupported, "code")
+	cfg.ResponseTypesSupported = append(cfg.ResponseTypesSupported, string(protocol.ResponseTypeCode))
 	cfg.ResponseModesSupported = append(cfg.ResponseModesSupported,
-		"query", "fragment", "form_post",
+		string(protocol.ResponseModeQuery),
+		string(protocol.ResponseModeFragment),
+		string(protocol.ResponseModeFormPost),
 	)
-	cfg.GrantTypesSupported = append(cfg.GrantTypesSupported, "authorization_code")
+	cfg.GrantTypesSupported = append(cfg.GrantTypesSupported, string(protocol.GrantTypeCode))
 	cfg.CodeChallengeMethodsSupported = append(cfg.CodeChallengeMethodsSupported, "S256")
 	if p.allowPlainPKCE {
 		cfg.CodeChallengeMethodsSupported = append(cfg.CodeChallengeMethodsSupported, "plain")
@@ -261,10 +268,15 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 
 	// Implicit/hybrid response types and grant type (only when enabled)
 	if p.enableImplicit {
-		cfg.GrantTypesSupported = append(cfg.GrantTypesSupported, "implicit")
+		cfg.GrantTypesSupported = append(cfg.GrantTypesSupported, string(protocol.GrantTypeImplicit))
 		cfg.ResponseTypesSupported = append(cfg.ResponseTypesSupported,
-			"none", "id_token", "token", "id_token token",
-			"code id_token", "code token", "code id_token token",
+			string(protocol.ResponseTypeNone),
+			string(protocol.ResponseTypeIDToken),
+			string(protocol.ResponseTypeToken),
+			string(protocol.ResponseTypeIDTokenOnly),
+			string(protocol.ResponseTypeCodeIDToken),
+			string(protocol.ResponseTypeCodeToken),
+			string(protocol.ResponseTypeCodeIDTokenToken),
 		)
 	}
 
@@ -414,13 +426,9 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(contextWithJARMClientID(r.Context(), authReq.ClientID))
 	}
 	// Store client's preferred signing algorithm for JARM signing.
-	if algProvider, ok := client.(shared.IDTokenSignedResponseAlgProvider); ok {
-		if alg := algProvider.IDTokenSignedResponseAlg(); alg != "" {
-			r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
-		}
+	if alg := shared.ResolvePreferredSigningAlg(client); alg != "" {
+		r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
 	}
-
-	// Validate redirect_uri first — separately from other params.
 	// Per OIDC Core §3.1.2.4: if redirect_uri is not registered, the OP
 	// MUST NOT redirect to it and MUST display an error directly.
 	redirectURIErr := validateRedirectURI(client, authReq.RedirectURI, authReq.ResponseType)
@@ -709,10 +717,8 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	// Store client's preferred signing algorithm for JARM signing.
 	if jarmClient, err := p.clientStore.GetClientByClientID(r.Context(), authReq.GetClientID()); err == nil {
-		if algProvider, ok := jarmClient.(shared.IDTokenSignedResponseAlgProvider); ok {
-			if alg := algProvider.IDTokenSignedResponseAlg(); alg != "" {
-				r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
-			}
+		if alg := shared.ResolvePreferredSigningAlg(jarmClient); alg != "" {
+			r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
 		}
 	}
 

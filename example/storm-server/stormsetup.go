@@ -46,63 +46,13 @@ import (
 	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/webfinger"
 )
 
-// defaultGrantTypes returns the grant types supported by the default plugin set.
-// Mirrors the old OP's GrantTypes() logic.
-func defaultGrantTypes() []string {
-	return []string{
-		"authorization_code",
-		"implicit",
-		"client_credentials",
-		"refresh_token",
-		"urn:ietf:params:oauth:grant-type:jwt-bearer",
-		"urn:ietf:params:oauth:grant-type:token-exchange",
-		"urn:ietf:params:oauth:grant-type:device_code",
-	}
-}
-
-// defaultResponseTypes returns the response types supported by the default plugin set.
-// Mirrors the old OP's ResponseTypes() logic.
-func defaultResponseTypes() []string {
-	return []string{
-		"code",
-		"id_token",
-		"id_token token",
-		"code id_token",
-		"code token",
-		"code id_token token",
-	}
-}
-
-// defaultAuthMethodsTokenEndpoint returns the token endpoint auth methods.
-// Mirrors the old OP's AuthMethodsTokenEndpoint() logic.
-func defaultAuthMethodsTokenEndpoint() []string {
-	return []string{
-		"none",
-		"client_secret_basic",
-		"client_secret_post",
-		"private_key_jwt",
-	}
-}
-
 // defaultDiscoveryConfig builds the discovery configuration dynamically
 // based on the signing algorithms and plugin capabilities.
 // This mirrors the old OP's CreateDiscoveryConfig approach.
 func defaultDiscoveryConfig(signingAlgorithms []string) storm.DiscoveryConfig {
-	return storm.DiscoveryConfig{
-		ExtraFields: map[string]any{
-			"grant_types_supported":                            defaultGrantTypes(),
-			"response_types_supported":                         defaultResponseTypes(),
-			"token_endpoint_auth_methods_supported":            defaultAuthMethodsTokenEndpoint(),
-			"code_challenge_methods_supported":                 []string{"S256"},
-			"scopes_supported":                                 []string{"openid", "profile", "email", "phone", "address", "offline_access"},
-			"claims_supported":                                 []string{"sub", "aud", "exp", "iat", "iss", "auth_time", "nonce", "acr", "amr", "c_hash", "at_hash", "name", "given_name", "family_name", "preferred_username", "email", "email_verified", "phone_number", "phone_number_verified", "locale"},
-			"subject_types_supported":                          []string{"public", "pairwise"},
-			"id_token_signing_alg_values_supported":            signingAlgorithms,
-			"token_endpoint_auth_signing_alg_values_supported": signingAlgorithms,
-			"introspection_endpoint_auth_methods_supported":    []string{"client_secret_basic", "client_secret_post", "private_key_jwt"},
-			"revocation_endpoint_auth_methods_supported":       []string{"client_secret_basic", "client_secret_post", "private_key_jwt"},
-		},
-	}
+	// All standard discovery fields are now contributed by plugins via Contribute().
+	// ExtraFields is reserved for non-standard extension fields only.
+	return storm.DiscoveryConfig{}
 }
 
 // TenantConfig configures a single OIDC tenant.

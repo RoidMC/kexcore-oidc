@@ -85,7 +85,9 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 
 	// Revocation endpoint capabilities
 	cfg.RevocationEndpointAuthMethodsSupported = append(cfg.RevocationEndpointAuthMethodsSupported,
-		"client_secret_basic", "client_secret_post", "private_key_jwt",
+		string(protocol.AuthMethodBasic),
+		string(protocol.AuthMethodPost),
+		string(protocol.AuthMethodPrivateKeyJWT),
 	)
 }
 

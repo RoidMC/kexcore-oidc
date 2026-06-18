@@ -6,6 +6,8 @@
 package storage
 
 import (
+	"crypto/x509"
+	"fmt"
 	"net/url"
 	"time"
 
@@ -51,6 +53,8 @@ type Client struct {
 	fapiProfile                    bool        // FAPI 2.0 profile restrictions
 	requireDPoP                    bool        // require DPoP proof at token endpoint
 	requireMtls                    bool        // require mTLS client auth at token endpoint
+	clientNotificationEndpoint     string      // CIBA Core 1.0 §10: client_notification_endpoint for ping mode
+	certCN                         string      // expected TLS client certificate CN for tls_client_auth validation
 }
 
 func (c *Client) GetID() string                          { return c.id }
@@ -80,6 +84,10 @@ func (c *Client) RequireDPoP() bool                      { return c.requireDPoP 
 func (c *Client) RequireMtls() bool                      { return c.requireMtls }
 func (c *Client) IDTokenSignedResponseAlg() string       { return c.idTokenSignedResponseAlg }
 
+// NotificationEndpoint returns the client's CIBA notification endpoint (CIBA Core 1.0 §10).
+// Implements storm.NotificationEndpointProvider for SSRF validation.
+func (c *Client) NotificationEndpoint() string { return c.clientNotificationEndpoint }
+
 // WithRequestObjectSigningAlg sets the request_object_signing_alg for this client
 // and returns the client for chaining. Use "PS256" for FAPI 2.0 signed_non_repudiation.
 func (c *Client) WithRequestObjectSigningAlg(alg string) *Client {
@@ -103,6 +111,33 @@ func (c *Client) WithRequireMtls() *Client {
 func (c *Client) WithIDTokenSignedResponseAlg(alg string) *Client {
 	c.idTokenSignedResponseAlg = alg
 	return c
+}
+
+// WithNotificationEndpoint sets the client_notification_endpoint for CIBA ping mode.
+func (c *Client) WithNotificationEndpoint(endpoint string) *Client {
+	c.clientNotificationEndpoint = endpoint
+	return c
+}
+
+// WithCertCN sets the expected TLS client certificate CN for tls_client_auth.
+// When set, ValidateClientCert will reject certificates whose CN does not match.
+func (c *Client) WithCertCN(cn string) *Client {
+	c.certCN = cn
+	return c
+}
+
+// ValidateClientCert implements shared.ClientCertBoundAuthenticator.
+// It checks that the presented TLS certificate's CN matches the expected value.
+// This allows the SDK to distinguish between clients that share mTLS infrastructure
+// but have different certificate identities (e.g. OIDF test suite mtls variants).
+func (c *Client) ValidateClientCert(cert *x509.Certificate, clientID string) error {
+	if c.certCN == "" {
+		return nil // no CN configured, skip check
+	}
+	if cert.Subject.CommonName != c.certCN {
+		return fmt.Errorf("certificate CN %q does not match expected %q for client %q", cert.Subject.CommonName, c.certCN, clientID)
+	}
+	return nil
 }
 
 func (s *Storage) RegisterClients(registerClients ...*Client) {
@@ -271,6 +306,7 @@ func FAPIClient(id string, clientJWKS []jwk.Key, redirectURIs ...string) *Client
 			protocol.GrantTypeCode,
 			protocol.GrantTypeRefreshToken,
 			protocol.GrantTypeClientCredentials,
+			protocol.GrantTypeCIBA,
 		},
 		clientJWKS:  clientJWKS,
 		fapiProfile: true,
@@ -298,5 +334,50 @@ func FAPIClient(id string, clientJWKS []jwk.Key, redirectURIs ...string) *Client
 func FAPIClientWithJWKSURI(id, jwksURI string, redirectURIs ...string) *Client {
 	c := FAPIClient(id, nil, redirectURIs...)
 	c.jwksURI = jwksURI
+	return c
+}
+
+// FAPIClientMTLS creates a FAPI-compliant client using tls_client_auth
+// authentication. This client is used for mtls CIBA variants where the
+// client authenticates via TLS client certificate instead of client_assertion.
+// clientJWKS is still needed for request object signature verification.
+func FAPIClientMTLS(id string, clientJWKS []jwk.Key, redirectURIs ...string) *Client {
+	if len(redirectURIs) == 0 {
+		redirectURIs = []string{"https://192.168.2.167:8443/test/a/kexcore-test/callback"}
+	}
+	c := &Client{
+		id:           id,
+		redirectURIs: redirectURIs,
+		appType:      0,
+		authMethod:   protocol.AuthMethodTLSClientAuth,
+		loginURLFn:   defaultLoginURL,
+		responseTypes: []protocol.ResponseType{
+			protocol.ResponseTypeCode,
+			protocol.ResponseTypeIDToken,
+			protocol.ResponseTypeIDTokenOnly,
+			protocol.ResponseTypeCodeIDToken,
+			protocol.ResponseTypeCodeToken,
+			protocol.ResponseTypeCodeIDTokenToken,
+		},
+		grantTypes: []protocol.GrantType{
+			protocol.GrantTypeCode,
+			protocol.GrantTypeRefreshToken,
+			protocol.GrantTypeClientCredentials,
+			protocol.GrantTypeCIBA,
+		},
+		clientJWKS:  clientJWKS,
+		fapiProfile: true,
+		requireDPoP: true,
+		requireMtls: true,
+	}
+	for _, uri := range redirectURIs {
+		if u, err := url.Parse(uri); err == nil {
+			c.postLogoutRedirectURIs = append(c.postLogoutRedirectURIs,
+				u.Scheme+"://"+u.Host+"/test/a/kexcore-test/post_logout_redirect")
+			break
+		}
+	}
+	c.postLogoutRedirectURIs = append(c.postLogoutRedirectURIs,
+		"https://www.certification.openid.net/test/a/kexcore-test/post_logout_redirect")
 	return c
 }

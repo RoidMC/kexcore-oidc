@@ -9,7 +9,9 @@ fapi2_security_private_key_jwt:
         variant:
           client_auth_type: "private_key_jwt"
           fapi_profile: "plain_fapi"
-          sender_constrain: "dpop"
+          sender_constrain_range: 
+            - "dpop"
+            - "mtls"
           openid: "openid_connect"
       pkj_dpop_cc:
         client: *fapi_client_oauth
@@ -25,7 +27,9 @@ fapi2_security_private_key_jwt:
         variant:
           client_auth_type: "private_key_jwt"
           fapi_profile: "plain_fapi"
-          sender_constrain: "dpop"
+          sender_constrain_range: 
+            - "dpop"
+            - "mtls"
           openid: "plain_oauth"
       pkj_mtls_oidc:
         client: *fapi_client
