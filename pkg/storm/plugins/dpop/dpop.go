@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -167,23 +168,26 @@ func (p *Plugin) evictOldestLocked() {
 	}
 
 	// Collect all timestamps
-	oldest := make([]time.Time, 0, len(p.usedNonces))
+	timestamps := make([]time.Time, 0, len(p.usedNonces))
 	for _, t := range p.usedNonces {
-		oldest = append(oldest, t)
+		timestamps = append(timestamps, t)
 	}
-	if len(oldest) < target {
+	if len(timestamps) < target {
 		return
 	}
 
-	// Partial sort to find the target-th oldest
-	for i := 0; i < target; i++ {
-		for j := i + 1; j < len(oldest); j++ {
-			if oldest[j].Before(oldest[i]) {
-				oldest[i], oldest[j] = oldest[j], oldest[i]
-			}
+	// Full sort is O(n log n), replacing the previous O(n*k) selection sort
+	// where k = n/4 (i.e., O(n²) worst case).
+	slices.SortFunc(timestamps, func(a, b time.Time) int {
+		if a.Before(b) {
+			return -1
 		}
-	}
-	cutoff := oldest[target-1]
+		if a.After(b) {
+			return 1
+		}
+		return 0
+	})
+	cutoff := timestamps[target-1]
 
 	for jti, t := range p.usedNonces {
 		if !t.After(cutoff) {
@@ -264,22 +268,24 @@ func (p *Plugin) evictNoncesLocked() {
 		target = 1
 	}
 
-	oldest := make([]time.Time, 0, len(p.nonces))
+	timestamps := make([]time.Time, 0, len(p.nonces))
 	for _, t := range p.nonces {
-		oldest = append(oldest, t)
+		timestamps = append(timestamps, t)
 	}
-	if len(oldest) < target {
+	if len(timestamps) < target {
 		return
 	}
 
-	for i := 0; i < target; i++ {
-		for j := i + 1; j < len(oldest); j++ {
-			if oldest[j].Before(oldest[i]) {
-				oldest[i], oldest[j] = oldest[j], oldest[i]
-			}
+	slices.SortFunc(timestamps, func(a, b time.Time) int {
+		if a.Before(b) {
+			return -1
 		}
-	}
-	cutoff := oldest[target-1]
+		if a.After(b) {
+			return 1
+		}
+		return 0
+	})
+	cutoff := timestamps[target-1]
 
 	for nonce, t := range p.nonces {
 		if !t.After(cutoff) {

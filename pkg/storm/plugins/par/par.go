@@ -78,7 +78,7 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	// DEBUG: log every request hitting the PAR endpoint
-	slog.Info("PAR handle: REQUEST RECEIVED",
+	slog.Debug("PAR handle: REQUEST RECEIVED",
 		slog.String("method", r.Method),
 		slog.String("url", r.URL.String()),
 		slog.String("remote_addr", r.RemoteAddr),
@@ -189,7 +189,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// DEBUG: trace scopes before storing PAR
-	slog.Info("PAR: before StorePushedAuthRequest",
+	slog.Debug("PAR: before StorePushedAuthRequest",
 		slog.Any("scopes", authReq.Scopes),
 		slog.String("client_id", authReq.ClientID),
 		slog.String("redirect_uri", authReq.RedirectURI),

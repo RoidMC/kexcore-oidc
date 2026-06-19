@@ -595,18 +595,56 @@ type JWTProfileStore interface {
 type TokenExchangeStore interface {
 	ValidateTokenExchangeRequest(ctx context.Context, req TokenExchangeRequest) error
 	CreateTokenExchangeRequest(ctx context.Context, req TokenExchangeRequest) error
-	GetPrivateClaimsFromTokenExchangeRequest(ctx context.Context, req TokenExchangeRequest) (map[string]any, error)
-	SetUserinfoFromTokenExchangeRequest(ctx context.Context, userinfo *protocol.UserInfo, req TokenExchangeRequest) error
 }
 
 // TokenExchangeRequest represents a validated token exchange request.
+//
+// Storage implementations receive this in CreateAccessToken (as TokenRequest).
+// Type-assert to TokenExchangeRequest to detect token exchange and access
+// exchange-specific fields (actor, claims, token types).
 type TokenExchangeRequest interface {
 	TokenRequest
 	GetRequestedTokenType() protocol.TokenType
 	GetSubjectTokenType() protocol.TokenType
 	GetActorTokenType() protocol.TokenType
+	// GetActor returns the actor's subject identifier (RFC 8693 §2.1).
+	// Empty if no actor_token was provided.
+	GetActor() string
+	// GetActorTokenIDOrToken returns the actor token's storage ID or the raw token.
+	GetActorTokenIDOrToken() string
+	// GetSubjectTokenIDOrToken returns the subject token's storage ID or the raw token.
+	GetSubjectTokenIDOrToken() string
+	// GetSubjectTokenClaims returns private claims extracted from the subject token.
+	// May be nil for opaque tokens.
+	GetSubjectTokenClaims() map[string]any
+	// GetActorTokenClaims returns private claims extracted from the actor token.
+	// May be nil if no actor_token was provided.
+	GetActorTokenClaims() map[string]any
 	SetCurrentScopes(scopes []string)
 	SetRequestedTokenType(tokenType protocol.TokenType)
+}
+
+// TokenExchangeExternalVerifierStorage is optionally implemented by storage
+// to verify third-party (external) tokens during Token Exchange (RFC 8693 §2.1).
+//
+// When the subject_token or actor_token is not a token issued by this server
+// (i.e., not an opaque access token, refresh token, or ID token), the SDK
+// falls back to this interface for verification. This enables scenarios like:
+//   - Exchanging a SAML assertion for an access token
+//   - Exchanging a third-party OIDC ID token for a local token
+//   - Exchanging a JWT from an external identity provider
+//
+// When not implemented, only tokens issued by this server are accepted.
+type TokenExchangeExternalVerifierStorage interface {
+	// VerifyExchangeSubjectToken verifies an external subject token.
+	// Returns the token identifier (or the token itself), the subject, and
+	// optional private claims extracted from the token.
+	VerifyExchangeSubjectToken(ctx context.Context, token string, tokenType protocol.TokenType) (tokenIDOrToken, subject string, claims map[string]any, err error)
+
+	// VerifyExchangeActorToken verifies an external actor token.
+	// Returns the token identifier (or the token itself), the actor subject,
+	// and optional private claims extracted from the token.
+	VerifyExchangeActorToken(ctx context.Context, token string, tokenType protocol.TokenType) (tokenIDOrToken, actor string, claims map[string]any, err error)
 }
 
 // DCRStore is required by the Dynamic Client Registration plugin.
@@ -885,4 +923,157 @@ type CIBAStore interface {
 //	}
 type CIBANotificationCallback interface {
 	OnCIBAStatusChange(ctx context.Context, req *CIBARequest) error
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Per-Client Token & Claims Configuration
+// ────────────────────────────────────────────────────────────────────────────
+
+// PostLogoutRedirectURIClient is optionally implemented by Client to
+// define the allowed post-logout redirect URIs (OIDC RP-Initiated Logout §2.1).
+//
+// When the EndSession plugin receives a post_logout_redirect_uri parameter,
+// it validates against this list. If the client does not implement this
+// interface, post-logout redirect is not allowed for that client.
+type PostLogoutRedirectURIClient interface {
+	PostLogoutRedirectURIs() []string
+}
+
+// TokenClaimsRestrictor is optionally implemented by Client to control
+// which scopes are allowed in ID Token and Access Token responses.
+//
+// This is the kexcore-oidc equivalent of Zitadel's
+// RestrictAdditionalIdTokenScopes / RestrictAdditionalAccessTokenScopes
+// and Keycloak's Client Scope restrictions.
+//
+// Use cases:
+//   - High-security clients: only allow minimal scopes in tokens
+//   - Public clients: restrict to read-only scopes
+//   - Service-to-service: allow broad scopes
+//
+// When not implemented, all requested scopes are included (subject to
+// normal scope validation).
+type TokenClaimsRestrictor interface {
+	// RestrictIDTokenScopes filters the scopes that will be included
+	// in the ID Token claims. Return a subset of the requested scopes.
+	RestrictIDTokenScopes(scopes []string) []string
+
+	// RestrictAccessTokenScopes filters the scopes that will be included
+	// in the Access Token claims. Return a subset of the requested scopes.
+	RestrictAccessTokenScopes(scopes []string) []string
+}
+
+// ScopeWhitelistClient is optionally implemented by Client to define
+// an explicit whitelist of allowed scopes.
+//
+// This is the kexcore-oidc equivalent of Zitadel's IsScopeAllowed.
+// When implemented, any scope requested by the client that is NOT in
+// this whitelist will be silently dropped (not rejected with an error).
+//
+// When not implemented, all requested scopes are accepted (subject to
+// server-level scope validation).
+type ScopeWhitelistClient interface {
+	// AllowedScopes returns the complete list of scopes this client is
+	// allowed to request. Scopes not in this list will be filtered out.
+	AllowedScopes() []string
+}
+
+// AccessTokenType is an enum for the access token format.
+type AccessTokenType int
+
+const (
+	// AccessTokenTypeBearer uses opaque bearer tokens (default).
+	AccessTokenTypeBearer AccessTokenType = iota
+	// AccessTokenTypeJWT uses JWT-format access tokens (RFC 9068).
+	AccessTokenTypeJWT
+)
+
+// AccessTokenFormatClient is optionally implemented by Client to specify
+// the access token format (opaque bearer vs JWT).
+//
+// This is the kexcore-oidc equivalent of Zitadel's Client.AccessTokenType().
+//
+// When not implemented, the token format is determined by the storage layer.
+// JWT access tokens require the storage to implement JWTAccessTokenStore.
+type AccessTokenFormatClient interface {
+	AccessTokenFormat() AccessTokenType
+}
+
+// JWTAccessTokenStore is optionally implemented by TokenStore to support
+// JWT-format access tokens (RFC 9068).
+//
+// When a client requests JWT access tokens (via AccessTokenFormatClient),
+// the token plugin uses this interface instead of the default opaque token flow.
+type JWTAccessTokenStore interface {
+	// CreateJWTAccessToken creates a JWT-format access token.
+	// The returned tokenID is used for introspection/revocation lookups.
+	// The returned token string is the compact JWT serialization.
+	CreateJWTAccessToken(ctx context.Context, req TokenRequest, cnf map[string]any, lifetime time.Duration) (tokenID, token string, expiration time.Time, err error)
+}
+
+// UserinfoFromRequestProvider is optionally implemented by UserinfoStore
+// to allow per-request customization of userinfo claims.
+//
+// This is the kexcore-oidc equivalent of Zitadel's CanSetUserinfoFromRequest.
+// The request parameter carries the full token request context (scopes,
+// audience, client info) which allows dynamic claims based on the
+// specific authorization context.
+//
+// When implemented, the UserInfo plugin calls this instead of
+// SetUserinfoFromToken for requests where richer context is needed.
+type UserinfoFromRequestProvider interface {
+	SetUserinfoFromRequest(ctx context.Context, userinfo *protocol.UserInfo, tokenID, subject, origin string, scopes []string) error
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Per-Client Refresh Token & Grant Type Configuration
+// ────────────────────────────────────────────────────────────────────────────
+
+// RefreshTokenLifetimeClient is optionally implemented by Client to control
+// the lifetime of issued refresh tokens.
+//
+// This is the kexcore-oidc equivalent of Casdoor's "Refresh Token过期" setting
+// and Keycloak's "Client Session Max" (refresh token is tied to session lifetime).
+//
+// When not implemented, the refresh token lifetime is determined by the
+// storage layer (typically 24h-30d depending on the implementation).
+type RefreshTokenLifetimeClient interface {
+	RefreshTokenLifetime() time.Duration
+}
+
+// GrantTypeClient is optionally implemented by Client to restrict which
+// OAuth 2.0 grant types are allowed for this specific client.
+//
+// This is the kexcore-oidc equivalent of Casdoor's "OAuth授权类型" setting
+// and Keycloak's per-client "Grant Types" configuration.
+//
+// When implemented, the Token plugin checks the requested grant_type against
+// this list BEFORE processing. If the grant type is not in the list, the
+// request is rejected with unsupported_grant_type.
+//
+// When not implemented, all grant types enabled at the server level are allowed.
+//
+// Security considerations:
+//   - Public clients should only allow authorization_code (with PKCE)
+//   - Confidential clients can additionally use client_credentials
+//   - Machine-to-machine clients can use client_credentials and jwt-bearer
+//   - Device flow clients can use device_code
+type GrantTypeClient interface {
+	AllowedGrantTypes() []string
+}
+
+// JWTAccessTokenSigningClient is optionally implemented by Client to specify
+// the signing algorithm for JWT-format access tokens.
+//
+// This is the kexcore-oidc equivalent of Casdoor's "Token签名算法" setting
+// for access tokens in JWT format.
+//
+// When not implemented, the signing algorithm is determined by the server's
+// KeyStore (typically RS256 or ES256).
+//
+// The returned algorithm MUST be one of the server's supported algorithms.
+// If the algorithm is not supported, the token plugin falls back to the
+// server's default.
+type JWTAccessTokenSigningClient interface {
+	AccessTokenSigningAlgorithm() string
 }

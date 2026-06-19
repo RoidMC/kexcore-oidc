@@ -180,12 +180,25 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userInfo := new(protocol.UserInfo)
-	if err := p.store.SetUserinfoFromToken(r.Context(), userInfo, tokenID, subject, r.Header.Get("Origin")); err != nil {
-		slog.Debug("userinfo SetUserinfoFromToken FAILED", "tokenID", tokenID, "subject", subject, "error", err)
-		shared.WriteError(w, r, shared.NewStatusError(protocol.ErrInvalidRequest().WithDescription("invalid access token"), http.StatusUnauthorized), nil)
-		return
+
+	// Check if the storage implements UserinfoFromRequestProvider for richer
+	// per-request claims (Zitadel's CanSetUserinfoFromRequest equivalent).
+	// When available, this takes priority over SetUserinfoFromToken.
+	if ufrProvider, ok := p.store.(storm.UserinfoFromRequestProvider); ok {
+		if err := ufrProvider.SetUserinfoFromRequest(r.Context(), userInfo, tokenID, subject, r.Header.Get("Origin"), nil); err != nil {
+			slog.Debug("userinfo SetUserinfoFromRequest FAILED", "tokenID", tokenID, "subject", subject, "error", err)
+			shared.WriteError(w, r, shared.NewStatusError(protocol.ErrInvalidRequest().WithDescription("invalid access token"), http.StatusUnauthorized), nil)
+			return
+		}
+		slog.Debug("userinfo SetUserinfoFromRequest PASSED", "tokenID", tokenID, "subject", subject, "sub", userInfo.Subject)
+	} else {
+		if err := p.store.SetUserinfoFromToken(r.Context(), userInfo, tokenID, subject, r.Header.Get("Origin")); err != nil {
+			slog.Debug("userinfo SetUserinfoFromToken FAILED", "tokenID", tokenID, "subject", subject, "error", err)
+			shared.WriteError(w, r, shared.NewStatusError(protocol.ErrInvalidRequest().WithDescription("invalid access token"), http.StatusUnauthorized), nil)
+			return
+		}
+		slog.Debug("userinfo SetUserinfoFromToken PASSED", "tokenID", tokenID, "subject", subject, "sub", userInfo.Subject)
 	}
-	slog.Debug("userinfo SetUserinfoFromToken PASSED", "tokenID", tokenID, "subject", subject, "sub", userInfo.Subject)
 
 	// OIDC Core §5.3.2: response MUST contain the "sub" claim
 	if userInfo.Subject == "" {

@@ -91,10 +91,7 @@ func validateEndSessionRequest(ctx context.Context, req *protocol.EndSessionRequ
 // has been registered by the RP. If not registered, the OP MUST NOT redirect to it.
 // Returns the validated URI or empty string if validation fails.
 func validatePostLogoutRedirectURI(client storm.Client, uri string) string {
-	type postLogoutRedirectURIsProvider interface {
-		PostLogoutRedirectURIs() []string
-	}
-	if p, ok := client.(postLogoutRedirectURIsProvider); ok {
+	if p, ok := client.(storm.PostLogoutRedirectURIClient); ok {
 		for _, u := range p.PostLogoutRedirectURIs() {
 			if u == uri {
 				return uri

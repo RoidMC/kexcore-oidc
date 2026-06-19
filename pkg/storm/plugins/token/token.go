@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -256,6 +257,25 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	if grantType == "" {
 		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("grant_type is missing"))
 		return
+	}
+
+	// Per-client grant type restriction (GrantTypeClient).
+	// If the client implements GrantTypeClient, check that the requested
+	// grant_type is in the allowed list before processing.
+	if client := shared.AuthenticatedClientFromContext(r.Context()); client != nil {
+		if gtc, ok := client.(storm.GrantTypeClient); ok {
+			allowed := false
+			for _, gt := range gtc.AllowedGrantTypes() {
+				if gt == grantType {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				tokenError(w, r, protocol.ErrUnsupportedGrantType().WithDescription("grant_type %s is not allowed for this client", grantType))
+				return
+			}
+		}
 	}
 
 	switch protocol.GrantType(grantType) {
@@ -738,6 +758,18 @@ func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("subject_token_type missing"))
 		return
 	}
+	if !req.SubjectTokenType.IsSupported() {
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("subject_token_type is not supported"))
+		return
+	}
+	if req.ActorTokenType != "" && !req.ActorTokenType.IsSupported() {
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("actor_token_type is not supported"))
+		return
+	}
+	if req.RequestedTokenType != "" && !req.RequestedTokenType.IsSupported() {
+		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("requested_token_type is not supported"))
+		return
+	}
 
 	clientID, clientSecret := "", ""
 	if id, secret, ok := r.BasicAuth(); ok {
@@ -765,10 +797,27 @@ func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subject, subjectTokenID, err := p.resolveExchangeToken(r.Context(), req.SubjectToken, req.SubjectTokenType)
+	// Resolve subject token (supports AT, RT, ID Token, and external tokens)
+	subject, subjectTokenID, subjectClaims, err := p.resolveExchangeToken(r.Context(), req.SubjectToken, req.SubjectTokenType)
 	if err != nil {
 		tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("subject_token is invalid").WithParent(err))
 		return
+	}
+
+	// Resolve actor token if provided (RFC 8693 §2.1)
+	var actor, actorTokenID string
+	var actorClaims map[string]any
+	if req.ActorToken != "" {
+		actorTokenType := req.ActorTokenType
+		// Default to access_token type if not specified (RFC 8693 §2.1)
+		if actorTokenType == "" {
+			actorTokenType = protocol.AccessTokenType
+		}
+		actor, actorTokenID, actorClaims, err = p.resolveExchangeActorToken(r.Context(), req.ActorToken, actorTokenType)
+		if err != nil {
+			tokenError(w, r, protocol.ErrInvalidRequest().WithDescription("actor_token is invalid").WithParent(err))
+			return
+		}
 	}
 
 	teStore, ok := p.tokenStore.(storm.TokenExchangeStore)
@@ -777,12 +826,23 @@ func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actorTokenType := req.ActorTokenType
+	if actorTokenType == "" && req.ActorToken != "" {
+		actorTokenType = protocol.AccessTokenType
+	}
+
 	teReq := &tokenExchangeRequest{
 		subject:               subject,
 		subjectTokenIDOrToken: subjectTokenID,
 		subjectTokenType:      req.SubjectTokenType,
+		subjectTokenClaims:    subjectClaims,
+		actor:                 actor,
+		actorTokenIDOrToken:   actorTokenID,
+		actorTokenType:        actorTokenType,
+		actorTokenClaims:      actorClaims,
 		clientID:              client.GetID(),
 		audience:              req.Audience,
+		resources:             req.Resource,
 		scopes:                req.Scopes,
 		requestedTokenType:    req.RequestedTokenType,
 	}
@@ -798,40 +858,138 @@ func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 
 	_ = teStore.CreateTokenExchangeRequest(r.Context(), teReq)
 
-	accessToken, _, _, validity, err := p.createAccessToken(r.Context(), teReq, client, false, "", nil)
-	if err != nil {
-		tokenError(w, r, protocol.ErrServerError().WithParent(err))
-		return
-	}
+	// Build response based on requested_token_type (RFC 8693 §2.2.1)
+	switch teReq.requestedTokenType {
+	case protocol.IDTokenType:
+		// Issue an ID token — token_type is "N_A" per RFC 8693 §2.2.1
+		idToken, err := p.createIDToken(r.Context(), teReq, client, "", "")
+		if err != nil {
+			tokenError(w, r, protocol.ErrServerError().WithParent(err))
+			return
+		}
+		resp := &protocol.TokenExchangeResponse{
+			IDToken:         idToken,
+			IssuedTokenType: protocol.IDTokenType,
+			TokenType:       "N_A",
+			Scopes:          teReq.scopes,
+		}
+		p.writeTokenResponse(w, r, resp)
 
-	resp := &protocol.TokenExchangeResponse{
-		AccessToken:     accessToken,
-		IssuedTokenType: teReq.requestedTokenType,
-		TokenType:       protocol.BearerToken,
-		ExpiresIn:       uint64(validity.Seconds()),
-		Scopes:          teReq.scopes,
+	default:
+		// AccessTokenType or RefreshTokenType — issue an access token
+		accessToken, _, _, validity, err := p.createAccessToken(r.Context(), teReq, client, false, "", nil)
+		if err != nil {
+			tokenError(w, r, protocol.ErrServerError().WithParent(err))
+			return
+		}
+		resp := &protocol.TokenExchangeResponse{
+			AccessToken:     accessToken,
+			IssuedTokenType: teReq.requestedTokenType,
+			TokenType:       protocol.BearerToken,
+			ExpiresIn:       uint64(validity.Seconds()),
+			Scopes:          teReq.scopes,
+		}
+		p.writeTokenResponse(w, r, resp)
 	}
-
-	p.writeTokenResponse(w, r, resp)
 }
 
-// resolveExchangeToken resolves a subject_token to (subject, tokenIDOrToken).
-func (p *Plugin) resolveExchangeToken(ctx context.Context, token string, tokenType protocol.TokenType) (subject, tokenIDOrToken string, err error) {
+// resolveExchangeToken resolves a subject_token or actor_token to
+// (subject, tokenIDOrToken, claims, err).
+//
+// Supports access tokens, refresh tokens, ID tokens (including expired ones),
+// and falls back to TokenExchangeExternalVerifierStorage for third-party tokens.
+func (p *Plugin) resolveExchangeToken(ctx context.Context, token string, tokenType protocol.TokenType) (subject, tokenIDOrToken string, claims map[string]any, err error) {
 	switch tokenType {
 	case protocol.RefreshTokenType:
 		tokenRequest, err := p.tokenStore.TokenRequestByRefreshToken(ctx, token)
 		if err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
-		return tokenRequest.GetSubject(), token, nil
+		return tokenRequest.GetSubject(), token, nil, nil
+
 	case protocol.AccessTokenType:
 		tokenID, subject, ok := storm.ResolveToken(ctx, p.crypto, p.keyStore, shared.IssuerFromContext(ctx), token)
 		if !ok {
-			return "", "", fmt.Errorf("invalid access token")
+			// Fallback: try external verifier for JWT access tokens from other issuers
+			if ev, ok := p.tokenStore.(storm.TokenExchangeExternalVerifierStorage); ok {
+				return ev.VerifyExchangeSubjectToken(ctx, token, tokenType)
+			}
+			return "", "", nil, fmt.Errorf("invalid access token")
 		}
-		return subject, tokenID, nil
+		return subject, tokenID, nil, nil
+
+	case protocol.IDTokenType:
+		v := &protocol.IDTokenHintVerifier{
+			Issuer:   shared.IssuerFromContext(ctx),
+			KeyStore: p.keyStore,
+		}
+		idTokenClaims, err := protocol.VerifyIDTokenHint(ctx, token, v)
+		if err != nil {
+			// Expired ID tokens are still usable for exchange — the claims can
+			// be trusted for identity purposes if signature validation passes.
+			var expired *protocol.IDTokenHintExpiredError
+			if !errors.As(err, &expired) {
+				// Not just expired — try external verifier as last resort
+				if ev, ok := p.tokenStore.(storm.TokenExchangeExternalVerifierStorage); ok {
+					return ev.VerifyExchangeSubjectToken(ctx, token, tokenType)
+				}
+				return "", "", nil, fmt.Errorf("invalid id_token: %w", err)
+			}
+		}
+		return idTokenClaims.Subject, token, idTokenClaims.Claims, nil
+
 	default:
-		return "", "", fmt.Errorf("unsupported subject_token_type: %s", tokenType)
+		// Unknown token type (e.g. SAML, JWT): try external verifier
+		if ev, ok := p.tokenStore.(storm.TokenExchangeExternalVerifierStorage); ok {
+			return ev.VerifyExchangeSubjectToken(ctx, token, tokenType)
+		}
+		return "", "", nil, fmt.Errorf("unsupported subject_token_type: %s", tokenType)
+	}
+}
+
+// resolveExchangeActorToken resolves an actor_token to (actor, tokenIDOrToken, claims, err).
+// Uses the same logic as resolveExchangeToken but falls back to VerifyExchangeActorToken.
+func (p *Plugin) resolveExchangeActorToken(ctx context.Context, token string, tokenType protocol.TokenType) (actor, tokenIDOrToken string, claims map[string]any, err error) {
+	switch tokenType {
+	case protocol.RefreshTokenType:
+		tokenRequest, err := p.tokenStore.TokenRequestByRefreshToken(ctx, token)
+		if err != nil {
+			return "", "", nil, err
+		}
+		return tokenRequest.GetSubject(), token, nil, nil
+
+	case protocol.AccessTokenType:
+		tokenID, subject, ok := storm.ResolveToken(ctx, p.crypto, p.keyStore, shared.IssuerFromContext(ctx), token)
+		if !ok {
+			if ev, ok := p.tokenStore.(storm.TokenExchangeExternalVerifierStorage); ok {
+				return ev.VerifyExchangeActorToken(ctx, token, tokenType)
+			}
+			return "", "", nil, fmt.Errorf("invalid access token")
+		}
+		return subject, tokenID, nil, nil
+
+	case protocol.IDTokenType:
+		v := &protocol.IDTokenHintVerifier{
+			Issuer:   shared.IssuerFromContext(ctx),
+			KeyStore: p.keyStore,
+		}
+		idTokenClaims, err := protocol.VerifyIDTokenHint(ctx, token, v)
+		if err != nil {
+			var expired *protocol.IDTokenHintExpiredError
+			if !errors.As(err, &expired) {
+				if ev, ok := p.tokenStore.(storm.TokenExchangeExternalVerifierStorage); ok {
+					return ev.VerifyExchangeActorToken(ctx, token, tokenType)
+				}
+				return "", "", nil, fmt.Errorf("invalid id_token: %w", err)
+			}
+		}
+		return idTokenClaims.Subject, token, idTokenClaims.Claims, nil
+
+	default:
+		if ev, ok := p.tokenStore.(storm.TokenExchangeExternalVerifierStorage); ok {
+			return ev.VerifyExchangeActorToken(ctx, token, tokenType)
+		}
+		return "", "", nil, fmt.Errorf("unsupported actor_token_type: %s", tokenType)
 	}
 }
 

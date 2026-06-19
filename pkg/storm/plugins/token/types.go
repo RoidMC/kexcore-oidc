@@ -93,19 +93,21 @@ type tokenExchangeRequest struct {
 	subject               string
 	subjectTokenIDOrToken string
 	subjectTokenType      protocol.TokenType
+	subjectTokenClaims    map[string]any
 	actorTokenIDOrToken   string
 	actorTokenType        protocol.TokenType
 	actor                 string
+	actorTokenClaims      map[string]any
 	clientID              string
 	audience              []string
+	resources             []string
 	scopes                []string
 	requestedTokenType    protocol.TokenType
 }
 
-func (r *tokenExchangeRequest) GetSubject() string    { return r.subject }
-func (r *tokenExchangeRequest) GetAudience() []string { return r.audience }
-func (r *tokenExchangeRequest) GetClientID() string   { return r.clientID }
-func (r *tokenExchangeRequest) GetScopes() []string   { return r.scopes }
+func (r *tokenExchangeRequest) GetSubject() string  { return r.subject }
+func (r *tokenExchangeRequest) GetClientID() string { return r.clientID }
+func (r *tokenExchangeRequest) GetScopes() []string { return r.scopes }
 func (r *tokenExchangeRequest) GetRequestedTokenType() protocol.TokenType {
 	return r.requestedTokenType
 }
@@ -118,6 +120,47 @@ func (r *tokenExchangeRequest) GetActorTokenType() protocol.TokenType {
 func (r *tokenExchangeRequest) SetCurrentScopes(scopes []string) { r.scopes = scopes }
 func (r *tokenExchangeRequest) SetRequestedTokenType(tt protocol.TokenType) {
 	r.requestedTokenType = tt
+}
+
+// GetActor returns the actor's subject identifier (RFC 8693 §2.1).
+// Empty if no actor_token was provided.
+func (r *tokenExchangeRequest) GetActor() string { return r.actor }
+
+// GetActorTokenIDOrToken returns the actor token's storage ID or the raw token.
+// Empty if no actor_token was provided.
+func (r *tokenExchangeRequest) GetActorTokenIDOrToken() string { return r.actorTokenIDOrToken }
+
+// GetSubjectTokenIDOrToken returns the subject token's storage ID or the raw token.
+func (r *tokenExchangeRequest) GetSubjectTokenIDOrToken() string { return r.subjectTokenIDOrToken }
+
+// GetSubjectTokenClaims returns private claims extracted from the subject token.
+// May be nil for opaque tokens.
+func (r *tokenExchangeRequest) GetSubjectTokenClaims() map[string]any { return r.subjectTokenClaims }
+
+// GetActorTokenClaims returns private claims extracted from the actor token.
+// May be nil if no actor_token was provided or for opaque tokens.
+func (r *tokenExchangeRequest) GetActorTokenClaims() map[string]any { return r.actorTokenClaims }
+
+// GetAudience returns the requested audience, merged with RFC 8707 resource indicators.
+func (r *tokenExchangeRequest) GetAudience() []string {
+	if len(r.resources) == 0 {
+		return r.audience
+	}
+	seen := make(map[string]bool, len(r.audience)+len(r.resources))
+	merged := make([]string, 0, len(r.audience)+len(r.resources))
+	for _, v := range r.audience {
+		if !seen[v] {
+			seen[v] = true
+			merged = append(merged, v)
+		}
+	}
+	for _, v := range r.resources {
+		if !seen[v] {
+			seen[v] = true
+			merged = append(merged, v)
+		}
+	}
+	return merged
 }
 
 // deviceTokenRequest implements storm.TokenRequest for device_code grant.
