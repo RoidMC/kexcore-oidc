@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/pkg/protocol"
@@ -15,24 +16,27 @@ const validIDTokenLifetime = 1 * time.Hour
 
 // Plugin implements the OIDC Token endpoint.
 type Plugin struct {
-	tokenStore          storm.TokenStore
-	clientStore         storm.ClientStore
-	authStore           storm.AuthStore
-	deviceAuthStore     storm.DeviceAuthStore       // optional, for device_code grant
-	cibaStore           storm.CIBAStore             // optional, for ciba grant
-	pairwiseTransformer storm.PairwiseTransformer   // optional, for pairwise sub
-	sessionRecorder     storm.ClientSessionRecorder // optional, for back-channel logout tracking
-	crypto              storm.UniCrypto
-	keyStore            storm.KeyStore
-	decoder             *protocol.Decoder
-	logger              *slog.Logger
-	tracer              trace.Tracer
-	devicePollInterval  time.Duration   // default polling interval for device_code grant
-	requireDPoP         bool            // FAPI2: require DPoP proof for all token requests
-	requireMtls         bool            // FAPI2: require mTLS client certificate for all token requests
-	allowPrivateIPs     bool            // allow private IPs in jwks_uri fetches (testing only)
-	skipTLSCertVerify   bool            // skip TLS cert verification on outbound HTTP (testing only)
-	dpopNonceSender     DPoPNonceSender // optional, set via SetDPoPNonceSender
+	tokenStore             storm.TokenStore
+	clientStore            storm.ClientStore
+	authStore              storm.AuthStore
+	deviceAuthStore        storm.DeviceAuthStore       // optional, for device_code grant
+	cibaStore              storm.CIBAStore             // optional, for ciba grant
+	pairwiseTransformer    storm.PairwiseTransformer   // optional, for pairwise sub
+	sessionRecorder        storm.ClientSessionRecorder // optional, for back-channel logout tracking
+	crypto                 storm.UniCrypto
+	keyStore               storm.KeyStore
+	decoder                *protocol.Decoder
+	logger                 *slog.Logger
+	tracer                 trace.Tracer
+	auditLogger            storm.AuditLogger // optional, for structured audit events
+	devicePollInterval     time.Duration     // default polling interval for device_code grant
+	requireDPoP            bool              // FAPI2: require DPoP proof for all token requests
+	requireMtls            bool              // FAPI2: require mTLS client certificate for all token requests
+	allowPrivateIPs        bool              // allow private IPs in jwks_uri fetches (testing only)
+	skipTLSCertVerify      bool              // skip TLS cert verification on outbound HTTP (testing only)
+	dpopNonceSender        DPoPNonceSender   // optional, set via SetDPoPNonceSender
+	invalidateRefreshOnUse bool              // RFC 6749 §10.4: invalidate old RT on refresh
+	clientLimits           sync.Map          // map[string]*clientBucket — per-client rate limiting
 }
 
 // Config holds the dependencies for the Token plugin.
@@ -45,6 +49,9 @@ type Config struct {
 	KeyStore    storm.KeyStore
 	Decoder     *protocol.Decoder
 	Logger      *slog.Logger
+	// AuditLogger receives structured audit events for token issuance and auth failures.
+	// When nil, events are logged via slog as a fallback.
+	AuditLogger storm.AuditLogger
 	// DevicePollInterval is the default polling interval for device_code grant (default: 5s).
 	DevicePollInterval time.Duration
 	// RequireDPoP when true requires a valid DPoP proof for all token requests.
@@ -61,6 +68,12 @@ type Config struct {
 	SkipTLSCertVerify bool
 	// SessionRecorder records client sessions for back-channel logout (optional).
 	SessionRecorder storm.ClientSessionRecorder
+	// InvalidateRefreshOnUse when true passes the old refresh token to
+	// CreateAccessAndRefreshTokens so the storage can atomically invalidate it.
+	// This is required by RFC 6749 §10.4 (refresh token rotation) and prevents
+	// stolen refresh tokens from being reused. Default: false for backward
+	// compatibility with conformance tests. Enable for production deployments.
+	InvalidateRefreshOnUse bool
 }
 
 // DPoPNonceSender is optionally implemented by a plugin to provide

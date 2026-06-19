@@ -115,6 +115,15 @@ func (p *Plugin) handleDeviceAuthorization(w http.ResponseWriter, r *http.Reques
 		Interval:                int(p.interval.Seconds()),
 	}
 
+	// Per-client poll interval override
+	if client != nil {
+		if dpic, ok := client.(storm.DevicePollIntervalClient); ok {
+			if d := dpic.DevicePollInterval(); d > 0 {
+				resp.Interval = int(d.Seconds())
+			}
+		}
+	}
+
 	shared.JSONResponse(w, resp, http.StatusOK)
 }
 

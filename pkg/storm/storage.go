@@ -167,6 +167,73 @@ type FAPIProfileProvider interface {
 	FAPIProfile() bool
 }
 
+// AccessTokenLifetimeProvider is optionally implemented by Client to control
+// the lifetime of issued access tokens.
+//
+// When not implemented, the TokenStore decides the default lifetime.
+// This is useful for multi-tenant IAM where different clients need different
+// token lifetimes (e.g., high-security clients with short-lived tokens).
+type AccessTokenLifetimeProvider interface {
+	AccessTokenLifetime() time.Duration
+}
+
+// RateLimitClient is optionally implemented by Client to enforce per-client
+// rate limiting on the token endpoint. When implemented, the token plugin
+// checks the client's request rate before processing.
+//
+// MaxRequests: maximum number of token requests allowed within Window.
+// Window: the sliding window duration (e.g. 1*time.Minute).
+// If Window is zero, a default of 1 minute is used.
+// If MaxRequests is zero or negative, no per-client rate limiting is applied.
+type RateLimitClient interface {
+	MaxTokenRequests() int
+	TokenRequestWindow() time.Duration
+}
+
+// IDTokenLifetimeClient is optionally implemented by Client to control
+// the lifetime of issued ID tokens. When not implemented, the plugin
+// uses its default (typically 1 hour).
+type IDTokenLifetimeClient interface {
+	IDTokenLifetime() time.Duration
+}
+
+// DevicePollIntervalClient is optionally implemented by Client to override
+// the device code / CIBA polling interval. When not implemented, the plugin
+// uses its configured default (typically 5 seconds).
+type DevicePollIntervalClient interface {
+	DevicePollInterval() time.Duration
+}
+
+// PARLifetimeClient is optionally implemented by Client to override the
+// pushed authorization request URI lifetime. When not implemented, the
+// plugin uses its configured default (typically 90 seconds).
+type PARLifetimeClient interface {
+	PARLifetime() time.Duration
+}
+
+// AuditEvent represents a security-relevant event for audit logging.
+// Storage implementations that support audit logging should implement AuditLogger.
+type AuditEvent struct {
+	Timestamp  time.Time      `json:"timestamp"`
+	EventType  string         `json:"event_type"` // e.g. "token.issued", "auth.failed", "auth.success"
+	ClientID   string         `json:"client_id"`
+	Subject    string         `json:"subject"`
+	GrantType  string         `json:"grant_type"`
+	RemoteAddr string         `json:"remote_addr"`
+	Detail     map[string]any `json:"detail,omitempty"`
+}
+
+// AuditLogger is optionally implemented by Storage to receive structured
+// audit events for security-relevant operations (token issuance, authentication
+// failures, etc.). Implementations should persist these events for compliance
+// and incident response.
+//
+// When not implemented, audit events are logged via slog at INFO/WARN level
+// as a fallback.
+type AuditLogger interface {
+	WriteAuditEvent(ctx context.Context, event AuditEvent) error
+}
+
 // KeyStore provides cryptographic key access.
 // It extends protocol.KeyStore with SigningKey for OP-side token signing.
 //

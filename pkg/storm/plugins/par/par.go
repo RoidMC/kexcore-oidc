@@ -195,7 +195,15 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		slog.String("redirect_uri", authReq.RedirectURI),
 	)
 
-	requestURI, err := p.store.StorePushedAuthRequest(r.Context(), client.GetID(), authReq, p.lifetime)
+	// Per-client PAR lifetime override
+	parLifetime := p.lifetime
+	if plc, ok := client.(storm.PARLifetimeClient); ok {
+		if d := plc.PARLifetime(); d > 0 {
+			parLifetime = d
+		}
+	}
+
+	requestURI, err := p.store.StorePushedAuthRequest(r.Context(), client.GetID(), authReq, parLifetime)
 	if err != nil {
 		shared.WriteError(w, r, protocol.DefaultToServerError(err, "error storing pushed auth request"), nil)
 		return

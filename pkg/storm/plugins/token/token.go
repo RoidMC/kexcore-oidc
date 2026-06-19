@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -75,18 +76,20 @@ func NewWithConfig(cfg Config) *Plugin {
 		cfg.DevicePollInterval = 5 * time.Second
 	}
 	return &Plugin{
-		tokenStore:         cfg.TokenStore,
-		clientStore:        cfg.ClientStore,
-		authStore:          cfg.AuthStore,
-		cibaStore:          cfg.CIBAStore,
-		crypto:             cfg.Crypto,
-		keyStore:           cfg.KeyStore,
-		decoder:            cfg.Decoder,
-		logger:             cfg.Logger,
-		devicePollInterval: cfg.DevicePollInterval,
-		requireDPoP:        cfg.RequireDPoP,
-		requireMtls:        cfg.RequireMtls,
-		sessionRecorder:    cfg.SessionRecorder,
+		tokenStore:             cfg.TokenStore,
+		clientStore:            cfg.ClientStore,
+		authStore:              cfg.AuthStore,
+		cibaStore:              cfg.CIBAStore,
+		crypto:                 cfg.Crypto,
+		keyStore:               cfg.KeyStore,
+		decoder:                cfg.Decoder,
+		logger:                 cfg.Logger,
+		auditLogger:            cfg.AuditLogger,
+		devicePollInterval:     cfg.DevicePollInterval,
+		requireDPoP:            cfg.RequireDPoP,
+		requireMtls:            cfg.RequireMtls,
+		sessionRecorder:        cfg.SessionRecorder,
+		invalidateRefreshOnUse: cfg.InvalidateRefreshOnUse,
 	}
 }
 
@@ -325,11 +328,19 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 
 	client, err := p.authenticateClient(r, tokenReq.ClientID, tokenReq.ClientSecret)
 	if err != nil {
+		p.auditEvent(r, "auth.failed", tokenReq.ClientID, "", string(protocol.GrantTypeCode), map[string]any{"error": "client_auth_failed"})
+		tokenError(w, r, err)
+		return
+	}
+
+	// Per-client rate limiting (after auth so we know the client identity)
+	if err := p.checkClientRateLimit(client); err != nil {
 		tokenError(w, r, err)
 		return
 	}
 
 	if client.GetID() != authReq.GetClientID() {
+		p.auditEvent(r, "auth.failed", client.GetID(), authReq.GetSubject(), string(protocol.GrantTypeCode), map[string]any{"error": "client_id_mismatch", "expected": authReq.GetClientID()})
 		tokenError(w, r, protocol.ErrInvalidGrant())
 		return
 	}
@@ -387,6 +398,7 @@ func (p *Plugin) handleAuthorizationCode(w http.ResponseWriter, r *http.Request)
 
 	_ = p.authStore.DeleteAuthRequest(r.Context(), authReq.GetID())
 
+	p.auditEvent(r, "token.issued", client.GetID(), authReq.GetSubject(), string(protocol.GrantTypeCode), nil)
 	p.writeTokenResponse(w, r, resp)
 }
 
@@ -458,6 +470,12 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-client rate limiting
+	if err := p.checkClientRateLimit(client); err != nil {
+		tokenError(w, r, err)
+		return
+	}
+
 	if !validateGrantType(client, protocol.GrantTypeRefreshToken) {
 		tokenError(w, r, protocol.ErrUnauthorizedClient())
 		return
@@ -489,15 +507,24 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// RFC 6749 §10.4: refresh token rotation — invalidate old RT on use.
+	// When invalidateRefreshOnUse is enabled, pass the old RT to the storage
+	// so it can atomically revoke it while issuing new tokens.
+	oldRefreshToken := ""
+	if p.invalidateRefreshOnUse {
+		oldRefreshToken = tokenReq.RefreshToken
+	}
+
 	resp, _, err := p.createTokenResponseFromTokenRequest(r.Context(), refreshReq, client, tokenResponseOpts{
 		IssueRefresh:        true,
-		CurrentRefreshToken: "", // Don't pass old RT — OIDC conformance tests may not parse the new one from the response.
+		CurrentRefreshToken: oldRefreshToken,
 	})
 	if err != nil {
 		tokenError(w, r, err)
 		return
 	}
 
+	p.auditEvent(r, "token.issued", client.GetID(), refreshReq.GetSubject(), string(protocol.GrantTypeRefreshToken), nil)
 	p.writeTokenResponse(w, r, resp)
 }
 
@@ -512,11 +539,19 @@ func (p *Plugin) handleClientCredentials(w http.ResponseWriter, r *http.Request)
 
 	client, err := p.authenticateClient(r, tokenReq.ClientID, tokenReq.ClientSecret)
 	if err != nil {
+		p.auditEvent(r, "auth.failed", tokenReq.ClientID, "", string(protocol.GrantTypeClientCredentials), map[string]any{"error": "client_auth_failed"})
+		tokenError(w, r, err)
+		return
+	}
+
+	// Per-client rate limiting
+	if err := p.checkClientRateLimit(client); err != nil {
 		tokenError(w, r, err)
 		return
 	}
 
 	if !validateGrantType(client, protocol.GrantTypeClientCredentials) {
+		p.auditEvent(r, "auth.failed", client.GetID(), "", string(protocol.GrantTypeClientCredentials), map[string]any{"error": "grant_type_not_allowed"})
 		tokenError(w, r, protocol.ErrUnauthorizedClient())
 		return
 	}
@@ -539,6 +574,7 @@ func (p *Plugin) handleClientCredentials(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	p.auditEvent(r, "token.issued", client.GetID(), "", string(protocol.GrantTypeClientCredentials), nil)
 	p.writeTokenResponse(w, r, resp)
 }
 
@@ -1329,12 +1365,22 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 	}
 
 	now := time.Now().UTC()
+
+	// Per-client ID token lifetime: use client's configured value if available,
+	// otherwise fall back to the server default.
+	idTokenLifetime := validIDTokenLifetime
+	if lc, ok := client.(storm.IDTokenLifetimeClient); ok {
+		if d := lc.IDTokenLifetime(); d > 0 {
+			idTokenLifetime = d
+		}
+	}
+
 	claims := map[string]any{
 		"iss": shared.IssuerFromContext(ctx),
 		"sub": request.GetSubject(),
 		"aud": request.GetClientID(),
 		"iat": now.Unix(),
-		"exp": now.Add(validIDTokenLifetime).Unix(),
+		"exp": now.Add(idTokenLifetime).Unix(),
 	}
 	if nonce := getNonce(request); nonce != "" {
 		claims["nonce"] = nonce
@@ -1400,6 +1446,93 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 	}
 
 	return signed, nil
+}
+
+// auditEvent emits a structured audit event. If an AuditLogger is configured,
+// the event is persisted via the storage. Otherwise, it falls back to slog.
+func (p *Plugin) auditEvent(r *http.Request, eventType, clientID, subject, grantType string, detail map[string]any) {
+	event := storm.AuditEvent{
+		Timestamp:  time.Now().UTC(),
+		EventType:  eventType,
+		ClientID:   clientID,
+		Subject:    subject,
+		GrantType:  grantType,
+		RemoteAddr: r.RemoteAddr,
+		Detail:     detail,
+	}
+
+	if p.auditLogger != nil {
+		if err := p.auditLogger.WriteAuditEvent(r.Context(), event); err != nil {
+			p.logger.Warn("failed to write audit event", "error", err, "event_type", eventType)
+		}
+		return
+	}
+
+	// Fallback: structured slog
+	p.logger.Info("audit",
+		"event_type", event.EventType,
+		"client_id", event.ClientID,
+		"subject", event.Subject,
+		"grant_type", event.GrantType,
+		"remote_addr", event.RemoteAddr,
+	)
+}
+
+// clientBucket tracks request timestamps for per-client rate limiting.
+type clientBucket struct {
+	mu         sync.Mutex
+	timestamps []time.Time
+}
+
+// checkClientRateLimit enforces per-client rate limiting on the token endpoint.
+// If the client implements storm.RateLimitClient, the plugin tracks request
+// timestamps in a sliding window and rejects requests that exceed the limit.
+// Returns nil if the request is allowed, or protocol.ErrSlowDown if rate-limited.
+func (p *Plugin) checkClientRateLimit(client storm.Client) error {
+	rl, ok := client.(storm.RateLimitClient)
+	if !ok {
+		return nil
+	}
+
+	maxReqs := rl.MaxTokenRequests()
+	if maxReqs <= 0 {
+		return nil
+	}
+
+	window := rl.TokenRequestWindow()
+	if window <= 0 {
+		window = time.Minute
+	}
+
+	clientID := client.GetID()
+	val, _ := p.clientLimits.LoadOrStore(clientID, &clientBucket{})
+	bucket := val.(*clientBucket)
+
+	bucket.mu.Lock()
+	defer bucket.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-window)
+
+	// Remove expired timestamps
+	valid := bucket.timestamps[:0]
+	for _, ts := range bucket.timestamps {
+		if ts.After(cutoff) {
+			valid = append(valid, ts)
+		}
+	}
+	bucket.timestamps = valid
+
+	if len(bucket.timestamps) >= maxReqs {
+		p.auditEvent(&http.Request{RemoteAddr: ""}, "rate_limited", clientID, "", "", map[string]any{
+			"max_requests": maxReqs,
+			"window":       window.String(),
+		})
+		return protocol.ErrSlowDown().WithDescription("client rate limit exceeded: %d requests per %s", maxReqs, window)
+	}
+
+	bucket.timestamps = append(bucket.timestamps, now)
+	return nil
 }
 
 // createAccessToken creates an access token, optionally with a refresh token.

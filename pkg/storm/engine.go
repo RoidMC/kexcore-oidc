@@ -51,6 +51,7 @@ type Engine struct {
 	requireDPoP       bool              // FAPI 2.0: require DPoP for token requests
 	requireMtls       bool              // FAPI 2.0: require mTLS for token requests
 	parLifetime       time.Duration     // PAR request_uri lifetime (default: 90s)
+	rateLimiter       *RateLimiter      // optional, for token endpoint rate limiting
 }
 
 // DiscoveryConfig holds extra fields injected into the discovery document.
@@ -268,6 +269,20 @@ func WithPARLifetime(d time.Duration) EngineOption {
 	}
 }
 
+// WithRateLimiter enables rate limiting on the engine using an in-memory
+// token bucket limiter. The rate limiter applies to all routes.
+// For production IAM, this prevents brute-force attacks on the token endpoint.
+//
+// Example:
+//
+//	limiter := storm.NewRateLimiter(100, time.Minute) // 100 req/min per IP
+//	engine := storm.New(storage, issuerFn, storm.WithRateLimiter(limiter))
+func WithRateLimiter(rl *RateLimiter) EngineOption {
+	return func(e *Engine) {
+		e.rateLimiter = rl
+	}
+}
+
 // New creates a new Engine with the given storage and issuer function.
 //
 // The issuerFn is used to inject the issuer into the request context
@@ -443,6 +458,11 @@ func (e *Engine) Build() http.Handler {
 	var h http.Handler = e.router
 	if e.corsOpts != nil {
 		h = cors.New(*e.corsOpts).Handler(h)
+	}
+	// Rate limiting middleware (applied early, before expensive processing)
+	if e.rateLimiter != nil {
+		h = e.rateLimiter.Middleware(h)
+		e.logger.Info("rate limiting enabled")
 	}
 	h = e.otelMiddleware(h)
 	// Auto-apply middleware from plugins that implement MiddlewareProvider.

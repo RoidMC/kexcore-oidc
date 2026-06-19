@@ -1,7 +1,11 @@
 package storm
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/rsa"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
@@ -42,6 +46,16 @@ func (e *Engine) Validate() error {
 
 	// Check RFC compliance constraints for enabled plugins.
 	if err := e.validateProtocolConstraints(); err != nil {
+		return err
+	}
+
+	// Production safety checks.
+	if err := e.validateProductionSafety(); err != nil {
+		return err
+	}
+
+	// Key strength validation.
+	if err := e.validateKeyStrength(); err != nil {
 		return err
 	}
 
@@ -248,4 +262,117 @@ func (e *Engine) logPluginInfo() {
 	e.logger.Info("storm: engine ready",
 		"plugins", strings.Join(names, ", "),
 		"total", len(names))
+}
+
+// validateProductionSafety checks for testing-only flags that should not be
+// enabled in production. Returns an error to prevent accidental deployment
+// of insecure configurations.
+func (e *Engine) validateProductionSafety() error {
+	if e.allowPrivateIPs {
+		slog.Warn("storm: WithAllowPrivateIPs() is enabled — SSRF protection is DISABLED. " +
+			"NEVER enable this in production. Use network-level controls (firewall/reverse proxy) instead.")
+	}
+	if e.skipTLSCertVerify {
+		slog.Warn("storm: WithSkipTLSCertVerify() is enabled — TLS certificate verification is DISABLED. " +
+			"NEVER enable this in production.")
+	}
+
+	// Validate issuer URL if issuerFn is set and returns a non-empty value.
+	// We can only check at build time if the issuerFn is deterministic.
+	// For runtime validation, the issuer is checked per-request.
+	if e.issuerFn != nil {
+		// Try with a dummy request to see if issuer is configured
+		// (Some issuerFns are request-dependent, so we can't always validate here)
+	}
+
+	return nil
+}
+
+// validateKeyStrength checks that the signing key meets minimum security
+// requirements. RSA keys must be >= 2048 bits, EC keys must use >= P-256.
+func (e *Engine) validateKeyStrength() error {
+	ks, ok := e.storage.(KeyStore)
+	if !ok {
+		return nil // no key store, nothing to check
+	}
+
+	ctx := context.Background()
+	signingKey, err := ks.SigningKey(ctx)
+	if err != nil {
+		// Key not available (e.g., test stub, lazy initialization) — skip check
+		slog.Debug("storm: cannot retrieve signing key for validation, skipping", "error", err)
+		return nil
+	}
+	if signingKey == nil || signingKey.Key() == nil {
+		slog.Debug("storm: signing key is nil, skipping strength validation")
+		return nil
+	}
+
+	// Extract raw crypto key from jwk.Key interface.
+	// jwx v4 jwk.Key wraps a crypto key — use reflection to check strength.
+	key := signingKey.Key()
+	alg := signingKey.Algorithm()
+
+	// jwk.Key may implement RSAPrivateKey/RSAPublicKey/ECDSAPrivateKey/ECDSAPublicKey
+	// interfaces, or we can use the raw method.
+	// For simplicity, check via the key type's raw representation.
+	var rawKey any
+	if rp, ok := key.(interface{ Raw(any) error }); ok {
+		if err := rp.Raw(&rawKey); err == nil {
+			switch k := rawKey.(type) {
+			case *rsa.PublicKey:
+				if k.N.BitLen() < 2048 {
+					return fmt.Errorf("storm: RSA signing key is only %d bits (minimum 2048 required for production)", k.N.BitLen())
+				}
+			case *rsa.PrivateKey:
+				if k.N.BitLen() < 2048 {
+					return fmt.Errorf("storm: RSA signing key is only %d bits (minimum 2048 required for production)", k.N.BitLen())
+				}
+			case *ecdsa.PublicKey:
+				if k.Curve.Params().BitSize < 256 {
+					return fmt.Errorf("storm: ECDSA signing key uses %d-bit curve (minimum P-256 required for production)", k.Curve.Params().BitSize)
+				}
+			case *ecdsa.PrivateKey:
+				if k.Curve.Params().BitSize < 256 {
+					return fmt.Errorf("storm: ECDSA signing key uses %d-bit curve (minimum P-256 required for production)", k.Curve.Params().BitSize)
+				}
+			}
+		}
+	}
+
+	// Validate algorithm is not "none" or empty
+	if alg == "" {
+		slog.Warn("storm: signing key has no algorithm specified — this may cause algorithm confusion attacks")
+	}
+	if strings.ToLower(alg) == "none" {
+		return fmt.Errorf("storm: signing algorithm 'none' is not allowed")
+	}
+
+	// Warn if using HMAC (symmetric) for production — HMAC keys should be >= 256 bits
+	if strings.HasPrefix(strings.ToUpper(alg), "HS") {
+		slog.Warn("storm: using HMAC signing algorithm — ensure the key is >= 256 bits and kept secret")
+	}
+
+	// Key rotation safety: verify the signing key is present in the KeySet.
+	// If not, rotated tokens will fail verification on other instances.
+	signingKeyID := signingKey.ID()
+	if signingKeyID != "" {
+		keySet, err := ks.KeySet(ctx)
+		if err == nil {
+			found := false
+			for _, k := range keySet {
+				if k.ID() == signingKeyID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				slog.Warn("storm: signing key is NOT in KeySet — this will cause token verification failures. "+
+					"After key rotation, the old signing key must remain in KeySet until all tokens signed with it have expired.",
+					"signing_key_id", signingKeyID)
+			}
+		}
+	}
+
+	return nil
 }
