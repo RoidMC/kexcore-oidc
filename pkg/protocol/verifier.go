@@ -366,7 +366,7 @@ func CheckAudienceAny(claims Claims, allowed []string) error {
 			return nil
 		}
 	}
-	slog.Warn("[DEBUG] CheckAudienceAny: audience mismatch", "actual", claims.GetAudience(), "allowed", allowed)
+	slog.Debug("CheckAudienceAny: audience mismatch", "actual", claims.GetAudience(), "allowed", allowed)
 	return fmt.Errorf("%w: Audience must contain one of %v", ErrAudience, allowed)
 }
 

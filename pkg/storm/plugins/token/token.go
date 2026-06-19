@@ -185,7 +185,7 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	if r.TLS != nil {
 		peerCerts = len(r.TLS.PeerCertificates)
 	}
-	slog.Info("[DEBUG] token handleToken",
+	slog.Debug("token handleToken",
 		"grant_type", r.Form.Get("grant_type"),
 		"form_dump", formDump,
 		"assertion_type", r.Form.Get("client_assertion_type"),
@@ -211,17 +211,17 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	if assertionType := r.Form.Get("client_assertion_type"); assertionType == protocol.ClientAssertionTypeJWTAssertion {
 		assertion := r.Form.Get("client_assertion")
 		if assertion == "" {
-			slog.Warn("[DEBUG] token client_assertion missing")
+			slog.Debug("token client_assertion missing")
 			tokenError(w, r, protocol.ErrInvalidClient().WithDescription("client_assertion is missing"))
 			return
 		}
 		client, err := p.authenticatePrivateKeyJWT(r, assertion)
 		if err != nil {
-			slog.Warn("[DEBUG] token authenticatePrivateKeyJWT failed", "error", err)
+			slog.Debug("token authenticatePrivateKeyJWT failed", "error", err)
 			tokenError(w, r, err)
 			return
 		}
-		slog.Info("[DEBUG] token client authenticated via assertion", "client_id", client.GetID())
+		slog.Debug("token client authenticated via assertion", "client_id", client.GetID())
 		r = r.WithContext(shared.ContextWithAuthenticatedClient(r.Context(), client))
 	}
 
@@ -232,7 +232,7 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 		if sc, ok := c.(shared.SenderConstrainingProvider); ok {
 			rd, rm = sc.RequireDPoP(), sc.RequireMtls()
 		}
-		slog.Info("[DEBUG] token handleToken post-auth sender-constraining", "client_id", c.GetID(), "requireDPoP", rd, "requireMtls", rm, "has_dpop_header", r.Header.Get("DPoP") != "", "has_client_cert", shared.ClientCertFromContext(r.Context()) != nil)
+		slog.Debug("token handleToken post-auth sender-constraining", "client_id", c.GetID(), "requireDPoP", rd, "requireMtls", rm, "has_dpop_header", r.Header.Get("DPoP") != "", "has_client_cert", shared.ClientCertFromContext(r.Context()) != nil)
 		if err := shared.ValidateSenderConstraining(c, p.requireDPoP, p.requireMtls, r); err != nil {
 			tokenError(w, r, err)
 			return
@@ -1103,7 +1103,7 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 	// If the client was already authenticated via client_assertion (private_key_jwt),
 	// return it directly — no need to re-authenticate.
 	if c := shared.AuthenticatedClientFromContext(r.Context()); c != nil {
-		slog.Info("[DEBUG] token authenticateClient: using pre-authenticated client", "client_id", c.GetID())
+		slog.Debug("token authenticateClient: using pre-authenticated client", "client_id", c.GetID())
 		return p.clientStore.GetClientByClientID(r.Context(), c.GetID())
 	}
 
@@ -1121,16 +1121,16 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 		}
 	}
 
-	slog.Info("[DEBUG] token authenticateClient", "client_id", clientID, "has_secret", clientSecret != "", "auth_method", "from_context")
+	slog.Debug("token authenticateClient", "client_id", clientID, "has_secret", clientSecret != "", "auth_method", "from_context")
 
 	if clientID == "" {
-		slog.Warn("[DEBUG] token authenticateClient: client_id missing")
+		slog.Debug("token authenticateClient: client_id missing")
 		return nil, protocol.ErrInvalidClient().WithDescription("client_id missing")
 	}
 
 	client, err := p.clientStore.GetClientByClientID(r.Context(), clientID)
 	if err != nil {
-		slog.Warn("[DEBUG] token authenticateClient: GetClientByClientID failed", "client_id", clientID, "error", err)
+		slog.Debug("token authenticateClient: GetClientByClientID failed", "client_id", clientID, "error", err)
 		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
@@ -1149,7 +1149,7 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 		if cert == nil {
 			return nil, protocol.ErrInvalidClient().WithDescription("mTLS client certificate required for sender-constraining")
 		}
-		slog.Info("[DEBUG] token authenticateClient: private_key_jwt client authenticated via assertion + mTLS", "client_id", clientID, "cert_cn", cert.Subject.CommonName)
+		slog.Debug("token authenticateClient: private_key_jwt client authenticated via assertion + mTLS", "client_id", clientID, "cert_cn", cert.Subject.CommonName)
 		if err := shared.ValidateSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
 			return nil, err
 		}
@@ -1168,7 +1168,7 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 				return nil, protocol.ErrInvalidClient().WithParent(err)
 			}
 		}
-		slog.Info("[DEBUG] token authenticateClient: tls_client_auth client authenticated via certificate", "client_id", clientID, "cert_cn", cert.Subject.CommonName)
+		slog.Debug("token authenticateClient: tls_client_auth client authenticated via certificate", "client_id", clientID, "cert_cn", cert.Subject.CommonName)
 		if err := shared.ValidateSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
 			return nil, err
 		}
@@ -1177,12 +1177,12 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 
 	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
-			slog.Warn("[DEBUG] token authenticateClient: AuthorizeClientIDSecret failed", "client_id", clientID, "error", err)
+			slog.Debug("token authenticateClient: AuthorizeClientIDSecret failed", "client_id", clientID, "error", err)
 			return nil, err
 		}
 	}
 
-	slog.Info("[DEBUG] token authenticateClient: success", "client_id", client.GetID(), "auth_method", client.AuthMethod())
+	slog.Debug("token authenticateClient: success", "client_id", client.GetID(), "auth_method", client.AuthMethod())
 
 	// FAPI 2.0: sender-constrained token check for non-private_key_jwt clients.
 	if err := shared.ValidateSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
@@ -1252,7 +1252,7 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 	requireDPoP, requireMtls := p.senderConstrainingRequirements(client)
 	hasDPoP := shared.DPoPFromContext(ctx) != nil
 	hasMtls := shared.ClientCertFromContext(ctx) != nil
-	slog.Info("[DEBUG] token createTokenResponseFromTokenRequest sender-constraining", "client_id", client.GetID(), "requireDPoP", requireDPoP, "requireMtls", requireMtls, "has_dpop_ctx", hasDPoP, "has_mtls_ctx", hasMtls)
+	slog.Debug("token createTokenResponseFromTokenRequest sender-constraining", "client_id", client.GetID(), "requireDPoP", requireDPoP, "requireMtls", requireMtls, "has_dpop_ctx", hasDPoP, "has_mtls_ctx", hasMtls)
 	// When both DPoP and mTLS are required (holder-of-key), either proof suffices.
 	if requireDPoP && requireMtls {
 		if !hasDPoP && !hasMtls {

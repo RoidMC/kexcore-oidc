@@ -244,7 +244,7 @@ func (p *Plugin) authenticateClient(r *http.Request) (storm.Client, error) {
 		// DEBUG: log assertion aud vs allowed audiences
 		req := new(protocol.JWTTokenRequest)
 		if _, parseErr := protocol.ParseToken(assertion, req); parseErr == nil {
-			slog.Info("[DEBUG] PAR authenticateClient", "issuer", issuer, "assertion_aud", req.Audience)
+			slog.Debug("PAR authenticateClient", "issuer", issuer, "assertion_aud", req.Audience)
 		}
 		client, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences, p.skipTLSCertVerify, p.allowPrivateIPs)
 		if err != nil {

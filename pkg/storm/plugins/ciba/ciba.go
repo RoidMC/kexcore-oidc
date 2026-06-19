@@ -102,7 +102,7 @@ func (p *Plugin) handleBackchannelAuth(w http.ResponseWriter, r *http.Request) {
 	for k := range r.Form {
 		formKeys = append(formKeys, k)
 	}
-	slog.Info("[DEBUG] ciba bc-authorize", "form_keys", formKeys, "form_client_id", r.Form.Get("client_id"), "has_request", r.Form.Get("request") != "", "has_assertion", r.Form.Get("client_assertion") != "")
+	slog.Debug("ciba bc-authorize", "form_keys", formKeys, "form_client_id", r.Form.Get("client_id"), "has_request", r.Form.Get("request") != "", "has_assertion", r.Form.Get("client_assertion") != "")
 
 	// CIBA Core 1.0 §7: client authentication is required for bc-authorize
 	// The authentication method depends on the client's registered token_endpoint_auth_method:
@@ -122,7 +122,7 @@ func (p *Plugin) handleBackchannelAuth(w http.ResponseWriter, r *http.Request) {
 		issuer := shared.IssuerFromContext(r.Context())
 		bcEndpoint := shared.EndpointURL(r.Context(), protocol.NewEndpoint("/bc-authorize"))
 		tokenEndpoint := shared.EndpointURL(r.Context(), protocol.NewEndpoint("/token"))
-		slog.Info("[DEBUG] ciba bc-authorize: authenticating client",
+		slog.Debug("ciba bc-authorize: authenticating client",
 			"issuer", issuer,
 			"bcEndpoint", bcEndpoint,
 		)
@@ -136,7 +136,7 @@ func (p *Plugin) handleBackchannelAuth(w http.ResponseWriter, r *http.Request) {
 		}
 		authenticatedClient, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences, p.skipTLSCertVerify, p.allowPrivateIPs)
 		if err != nil {
-			slog.Warn("[DEBUG] ciba bc-authorize: client authentication failed", "error", err)
+			slog.Debug("ciba bc-authorize: client authentication failed", "error", err)
 			shared.WriteError(w, r, protocol.ErrInvalidClient().WithParent(err), nil)
 			return
 		}
@@ -323,7 +323,7 @@ func (p *Plugin) handleBackchannelAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("[DEBUG] ciba bc-authorize: request created",
+	slog.Debug("ciba bc-authorize: request created",
 		"auth_req_id", authReqID,
 		"client_id", clientID,
 		"subject", subject,
@@ -339,7 +339,7 @@ func (p *Plugin) handleBackchannelAuth(w http.ResponseWriter, r *http.Request) {
 func (p *Plugin) handleApprovalPage(w http.ResponseWriter, r *http.Request) {
 	authReqID := strings.TrimSpace(r.URL.Query().Get("auth_req_id"))
 
-	slog.Info("[DEBUG] ciba GET /ciba: approval page accessed",
+	slog.Debug("ciba GET /ciba: approval page accessed",
 		"auth_req_id", authReqID,
 		"url", r.URL.String(),
 	)
@@ -351,19 +351,19 @@ func (p *Plugin) handleApprovalPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if authReqID == "" {
-		slog.Info("[DEBUG] ciba GET /ciba: no auth_req_id, showing empty page")
+		slog.Debug("ciba GET /ciba: no auth_req_id, showing empty page")
 		p.renderApprovalPage(w, nil, "", csrfToken)
 		return
 	}
 
 	req, err := p.store.GetCIBARequestByAuthReqID(r.Context(), authReqID)
 	if err != nil {
-		slog.Info("[DEBUG] ciba GET /ciba: request not found", "auth_req_id", authReqID, "error", err)
+		slog.Debug("ciba GET /ciba: request not found", "auth_req_id", authReqID, "error", err)
 		p.renderApprovalPage(w, nil, "Invalid or unknown authentication request.", csrfToken)
 		return
 	}
 
-	slog.Info("[DEBUG] ciba GET /ciba: request found",
+	slog.Debug("ciba GET /ciba: request found",
 		"auth_req_id", authReqID,
 		"client_id", req.ClientID,
 		"status", req.Status,
@@ -391,7 +391,7 @@ func (p *Plugin) handleApprovalAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !p.validateCSRF(r) {
-		slog.Info("[DEBUG] ciba POST /ciba: CSRF validation failed")
+		slog.Debug("ciba POST /ciba: CSRF validation failed")
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid or missing CSRF token"), nil)
 		return
 	}
@@ -399,7 +399,7 @@ func (p *Plugin) handleApprovalAction(w http.ResponseWriter, r *http.Request) {
 	authReqID := strings.TrimSpace(r.Form.Get("auth_req_id"))
 	action := strings.TrimSpace(r.Form.Get("action"))
 
-	slog.Info("[DEBUG] ciba POST /ciba: approval action",
+	slog.Debug("ciba POST /ciba: approval action",
 		"auth_req_id", authReqID,
 		"action", action,
 	)
@@ -411,12 +411,12 @@ func (p *Plugin) handleApprovalAction(w http.ResponseWriter, r *http.Request) {
 
 	req, err := p.store.GetCIBARequestByAuthReqID(r.Context(), authReqID)
 	if err != nil {
-		slog.Info("[DEBUG] ciba POST /ciba: request not found", "auth_req_id", authReqID, "error", err)
+		slog.Debug("ciba POST /ciba: request not found", "auth_req_id", authReqID, "error", err)
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("unknown auth_req_id"), nil)
 		return
 	}
 
-	slog.Info("[DEBUG] ciba POST /ciba: request found",
+	slog.Debug("ciba POST /ciba: request found",
 		"auth_req_id", authReqID,
 		"client_id", req.ClientID,
 		"status", req.Status,
@@ -440,14 +440,14 @@ func (p *Plugin) handleApprovalAction(w http.ResponseWriter, r *http.Request) {
 		}
 		req.Status = protocol.CIBAStatusApproved
 		req.ApprovedScopes = req.RequestedScopes
-		slog.Info("[DEBUG] ciba POST /ciba: request approved", "auth_req_id", authReqID)
+		slog.Debug("ciba POST /ciba: request approved", "auth_req_id", authReqID)
 	case "deny":
 		if err := p.store.UpdateCIBARequestStatus(r.Context(), authReqID, protocol.CIBAStatusDenied, nil); err != nil {
 			shared.WriteError(w, r, protocol.ErrServerError().WithDescription("error denying request").WithParent(err), nil)
 			return
 		}
 		req.Status = protocol.CIBAStatusDenied
-		slog.Info("[DEBUG] ciba POST /ciba: request denied", "auth_req_id", authReqID)
+		slog.Debug("ciba POST /ciba: request denied", "auth_req_id", authReqID)
 	default:
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid action: must be 'approve' or 'deny'"), nil)
 		return
@@ -472,7 +472,7 @@ func (p *Plugin) handleAutomatedApproval(w http.ResponseWriter, r *http.Request)
 	authReqID := strings.TrimSpace(r.Form.Get("token"))
 	action := strings.TrimSpace(r.Form.Get("type"))
 
-	slog.Info("[DEBUG] ciba POST /ciba/approve: automated approval",
+	slog.Debug("ciba POST /ciba/approve: automated approval",
 		"auth_req_id", authReqID,
 		"action", action,
 	)
@@ -484,7 +484,7 @@ func (p *Plugin) handleAutomatedApproval(w http.ResponseWriter, r *http.Request)
 
 	req, err := p.store.GetCIBARequestByAuthReqID(r.Context(), authReqID)
 	if err != nil {
-		slog.Info("[DEBUG] ciba POST /ciba/approve: request not found", "auth_req_id", authReqID, "error", err)
+		slog.Debug("ciba POST /ciba/approve: request not found", "auth_req_id", authReqID, "error", err)
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("unknown auth_req_id"), nil)
 		return
 	}
@@ -507,14 +507,14 @@ func (p *Plugin) handleAutomatedApproval(w http.ResponseWriter, r *http.Request)
 		}
 		req.Status = protocol.CIBAStatusApproved
 		req.ApprovedScopes = req.RequestedScopes
-		slog.Info("[DEBUG] ciba POST /ciba/approve: request approved", "auth_req_id", authReqID)
+		slog.Debug("ciba POST /ciba/approve: request approved", "auth_req_id", authReqID)
 	case "deny":
 		if err := p.store.UpdateCIBARequestStatus(r.Context(), authReqID, protocol.CIBAStatusDenied, nil); err != nil {
 			shared.WriteError(w, r, protocol.ErrServerError().WithDescription("error denying request").WithParent(err), nil)
 			return
 		}
 		req.Status = protocol.CIBAStatusDenied
-		slog.Info("[DEBUG] ciba POST /ciba/approve: request denied", "auth_req_id", authReqID)
+		slog.Debug("ciba POST /ciba/approve: request denied", "auth_req_id", authReqID)
 	default:
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid type: must be 'allow' or 'deny'"), nil)
 		return
@@ -687,7 +687,7 @@ func (p *Plugin) parseCIBARequestObject(ctx context.Context, requestParam, expec
 		// Check if the iss is a known client (to distinguish between
 		// "bad iss" (unknown client) and "different client_id and issuer" (known but wrong client))
 		issClient, issClientErr := p.clientStore.GetClientByClientID(ctx, requestObject.Issuer)
-		slog.Info("[DEBUG] ciba request object iss mismatch",
+		slog.Debug("ciba request object iss mismatch",
 			"request_object_iss", requestObject.Issuer,
 			"expected_client_id", expectedClientID,
 			"iss_is_known_client", issClientErr == nil,
