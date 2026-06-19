@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/securecookie"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
+	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

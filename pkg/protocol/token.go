@@ -8,7 +8,7 @@ import (
 	"github.com/muhlemmer/gu"
 	"golang.org/x/oauth2"
 
-	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
 )
 
 // Tokens represents an OAuth2 token response that includes OIDC claims.

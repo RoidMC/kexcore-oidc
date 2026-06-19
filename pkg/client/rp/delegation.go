@@ -1,6 +1,6 @@
 package rp
 
-import "github.com/roidmc/kexcore-oidc/pkg/protocol"
+import "github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 
 // DelegationTokenRequest creates a Token Exchange request for delegation.
 // It exchanges an access token for another access token (delegation) for a given resource/audience.

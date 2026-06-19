@@ -3,7 +3,7 @@ package shared
 import (
 	"net/http"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 // ValidateSenderConstraining verifies that the client's sender-constraining

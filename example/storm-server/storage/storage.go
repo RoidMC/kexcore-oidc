@@ -27,10 +27,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
-	crypto_pkg "github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	crypto_pkg "github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/gm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
 )
 
 // Storage implements storm.Storage and all capability interfaces.

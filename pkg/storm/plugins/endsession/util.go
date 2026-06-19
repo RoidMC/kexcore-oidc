@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
 )
 
 func parseEndSessionRequest(form map[string][]string, decoder *protocol.Decoder) (*protocol.EndSessionRequest, error) {

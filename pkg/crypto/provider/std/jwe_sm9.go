@@ -12,8 +12,8 @@ import (
 	"fmt"
 
 	"github.com/emmansun/gmsm/sm9"
-	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
-	"github.com/roidmc/kexcore-oidc/pkg/crypto/util"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/gm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/util"
 )
 
 // EncryptSM9JWE encrypts plaintext using the GM/T 0125.3 JWE specification

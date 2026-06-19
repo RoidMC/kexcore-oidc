@@ -10,7 +10,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 // --- Minimal interfaces for authorization request validation ---

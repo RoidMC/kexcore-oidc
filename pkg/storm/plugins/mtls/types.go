@@ -8,7 +8,7 @@ import (
 	"context"
 	"crypto/x509"
 
-	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
 )
 
 // Plugin implements mTLS client authentication and certificate-bound tokens.

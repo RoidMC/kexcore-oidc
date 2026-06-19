@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/pkg/client"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 func newDeviceClientCredentialsRequest(scopes []string, rp RelyingParty) (*protocol.ClientCredentialsRequest, error) {

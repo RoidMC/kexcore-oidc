@@ -11,7 +11,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
-	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
 )
 
 // JWSSigner is the unified entry point for JWS signing operations.

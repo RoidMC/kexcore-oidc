@@ -21,9 +21,9 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
 )
 
 // DefaultJARMLifetime is the default lifetime for JARM JWTs.

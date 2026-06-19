@@ -9,8 +9,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 type UserInfo struct {

@@ -8,7 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/roidmc/kexcore-oidc/pkg/crypto/util"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/util"
 )
 
 const (

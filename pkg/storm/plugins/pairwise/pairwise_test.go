@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
 )
 
 func TestNewSubjectTransformer(t *testing.T) {

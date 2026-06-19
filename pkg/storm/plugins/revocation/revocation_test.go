@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	crypto_pkg "github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+	crypto_pkg "github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
 )
 
 var errNotFound = errors.New("not found")

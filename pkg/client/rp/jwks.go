@@ -18,9 +18,9 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 
-	"github.com/roidmc/kexcore-oidc/pkg/client"
-	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 func NewRemoteKeySet(httpClient *http.Client, jwksURL string, opts ...func(*remoteKeySet)) protocol.KeySet {

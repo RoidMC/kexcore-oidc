@@ -20,30 +20,30 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/roidmc/kexcore-oidc/example/storm-server/storage"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v2/example/storm-server/storage"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
 
 	// Import plugins to trigger init() self-registration.
 	// Each plugin registers itself in the global registry.
 
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/authorization"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/backchannel"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/ciba"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/device"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/discovery"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/dpop"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/endsession"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/introspection"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/jarm"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/keys"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/mtls"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/par"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/revocation"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/token"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/userinfo"
-	_ "github.com/roidmc/kexcore-oidc/pkg/storm/plugins/webfinger"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/authorization"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/backchannel"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/ciba"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/device"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/discovery"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/dpop"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/endsession"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/introspection"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/jarm"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/keys"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/mtls"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/par"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/revocation"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/token"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/userinfo"
+	_ "github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/webfinger"
 )
 
 // defaultDiscoveryConfig builds the discovery configuration dynamically

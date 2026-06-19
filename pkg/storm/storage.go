@@ -84,7 +84,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"golang.org/x/text/language"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 // Storage is the minimal storage contract required by StormEngine.

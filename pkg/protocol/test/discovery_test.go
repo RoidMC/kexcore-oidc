@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 const (

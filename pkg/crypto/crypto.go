@@ -9,7 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 
-	"github.com/roidmc/kexcore-oidc/pkg/crypto/provider/std"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/provider/std"
 )
 
 var (

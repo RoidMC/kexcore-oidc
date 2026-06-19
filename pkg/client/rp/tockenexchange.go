@@ -5,7 +5,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 // TokenExchangeRP extends the `RelyingParty` interface for OAuth 2.0 Token Exchange (RFC 8693).

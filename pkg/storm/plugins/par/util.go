@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 // validatePARRequest validates the incoming PAR request.

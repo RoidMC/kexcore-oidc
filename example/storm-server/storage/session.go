@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
 )
 
 // clientSession tracks a client's session for back-channel logout.

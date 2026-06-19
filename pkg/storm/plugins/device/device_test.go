@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
 )
 
 // mockDeviceAuthStore implements storm.DeviceAuthStore for testing.

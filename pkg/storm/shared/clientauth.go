@@ -11,7 +11,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 // ClientStore is the minimal interface needed for client authentication.

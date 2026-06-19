@@ -9,8 +9,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/pkg/client"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 // VerifyTokens implement the Token Response Validation as defined in OIDC specification

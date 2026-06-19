@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/internal/otel"
-	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/internal/otel"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 	"golang.org/x/oauth2"
 
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
-	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
+	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/util/logctx"
 )
 
 var (

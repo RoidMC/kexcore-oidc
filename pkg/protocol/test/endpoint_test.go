@@ -3,7 +3,7 @@ package protocol_test
 import (
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 	"github.com/stretchr/testify/require"
 )
 

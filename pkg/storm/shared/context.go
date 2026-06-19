@@ -10,7 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 	"go.opentelemetry.io/otel/trace"
 )
 

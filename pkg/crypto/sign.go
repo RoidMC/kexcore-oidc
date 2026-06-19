@@ -18,7 +18,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 
-	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
+	gm "github.com/roidmc/kexcore-oidc/v2/pkg/crypto/gm"
 )
 
 // SignJWS signs the payload using the given JWK and returns compact JWS serialization.

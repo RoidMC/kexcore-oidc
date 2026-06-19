@@ -16,7 +16,7 @@ import (
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
 
-	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
+	gm "github.com/roidmc/kexcore-oidc/v2/pkg/crypto/gm"
 )
 
 // SM2JWK represents a JSON Web Key for an SM2 public key per GM/T 0125.4-2022.

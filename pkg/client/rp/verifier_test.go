@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	tu "github.com/roidmc/kexcore-oidc/v2/internal/testutil"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 		
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

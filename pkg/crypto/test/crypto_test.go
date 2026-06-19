@@ -10,8 +10,8 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/gm"
 )
 
 func TestEncryptAESRoundTrip(t *testing.T) {

@@ -7,7 +7,7 @@ package protocol
 import (
 	"context"
 
-	"github.com/roidmc/kexcore-oidc/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
 )
 
 // SM9EncryptKey is the protocol-layer interface for SM9 encryption keys.

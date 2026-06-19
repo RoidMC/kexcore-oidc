@@ -3,7 +3,7 @@ package shared
 import (
 	"net/http"
 
-	httputil "github.com/roidmc/kexcore-oidc/pkg/util/http"
+	httputil "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
 )
 
 // SetUserInfoHeaders sets the headers required by OIDC Core §5.3.2 and RFC 6750.

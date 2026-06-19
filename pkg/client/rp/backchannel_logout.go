@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/pkg/client"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 // BackChannelLogoutHandler is an HTTP handler that receives and validates

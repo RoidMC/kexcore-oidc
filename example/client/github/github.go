@@ -10,10 +10,10 @@ import (
 	"golang.org/x/oauth2"
 	githubOAuth "golang.org/x/oauth2/github"
 
-	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
-	"github.com/roidmc/kexcore-oidc/pkg/client/rp/cli"
-	"github.com/roidmc/kexcore-oidc/pkg/util/http"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp/cli"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 var (

@@ -1,6 +1,6 @@
 package backchannel
 
-import "github.com/roidmc/kexcore-oidc/pkg/storm"
+import "github.com/roidmc/kexcore-oidc/v2/pkg/storm"
 
 // BackChannelLogoutClient is optionally implemented by clients that support
 // back-channel logout. When implemented, the plugin sends logout tokens

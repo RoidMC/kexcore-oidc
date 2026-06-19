@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"hash"
 
-	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/gm"
 )
 
 // AESGCMEncrypt encrypts plaintext using AES-GCM with the given key, nonce, and additional data.

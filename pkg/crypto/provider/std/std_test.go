@@ -12,7 +12,7 @@ import (
 	"crypto/rsa"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/gm"
 )
 
 // --- Content encryption primitives ---

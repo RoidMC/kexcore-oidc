@@ -8,7 +8,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 // =================================================================

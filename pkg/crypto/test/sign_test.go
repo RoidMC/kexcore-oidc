@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	zcrypto "github.com/roidmc/kexcore-oidc/pkg/crypto"
+	zcrypto "github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
 )
 
 func newTestSigner(t *testing.T) (*zcrypto.Signer, *rsa.PrivateKey) {

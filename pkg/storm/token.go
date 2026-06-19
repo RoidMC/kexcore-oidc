@@ -9,8 +9,8 @@ import (
 	"encoding/base64"
 	"strings"
 
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
 )
 
 // GMDecryptor is an optional interface for GM/T JWE decryption.

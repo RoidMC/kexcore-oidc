@@ -1,6 +1,6 @@
 package pairwise
 
-import "github.com/roidmc/kexcore-oidc/pkg/storm"
+import "github.com/roidmc/kexcore-oidc/v2/pkg/storm"
 
 // Compile-time interface check.
 var _ storm.PairwiseTransformer = (*SubjectTransformer)(nil)

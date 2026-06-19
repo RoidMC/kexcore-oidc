@@ -12,8 +12,8 @@ import (
 
 	gmsm "github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
-	gm "github.com/roidmc/kexcore-oidc/pkg/crypto/gm"
-	"github.com/roidmc/kexcore-oidc/pkg/crypto/provider/std"
+	gm "github.com/roidmc/kexcore-oidc/v2/pkg/crypto/gm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/provider/std"
 )
 
 // SignProvider is the interface for JWS signing implementations.

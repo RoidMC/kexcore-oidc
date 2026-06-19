@@ -21,10 +21,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
-	"github.com/roidmc/kexcore-oidc/pkg/client/rp"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
-	httphelper "github.com/roidmc/kexcore-oidc/pkg/util/http"
-	"github.com/roidmc/kexcore-oidc/pkg/util/logctx"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/util/logctx"
 )
 
 var (

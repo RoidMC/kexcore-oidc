@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"os"
 
-	tu "github.com/roidmc/kexcore-oidc/internal/testutil"
-	"github.com/roidmc/kexcore-oidc/pkg/protocol"
+	tu "github.com/roidmc/kexcore-oidc/v2/internal/testutil"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
 var custom = map[string]any{
