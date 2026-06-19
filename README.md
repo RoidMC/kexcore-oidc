@@ -2,10 +2,10 @@
 
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
 [![Release](https://github.com/roidmc/kexcore-oidc/workflows/Release/badge.svg)](https://github.com/roidmc/kexcore-oidc/actions)
-[![Go Reference](https://pkg.go.dev/badge/github.com/roidmc/kexcore-oidc.svg)](https://pkg.go.dev/github.com/roidmc/kexcore-oidc)
+[![Go Reference](https://pkg.go.dev/badge/github.com/roidmc/kexcore-oidc.svg)](https://pkg.go.dev/github.com/roidmc/kexcore-oidc/v2)
 [![license](https://badgen.net/github/license/roidmc/kexcore-oidc/)](https://github.com/roidmc/kexcore-oidc/blob/master/LICENSE)
 [![release](https://badgen.net/github/release/roidmc/kexcore-oidc/stable)](https://github.com/roidmc/kexcore-oidc/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/roidmc/kexcore-oidc)](https://goreportcard.com/report/github.com/roidmc/kexcore-oidc)
+[![Go Report Card](https://goreportcard.com/badge/github.com/roidmc/kexcore-oidc/v2)](https://goreportcard.com/report/github.com/roidmc/kexcore-oidc/v2)
 [![codecov](https://codecov.io/gh/roidmc/kexcore-oidc/branch/main/graph/badge.svg)](https://codecov.io/gh/roidmc/kexcore-oidc)
 
 [![openid_certified](https://cloud.githubusercontent.com/assets/1454075/7611268/4d19de32-f97b-11e4-895b-31b2455a7ca6.png)](https://openid.net/certification/)
