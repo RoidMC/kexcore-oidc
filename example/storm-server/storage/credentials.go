@@ -7,7 +7,6 @@ package storage
 import (
 	"context"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
 )
 
@@ -56,9 +55,6 @@ func (s *Storage) ValidateJWTProfileScopes(_ context.Context, userID string, sco
 // =================================================================
 
 func (s *Storage) ValidateTokenExchangeRequest(_ context.Context, req storm.TokenExchangeRequest) error {
-	if req.GetRequestedTokenType() == "" {
-		req.SetRequestedTokenType(protocol.RefreshTokenType)
-	}
 	return nil
 }
 

@@ -3,10 +3,6 @@
 // Copyright Zitadel
 // Modifications Copyright 2026 RoidMC Studios
 
-// TODO: 重构接入StormOP
-
-//go:build ignore
-//lint:ignore
 package client_test
 
 import (
@@ -37,14 +33,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
-	"github.com/roidmc/kexcore-oidc/v2/example/server/exampleop"
-	"github.com/roidmc/kexcore-oidc/v2/example/server/storage"
+	"github.com/roidmc/kexcore-oidc/v2/example/storm-server/storage"
+	"github.com/roidmc/kexcore-oidc/v2/example/storm-server/stormsetup"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rs"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/client/tokenexchange"
-	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/op"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
 )
 
 var Logger = slog.New(
@@ -137,18 +132,28 @@ func TestRelyingPartySession(t *testing.T) {
 func testRelyingPartySession(t *testing.T, wrapServer bool, cookieSpec cookieSpec) {
 	t.Log("------- start example OP ------")
 	targetURL := "http://local-site"
-	exampleStorage := storage.NewStorageWithAlgorithms(storage.NewUserStore(targetURL), []string{"RS256"})
+	exampleStorage := storage.NewStorage(storage.NewUserStore(targetURL), []string{"RS256"})
 	var dh deferredHandler
 	opServer := httptest.NewServer(&dh)
 	defer opServer.Close()
 	t.Logf("auth server at %s", opServer.URL)
-	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, wrapServer, "aes")
+	dh.Handler = stormsetup.SetupTenant(stormsetup.TenantConfig{
+		Issuer:            opServer.URL,
+		SigningAlgorithms: []string{"RS256"},
+		Logger:            Logger,
+		Storage:           exampleStorage,
+		AllowPrivateIPs:   true,
+	})
 
 	seed := rand.New(rand.NewSource(int64(os.Getpid()) + time.Now().UnixNano()))
 	clientID := t.Name() + "-" + strconv.FormatInt(seed.Int63(), 25)
 
+	// 先注册客户端到 storage
+	client := storage.WebClient(clientID, "secret", targetURL)
+	exampleStorage.RegisterClients(client)
+
 	t.Log("------- run authorization code flow ------")
-	provider, tokens := RunAuthorizationCodeFlow(t, opServer, clientID, "secret", cookieSpec)
+	provider, tokens := RunAuthorizationCodeFlow(t, opServer, clientID, "secret", cookieSpec, exampleStorage)
 
 	t.Log("------- refresh tokens  ------")
 
@@ -195,12 +200,18 @@ func TestRelyingPartyWithSigningAlgsFromDiscovery(t *testing.T) {
 	clientID := t.Name() + "-" + strconv.FormatInt(seed.Int63(), 25)
 	clientSecret := "secret"
 	client := storage.WebClient(clientID, clientSecret, targetURL)
-	storage.RegisterClients(client)
-	exampleStorage := storage.NewStorageWithAlgorithms(storage.NewUserStore(targetURL), []string{"RS256"})
+	exampleStorage := storage.NewStorage(storage.NewUserStore(targetURL), []string{"RS256"})
+	exampleStorage.RegisterClients(client)
 	var dh deferredHandler
 	opServer := httptest.NewServer(&dh)
 	defer opServer.Close()
-	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, true, "aes")
+	dh.Handler = stormsetup.SetupTenant(stormsetup.TenantConfig{
+		Issuer:            opServer.URL,
+		SigningAlgorithms: []string{"RS256"},
+		Logger:            Logger,
+		Storage:           exampleStorage,
+		AllowPrivateIPs:   true,
+	})
 
 	t.Log("------- create RP ------")
 	provider, err := rp.NewRelyingPartyOIDC(
@@ -282,19 +293,25 @@ func TestResourceServerTokenExchange(t *testing.T) {
 func testResourceServerTokenExchange(t *testing.T, wrapServer bool) {
 	t.Log("------- start example OP ------")
 	targetURL := "http://local-site"
-	exampleStorage := storage.NewStorageWithAlgorithms(storage.NewUserStore(targetURL), []string{"RS256"})
+	exampleStorage := storage.NewStorage(storage.NewUserStore(targetURL), []string{"RS256"})
 	var dh deferredHandler
 	opServer := httptest.NewServer(&dh)
 	defer opServer.Close()
 	t.Logf("auth server at %s", opServer.URL)
-	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, wrapServer, "aes")
+	dh.Handler = stormsetup.SetupTenant(stormsetup.TenantConfig{
+		Issuer:            opServer.URL,
+		SigningAlgorithms: []string{"RS256"},
+		Logger:            Logger,
+		Storage:           exampleStorage,
+		AllowPrivateIPs:   true,
+	})
 
 	seed := rand.New(rand.NewSource(int64(os.Getpid()) + time.Now().UnixNano()))
 	clientID := t.Name() + "-" + strconv.FormatInt(seed.Int63(), 25)
 	clientSecret := "secret"
 
 	t.Log("------- run authorization code flow ------")
-	provider, tokens := RunAuthorizationCodeFlow(t, opServer, clientID, clientSecret, defaultCookieSpec)
+	provider, tokens := RunAuthorizationCodeFlow(t, opServer, clientID, clientSecret, defaultCookieSpec, exampleStorage)
 
 	resourceServer, err := rs.NewResourceServerClientCredentials(CTX, opServer.URL, clientID, clientSecret)
 	require.NoError(t, err, "new resource server")
@@ -349,13 +366,15 @@ func testResourceServerTokenExchange(t *testing.T, wrapServer bool) {
 	require.Nil(t, tokenExchangeResponse, "token exchange response")
 }
 
-func RunAuthorizationCodeFlow(t *testing.T, opServer *httptest.Server, clientID, clientSecret string, cookieSpec cookieSpec) (provider rp.RelyingParty, tokens *protocol.Tokens[*protocol.IDTokenClaims]) {
+func RunAuthorizationCodeFlow(t *testing.T, opServer *httptest.Server, clientID, clientSecret string, cookieSpec cookieSpec, storages ...*storage.Storage) (provider rp.RelyingParty, tokens *protocol.Tokens[*protocol.IDTokenClaims]) {
 	targetURL := "http://local-site"
 	localURL, err := url.Parse(targetURL + "/login?requestID=1234")
 	require.NoError(t, err, "local url")
 
 	client := storage.WebClient(clientID, clientSecret, targetURL)
-	storage.RegisterClients(client)
+	if len(storages) > 0 {
+		storages[0].RegisterClients(client)
+	}
 
 	jar, err := cookiejar.New(nil)
 	require.NoError(t, err, "create cookie jar")
@@ -462,7 +481,7 @@ func RunAuthorizationCodeFlow(t *testing.T, opServer *httptest.Server, clientID,
 		email = info.Email
 		http.Redirect(w, r, targetURL, http.StatusFound)
 	}
-	rp.CodeExchangeHandler(rp.UserinfoCallback(redirect), provider, rp.WithURLParam("custom", "param"))(capturedW, get)
+	rp.CodeExchangeHandler(rp.UserinfoCallback(redirect), provider)(capturedW, get)
 
 	defer func() {
 		if t.Failed() {
@@ -490,12 +509,21 @@ func RunAuthorizationCodeFlow(t *testing.T, opServer *httptest.Server, clientID,
 
 func TestClientCredentials(t *testing.T) {
 	targetURL := "http://local-site"
-	exampleStorage := storage.NewStorageWithAlgorithms(storage.NewUserStore(targetURL), []string{"RS256"})
+	exampleStorage := storage.NewStorage(storage.NewUserStore(targetURL), []string{"RS256"})
+	// 注册客户端
+	client := storage.WebClient("sid1", "verysecret", targetURL)
+	exampleStorage.RegisterClients(client)
 	var dh deferredHandler
 	opServer := httptest.NewServer(&dh)
 	defer opServer.Close()
 	t.Logf("auth server at %s", opServer.URL)
-	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, true, "aes")
+	dh.Handler = stormsetup.SetupTenant(stormsetup.TenantConfig{
+		Issuer:            opServer.URL,
+		SigningAlgorithms: []string{"RS256"},
+		Logger:            Logger,
+		Storage:           exampleStorage,
+		AllowPrivateIPs:   true,
+	})
 
 	provider, err := rp.NewRelyingPartyOIDC(
 		CTX,
@@ -526,24 +554,23 @@ func TestErrorFromPromptNone(t *testing.T) {
 
 	t.Log("------- start example OP ------")
 	targetURL := "http://local-site"
-	exampleStorage := storage.NewStorageWithAlgorithms(storage.NewUserStore(targetURL), []string{"RS256"})
+	exampleStorage := storage.NewStorage(storage.NewUserStore(targetURL), []string{"RS256"})
 	var dh deferredHandler
 	opServer := httptest.NewServer(&dh)
 	defer opServer.Close()
 	t.Logf("auth server at %s", opServer.URL)
-	dh.Handler = exampleop.SetupServer(opServer.URL, exampleStorage, Logger, false, "aes", op.WithHttpInterceptors(
-		func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				t.Logf("request to %s", r.URL)
-				next.ServeHTTP(w, r)
-			})
-		},
-	))
+	dh.Handler = stormsetup.SetupTenant(stormsetup.TenantConfig{
+		Issuer:            opServer.URL,
+		SigningAlgorithms: []string{"RS256"},
+		Logger:            Logger,
+		Storage:           exampleStorage,
+		AllowPrivateIPs:   true,
+	})
 	seed := rand.New(rand.NewSource(int64(os.Getpid()) + time.Now().UnixNano()))
 	clientID := t.Name() + "-" + strconv.FormatInt(seed.Int63(), 25)
 	clientSecret := "secret"
 	client := storage.WebClient(clientID, clientSecret, targetURL)
-	storage.RegisterClients(client)
+	exampleStorage.RegisterClients(client)
 
 	t.Log("------- create RP ------")
 	key := []byte("test1234test1234")

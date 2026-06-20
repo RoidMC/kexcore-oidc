@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html><head><title>Login — {{.Issuer}}</title></head>
+<body style="display:flex;align-items:center;justify-content:center;height:100vh">
+<div style="text-align:center">
+{{if .LogoURI}}<img src="{{.LogoURI}}" alt="Client Logo" style="max-height:80px;margin-bottom:16px"><br>{{end}}
+<h2>{{.Issuer}}</h2>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form method="POST" action="/login/username">
+<input type="hidden" name="id" value="{{.ID}}">
+<p><label>Username: <input name="username" value="test-user@{{.Domain}}"></label></p>
+<p><label>Password: <input name="password" type="password" value="verysecure"></label></p>
+<p><button type="submit">Login</button> <button type="submit" formaction="/login/cancel" formmethod="POST" style="margin-left:8px">Cancel</button></p>
+</form>
+{{if .PolicyURI}}<p><a href="{{.PolicyURI}}" target="_blank">Privacy Policy</a></p>{{end}}
+{{if .TOSURI}}<p><a href="{{.TOSURI}}" target="_blank">Terms of Service</a></p>{{end}}
+</div>
+</body></html>

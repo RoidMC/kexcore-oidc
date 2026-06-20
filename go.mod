@@ -6,14 +6,12 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/emmansun/gmsm v0.43.0
 	github.com/go-chi/chi/v5 v5.3.0
-	github.com/golang/mock v1.6.0
 	github.com/google/go-github/v31 v31.0.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/securecookie v1.1.2
 	github.com/jeremija/gosubmit v0.2.8
 	github.com/lestrrat-go/jwx/v4 v4.0.2
 	github.com/muhlemmer/gu v0.3.1
-	github.com/muhlemmer/httpforwarded v0.1.0
 	github.com/rs/cors v1.11.1
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1

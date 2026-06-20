@@ -877,13 +877,15 @@ func (p *Plugin) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		// AccessTokenType or RefreshTokenType — issue an access token
-		accessToken, _, _, validity, err := p.createAccessToken(r.Context(), teReq, client, false, "", nil)
+		issueRefresh := teReq.requestedTokenType == protocol.RefreshTokenType
+		accessToken, _, refreshToken, validity, err := p.createAccessToken(r.Context(), teReq, client, issueRefresh, "", nil)
 		if err != nil {
 			tokenError(w, r, protocol.ErrServerError().WithParent(err))
 			return
 		}
 		resp := &protocol.TokenExchangeResponse{
 			AccessToken:     accessToken,
+			RefreshToken:    refreshToken,
 			IssuedTokenType: teReq.requestedTokenType,
 			TokenType:       protocol.BearerToken,
 			ExpiresIn:       uint64(validity.Seconds()),
