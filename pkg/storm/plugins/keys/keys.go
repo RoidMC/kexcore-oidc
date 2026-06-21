@@ -19,12 +19,16 @@ import (
 
 // Plugin serves the JWKS endpoint.
 type Plugin struct {
-	store storm.KeyStore
+	store            storm.KeyStore
+	endpointResolver shared.EndpointResolver // endpoint URL resolver (optional)
 }
 
 // New creates a new Keys plugin from a PluginContext.
 func New(ctx *storm.PluginContext) *Plugin {
-	return &Plugin{store: ctx.Storage.(storm.KeyStore)}
+	return &Plugin{
+		store:            ctx.Storage.(storm.KeyStore),
+		endpointResolver: ctx.EndpointResolver,
+	}
 }
 
 // NewWithStore creates a new Keys plugin with an explicit KeyStore.
@@ -55,7 +59,17 @@ func (p *Plugin) Register(r chi.Router) {
 
 // Contribute returns the discovery fields for the JWKS endpoint.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
-	cfg.JWKSURI = shared.EndpointURL(ctx, protocol.NewEndpoint("/.well-known/jwks.json"))
+	cfg.JWKSURI = p.resolveEndpoint(ctx, "keys", "/.well-known/jwks.json")
+}
+
+// resolveEndpoint resolves the absolute URL for the given endpoint.
+// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// to the default behavior of building the URL from the issuer in context.
+func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
+	if p.endpointResolver != nil {
+		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	}
+	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

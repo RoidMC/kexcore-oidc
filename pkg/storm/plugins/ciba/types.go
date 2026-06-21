@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
 	httputil "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
 )
 
@@ -29,6 +30,7 @@ type Plugin struct {
 	csrfHandler       *httputil.CookieHandler
 	skipTLSCertVerify bool
 	allowPrivateIPs   bool
+	endpointResolver  shared.EndpointResolver // endpoint URL resolver (optional)
 }
 
 // Config holds the dependencies for the CIBA plugin.

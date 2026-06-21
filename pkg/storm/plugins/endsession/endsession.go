@@ -44,7 +44,17 @@ func (p *Plugin) Register(r chi.Router) {
 
 // Contribute returns the discovery fields for the end_session endpoint.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
-	cfg.EndSessionEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/end_session"))
+	cfg.EndSessionEndpoint = p.resolveEndpoint(ctx, "endsession", "/end_session")
+}
+
+// resolveEndpoint resolves the absolute URL for the given endpoint.
+// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// to the default behavior of building the URL from the issuer in context.
+func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
+	if p.endpointResolver != nil {
+		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	}
+	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

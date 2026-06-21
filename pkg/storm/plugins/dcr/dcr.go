@@ -25,7 +25,12 @@ import (
 func init() {
 	storm.RegisterPlugin("dcr", storm.PriorityDCR, func(ctx *storm.PluginContext) storm.Plugin {
 		if dcrStore, ok := ctx.Storage.(storm.DCRStore); ok {
-			return New(Config{Store: dcrStore, AllowPrivateIPs: ctx.AllowPrivateIPs, SkipTLSCertVerify: ctx.SkipTLSCertVerify})
+			return New(Config{
+				Store:             dcrStore,
+				AllowPrivateIPs:   ctx.AllowPrivateIPs,
+				SkipTLSCertVerify: ctx.SkipTLSCertVerify,
+				EndpointResolver:  ctx.EndpointResolver,
+			})
 		}
 		return nil
 	})
@@ -36,6 +41,7 @@ type Plugin struct {
 	store             storm.DCRStore
 	allowPrivateIPs   bool
 	skipTLSCertVerify bool
+	endpointResolver  shared.EndpointResolver // endpoint URL resolver (optional)
 }
 
 // Config holds the dependencies for the DCR plugin.
@@ -43,6 +49,7 @@ type Config struct {
 	Store             storm.DCRStore
 	AllowPrivateIPs   bool
 	SkipTLSCertVerify bool
+	EndpointResolver  shared.EndpointResolver
 }
 
 // New creates a new DCR plugin.
@@ -51,6 +58,7 @@ func New(cfg Config) *Plugin {
 		store:             cfg.Store,
 		allowPrivateIPs:   cfg.AllowPrivateIPs,
 		skipTLSCertVerify: cfg.SkipTLSCertVerify,
+		endpointResolver:  cfg.EndpointResolver,
 	}
 }
 
@@ -75,7 +83,17 @@ func (p *Plugin) Register(r chi.Router) {
 
 // Contribute returns the discovery fields for the registration endpoint.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
-	cfg.RegistrationEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/register"))
+	cfg.RegistrationEndpoint = p.resolveEndpoint(ctx, "dcr", "/register")
+}
+
+// resolveEndpoint resolves the absolute URL for the given endpoint.
+// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// to the default behavior of building the URL from the issuer in context.
+func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
+	if p.endpointResolver != nil {
+		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	}
+	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
 }
 
 func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {

@@ -33,6 +33,7 @@ func NewWithConfig(cfg Config) *Plugin {
 		lifetime:          cfg.Lifetime,
 		skipTLSCertVerify: cfg.SkipTLSCertVerify,
 		allowPrivateIPs:   cfg.AllowPrivateIPs,
+		endpointResolver:  cfg.EndpointResolver,
 	}
 }
 
@@ -50,6 +51,7 @@ func init() {
 			Lifetime:          ctx.PARLifetime,
 			SkipTLSCertVerify: ctx.SkipTLSCertVerify,
 			AllowPrivateIPs:   ctx.AllowPrivateIPs,
+			EndpointResolver:  ctx.EndpointResolver,
 		})
 	})
 }
@@ -73,7 +75,17 @@ func (p *Plugin) Register(r chi.Router) {
 
 // Contribute returns the discovery fields for the PAR endpoint.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
-	cfg.PushedAuthorizationRequestEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/par"))
+	cfg.PushedAuthorizationRequestEndpoint = p.resolveEndpoint(ctx, "par", "/par")
+}
+
+// resolveEndpoint resolves the absolute URL for the given endpoint.
+// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// to the default behavior of building the URL from the issuer in context.
+func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
+	if p.endpointResolver != nil {
+		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	}
+	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

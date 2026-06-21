@@ -70,3 +70,44 @@ func EndpointURL(ctx context.Context, ep *protocol.Endpoint) string {
 	}
 	return ep.DiscoveryURL(IssuerFromContext(ctx))
 }
+
+// EndpointResolver resolves the absolute URL for a given endpoint.
+// It is used by plugins to determine the full URL for their endpoints
+// in the discovery document.
+type EndpointResolver interface {
+	// Resolve returns the absolute URL for the given endpoint.
+	// endpointName is a short identifier (e.g., "token", "authorize").
+	// defaultPath is the default relative path (e.g., "/token", "/authorize").
+	Resolve(ctx context.Context, endpointName, defaultPath string) string
+}
+
+// DefaultEndpointResolver is the default implementation that uses the issuer URL
+// from the request context to build endpoint URLs.
+type DefaultEndpointResolver struct{}
+
+func (r *DefaultEndpointResolver) Resolve(ctx context.Context, endpointName, defaultPath string) string {
+	return EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+}
+
+// OverrideEndpointResolver allows customizing specific endpoint URLs
+// while falling back to a base resolver for non-overridden endpoints.
+//
+// Example:
+//
+//	resolver := &OverrideEndpointResolver{
+//	    Base: &DefaultEndpointResolver{},
+//	    Overrides: map[string]string{
+//	        "token": "https://token-service.example.com/token",
+//	    },
+//	}
+type OverrideEndpointResolver struct {
+	Base      EndpointResolver
+	Overrides map[string]string
+}
+
+func (r *OverrideEndpointResolver) Resolve(ctx context.Context, endpointName, defaultPath string) string {
+	if override, ok := r.Overrides[endpointName]; ok {
+		return override
+	}
+	return r.Base.Resolve(ctx, endpointName, defaultPath)
+}

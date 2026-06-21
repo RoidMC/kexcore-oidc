@@ -61,6 +61,7 @@ type Plugin struct {
 	sessionProvider           SessionProvider
 	jarmSigner                JARMSigner // optional, set via SetJARMSigner
 	tracer                    trace.Tracer
+	endpointResolver          shared.EndpointResolver // endpoint URL resolver
 	createAuthCode            func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
 	authorizationDetailsTypes []string                    // RFC 9396 supported types
 	sessionRecorder           storm.ClientSessionRecorder // optional, for back-channel logout tracking
@@ -141,6 +142,7 @@ func New(ctx *storm.PluginContext) *Plugin {
 		allowPrivateIPs:   ctx.AllowPrivateIPs,
 		skipTLSCertVerify: ctx.SkipTLSCertVerify,
 		tracer:            ctx.Tracer,
+		endpointResolver:  ctx.EndpointResolver,
 	}
 	// Register custom parser for OIDC §5.5 claims parameter (JSON object).
 	ctx.Decoder.RegisterParser(
@@ -243,7 +245,7 @@ func (p *Plugin) Register(r chi.Router) {
 
 // Contribute populates the discovery fields for the authorization endpoint.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
-	cfg.AuthorizationEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/authorize"))
+	cfg.AuthorizationEndpoint = p.resolveEndpoint(ctx, "authorize", "/authorize")
 
 	// Authorization endpoint capabilities
 	cfg.ScopesSupported = append(cfg.ScopesSupported,
@@ -290,6 +292,16 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 	if len(p.authorizationDetailsTypes) > 0 {
 		cfg.AuthorizationDetailsTypesSupported = p.authorizationDetailsTypes
 	}
+}
+
+// resolveEndpoint resolves the absolute URL for the given endpoint.
+// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// to the default behavior of building the URL from the issuer in context.
+func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
+	if p.endpointResolver != nil {
+		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	}
+	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
 }
 
 // --- authorize handler ---

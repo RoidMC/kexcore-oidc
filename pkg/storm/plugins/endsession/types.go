@@ -8,6 +8,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
 )
 
 //go:embed template/logout.html.tmpl
@@ -41,6 +42,7 @@ type Plugin struct {
 	decoder          *protocol.Decoder
 	logoutHook       LogoutHook
 	logoutTmpl       *template.Template
+	endpointResolver shared.EndpointResolver // endpoint URL resolver (optional)
 }
 
 // Config holds the dependencies for the EndSession plugin.
@@ -77,6 +79,7 @@ func New(ctx *storm.PluginContext) *Plugin {
 		defaultLogoutURI: "/",
 		decoder:          ctx.Decoder,
 		logoutTmpl:       logoutTmpl,
+		endpointResolver: ctx.EndpointResolver,
 	}
 }
 

@@ -24,6 +24,7 @@ type Plugin struct {
 	logger            *slog.Logger
 	allowPrivateIPs   bool
 	skipTLSCertVerify bool
+	endpointResolver  shared.EndpointResolver // endpoint URL resolver (optional)
 }
 
 // New creates a new BackChannel plugin from a PluginContext.
@@ -34,6 +35,7 @@ func New(ctx *storm.PluginContext) *Plugin {
 		logger:            slog.Default(),
 		allowPrivateIPs:   ctx.AllowPrivateIPs,
 		skipTLSCertVerify: ctx.SkipTLSCertVerify,
+		endpointResolver:  ctx.EndpointResolver,
 	}
 }
 
@@ -102,9 +104,19 @@ func (p *Plugin) Register(r chi.Router) {
 
 // Contribute returns the discovery fields for the backchannel logout endpoint.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
-	cfg.BackChannelLogoutEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/backchannel_logout"))
+	cfg.BackChannelLogoutEndpoint = p.resolveEndpoint(ctx, "backchannel", "/backchannel_logout")
 	cfg.BackChannelLogoutSupported = true
 	cfg.BackChannelLogoutSessionSupported = true
+}
+
+// resolveEndpoint resolves the absolute URL for the given endpoint.
+// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// to the default behavior of building the URL from the issuer in context.
+func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
+	if p.endpointResolver != nil {
+		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	}
+	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

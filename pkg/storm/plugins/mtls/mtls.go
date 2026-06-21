@@ -22,7 +22,7 @@ import (
 // init self-registers the mTLS plugin in the global registry.
 func init() {
 	storm.RegisterPlugin("mtls", storm.PriorityMTLS, func(ctx *storm.PluginContext) storm.Plugin {
-		return NewWithConfig()
+		return NewWithEndpointResolver(ctx.EndpointResolver)
 	})
 }
 
@@ -48,10 +48,10 @@ func (p *Plugin) Middleware(next http.Handler) http.Handler {
 // Contribute returns discovery fields for mTLS.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
 	cfg.MTLSEndpointAliases = map[string]string{
-		"token_endpoint":         shared.EndpointURL(ctx, protocol.NewEndpoint("/token")),
-		"userinfo_endpoint":      shared.EndpointURL(ctx, protocol.NewEndpoint("/userinfo")),
-		"revocation_endpoint":    shared.EndpointURL(ctx, protocol.NewEndpoint("/revoke")),
-		"introspection_endpoint": shared.EndpointURL(ctx, protocol.NewEndpoint("/introspect")),
+		"token_endpoint":         p.resolveEndpoint(ctx, "token", "/token"),
+		"userinfo_endpoint":      p.resolveEndpoint(ctx, "userinfo", "/userinfo"),
+		"revocation_endpoint":    p.resolveEndpoint(ctx, "revocation", "/revoke"),
+		"introspection_endpoint": p.resolveEndpoint(ctx, "introspection", "/introspect"),
 	}
 	// Only add aliases for endpoints that other plugins have actually registered.
 	aliases := cfg.MTLSEndpointAliases.(map[string]string)
@@ -86,6 +86,16 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 			string(protocol.AuthMethodSelfSignedTLSAuth),
 		)
 	}
+}
+
+// resolveEndpoint resolves the absolute URL for the given endpoint.
+// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// to the default behavior of building the URL from the issuer in context.
+func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
+	if p.endpointResolver != nil {
+		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	}
+	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
 }
 
 // --- Middleware ---

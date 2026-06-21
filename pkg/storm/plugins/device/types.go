@@ -26,6 +26,7 @@ type Plugin struct {
 	deviceTmpl         *template.Template
 	maxUserCodeRetries int
 	csrfHandler        *httputil.CookieHandler
+	endpointResolver   shared.EndpointResolver // endpoint URL resolver (optional)
 }
 
 // Config holds the dependencies for the Device plugin.

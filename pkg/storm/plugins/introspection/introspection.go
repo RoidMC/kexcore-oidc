@@ -17,10 +17,11 @@ import (
 
 // Plugin implements the Token Introspection endpoint.
 type Plugin struct {
-	store      storm.IntrospectStore
-	clientAuth *shared.ClientAuthHelper
-	crypto     storm.UniCrypto
-	keyStore   protocol.KeyStore
+	store            storm.IntrospectStore
+	clientAuth       *shared.ClientAuthHelper
+	crypto           storm.UniCrypto
+	keyStore         protocol.KeyStore
+	endpointResolver shared.EndpointResolver // endpoint URL resolver (optional)
 }
 
 // Config holds the dependencies for the Introspection plugin.
@@ -39,8 +40,9 @@ func New(ctx *storm.PluginContext) *Plugin {
 		clientAuth: storm.NewClientAuthHelper(cs).
 			WithTLSSkipVerify(ctx.SkipTLSCertVerify).
 			WithAllowPrivateIPs(ctx.AllowPrivateIPs),
-		crypto:   ctx.Crypto,
-		keyStore: ctx.Storage.(storm.KeyStore),
+		crypto:           ctx.Crypto,
+		keyStore:         ctx.Storage.(storm.KeyStore),
+		endpointResolver: ctx.EndpointResolver,
 	}
 }
 
@@ -81,7 +83,7 @@ func (p *Plugin) Register(r chi.Router) {
 
 // Contribute returns the discovery fields for the introspection endpoint.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
-	cfg.IntrospectionEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/introspect"))
+	cfg.IntrospectionEndpoint = p.resolveEndpoint(ctx, "introspection", "/introspect")
 
 	// Introspection endpoint capabilities
 	cfg.IntrospectionEndpointAuthMethodsSupported = append(cfg.IntrospectionEndpointAuthMethodsSupported,
@@ -90,6 +92,16 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 		string(protocol.AuthMethodPrivateKeyJWT),
 		string(protocol.AuthMethodTLSClientAuth),
 	)
+}
+
+// resolveEndpoint resolves the absolute URL for the given endpoint.
+// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// to the default behavior of building the URL from the issuer in context.
+func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
+	if p.endpointResolver != nil {
+		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	}
+	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

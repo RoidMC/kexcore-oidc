@@ -47,6 +47,7 @@ func init() {
 			cibaTmpl:          cibaTmpl,
 			skipTLSCertVerify: ctx.SkipTLSCertVerify,
 			allowPrivateIPs:   ctx.AllowPrivateIPs,
+			endpointResolver:  ctx.EndpointResolver,
 		}
 		if nc, ok := ctx.Storage.(storm.CIBANotificationCallback); ok {
 			p.notifier = nc
@@ -78,7 +79,7 @@ func (p *Plugin) Register(r chi.Router) {
 
 // Contribute adds CIBA discovery fields per CIBA Core 1.0 §4.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
-	cfg.BackchannelAuthenticationEndpoint = shared.EndpointURL(ctx, protocol.NewEndpoint("/bc-authorize"))
+	cfg.BackchannelAuthenticationEndpoint = p.resolveEndpoint(ctx, "ciba", "/bc-authorize")
 	cfg.GrantTypesSupported = append(cfg.GrantTypesSupported,
 		string(protocol.GrantTypeCIBA),
 	)
@@ -88,6 +89,16 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 	if len(cfg.RequestObjectSigningAlgValuesSupported) > 0 {
 		cfg.BackchannelAuthenticationRequestSigningAlgValuesSupported = cfg.RequestObjectSigningAlgValuesSupported
 	}
+}
+
+// resolveEndpoint resolves the absolute URL for the given endpoint.
+// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// to the default behavior of building the URL from the issuer in context.
+func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
+	if p.endpointResolver != nil {
+		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	}
+	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
 }
 
 // handleBackchannelAuth handles POST /bc-authorize (CIBA Core 1.0 §7.1.1).

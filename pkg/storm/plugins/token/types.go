@@ -9,6 +9,7 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -28,15 +29,16 @@ type Plugin struct {
 	decoder                *protocol.Decoder
 	logger                 *slog.Logger
 	tracer                 trace.Tracer
-	auditLogger            storm.AuditLogger // optional, for structured audit events
-	devicePollInterval     time.Duration     // default polling interval for device_code grant
-	requireDPoP            bool              // FAPI2: require DPoP proof for all token requests
-	requireMtls            bool              // FAPI2: require mTLS client certificate for all token requests
-	allowPrivateIPs        bool              // allow private IPs in jwks_uri fetches (testing only)
-	skipTLSCertVerify      bool              // skip TLS cert verification on outbound HTTP (testing only)
-	dpopNonceSender        DPoPNonceSender   // optional, set via SetDPoPNonceSender
-	invalidateRefreshOnUse bool              // RFC 6749 §10.4: invalidate old RT on refresh
-	clientLimits           sync.Map          // map[string]*clientBucket — per-client rate limiting
+	auditLogger            storm.AuditLogger       // optional, for structured audit events
+	devicePollInterval     time.Duration           // default polling interval for device_code grant
+	requireDPoP            bool                    // FAPI2: require DPoP proof for all token requests
+	requireMtls            bool                    // FAPI2: require mTLS client certificate for all token requests
+	allowPrivateIPs        bool                    // allow private IPs in jwks_uri fetches (testing only)
+	skipTLSCertVerify      bool                    // skip TLS cert verification on outbound HTTP (testing only)
+	dpopNonceSender        DPoPNonceSender         // optional, set via SetDPoPNonceSender
+	invalidateRefreshOnUse bool                    // RFC 6749 §10.4: invalidate old RT on refresh
+	clientLimits           sync.Map                // map[string]*clientBucket — per-client rate limiting
+	endpointResolver       shared.EndpointResolver // endpoint URL resolver (optional)
 }
 
 // Config holds the dependencies for the Token plugin.
