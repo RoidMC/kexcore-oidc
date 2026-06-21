@@ -24,7 +24,7 @@ type Plugin struct {
 	logger            *slog.Logger
 	allowPrivateIPs   bool
 	skipTLSCertVerify bool
-	endpointResolver  shared.EndpointResolver // endpoint URL resolver (optional)
+	endpointConfigs   shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
 // New creates a new BackChannel plugin from a PluginContext.
@@ -35,7 +35,7 @@ func New(ctx *storm.PluginContext) *Plugin {
 		logger:            slog.Default(),
 		allowPrivateIPs:   ctx.AllowPrivateIPs,
 		skipTLSCertVerify: ctx.SkipTLSCertVerify,
-		endpointResolver:  ctx.EndpointResolver,
+		endpointConfigs:   ctx.EndpointConfigs,
 	}
 }
 
@@ -99,7 +99,8 @@ func (p *Plugin) Name() string { return "backchannel" }
 //
 // OIDC standard endpoint: POST /backchannel_logout (OIDC Back-Channel Logout §4)
 func (p *Plugin) Register(r chi.Router) {
-	r.Post("/backchannel_logout", p.handle)
+	backchannelPath := p.getRoutePath("backchannel", "/backchannel_logout")
+	r.Post(backchannelPath, p.handle)
 }
 
 // Contribute returns the discovery fields for the backchannel logout endpoint.
@@ -110,13 +111,24 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 }
 
 // resolveEndpoint resolves the absolute URL for the given endpoint.
-// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// If EndpointConfigs is configured, it uses that; otherwise it falls back
 // to the default behavior of building the URL from the issuer in context.
 func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
-	if p.endpointResolver != nil {
-		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	// Check if there's a custom discovery URL configured
+	if p.endpointConfigs != nil {
+		defaultURL := shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+		return p.endpointConfigs.GetDiscoveryURL(endpointName, defaultURL)
 	}
 	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+}
+
+// getRoutePath returns the route path for the given endpoint.
+// If EndpointConfigs is configured, it uses that; otherwise it returns defaultPath.
+func (p *Plugin) getRoutePath(endpointName, defaultPath string) string {
+	if p.endpointConfigs != nil {
+		return p.endpointConfigs.GetRoutePath(endpointName, defaultPath)
+	}
+	return defaultPath
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

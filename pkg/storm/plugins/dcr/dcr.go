@@ -29,7 +29,7 @@ func init() {
 				Store:             dcrStore,
 				AllowPrivateIPs:   ctx.AllowPrivateIPs,
 				SkipTLSCertVerify: ctx.SkipTLSCertVerify,
-				EndpointResolver:  ctx.EndpointResolver,
+				EndpointConfigs:   ctx.EndpointConfigs,
 			})
 		}
 		return nil
@@ -41,7 +41,7 @@ type Plugin struct {
 	store             storm.DCRStore
 	allowPrivateIPs   bool
 	skipTLSCertVerify bool
-	endpointResolver  shared.EndpointResolver // endpoint URL resolver (optional)
+	endpointConfigs   shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
 // Config holds the dependencies for the DCR plugin.
@@ -49,7 +49,7 @@ type Config struct {
 	Store             storm.DCRStore
 	AllowPrivateIPs   bool
 	SkipTLSCertVerify bool
-	EndpointResolver  shared.EndpointResolver
+	EndpointConfigs   shared.EndpointConfigMap
 }
 
 // New creates a new DCR plugin.
@@ -58,7 +58,7 @@ func New(cfg Config) *Plugin {
 		store:             cfg.Store,
 		allowPrivateIPs:   cfg.AllowPrivateIPs,
 		skipTLSCertVerify: cfg.SkipTLSCertVerify,
-		endpointResolver:  cfg.EndpointResolver,
+		endpointConfigs:   cfg.EndpointConfigs,
 	}
 }
 
@@ -75,10 +75,11 @@ func (p *Plugin) httpClient() *http.Client {
 // OAuth 2.0 standard endpoint: POST /register (RFC 7591 §3)
 // Also supports GET and PUT for reading and updating registrations.
 func (p *Plugin) Register(r chi.Router) {
-	r.Post("/register", p.handleCreate)
-	r.Get("/register/{client_id}", p.handleGet)
-	r.Put("/register/{client_id}", p.handleUpdate)
-	r.Delete("/register/{client_id}", p.handleDelete)
+	registerPath := p.getRoutePath("dcr", "/register")
+	r.Post(registerPath, p.handleCreate)
+	r.Get(registerPath+"/{client_id}", p.handleGet)
+	r.Put(registerPath+"/{client_id}", p.handleUpdate)
+	r.Delete(registerPath+"/{client_id}", p.handleDelete)
 }
 
 // Contribute returns the discovery fields for the registration endpoint.
@@ -87,13 +88,22 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 }
 
 // resolveEndpoint resolves the absolute URL for the given endpoint.
-// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// If EndpointConfigs is configured, it uses that; otherwise it falls back
 // to the default behavior of building the URL from the issuer in context.
 func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
-	if p.endpointResolver != nil {
-		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	if p.endpointConfigs != nil {
+		defaultURL := shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+		return p.endpointConfigs.GetDiscoveryURL(endpointName, defaultURL)
 	}
 	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+}
+
+// getRoutePath returns the route path for the given endpoint.
+func (p *Plugin) getRoutePath(endpointName, defaultPath string) string {
+	if p.endpointConfigs != nil {
+		return p.endpointConfigs.GetRoutePath(endpointName, defaultPath)
+	}
+	return defaultPath
 }
 
 func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {

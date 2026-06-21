@@ -61,7 +61,7 @@ type Plugin struct {
 	sessionProvider           SessionProvider
 	jarmSigner                JARMSigner // optional, set via SetJARMSigner
 	tracer                    trace.Tracer
-	endpointResolver          shared.EndpointResolver // endpoint URL resolver
+	endpointConfigs           shared.EndpointConfigMap // endpoint configurations
 	createAuthCode            func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
 	authorizationDetailsTypes []string                    // RFC 9396 supported types
 	sessionRecorder           storm.ClientSessionRecorder // optional, for back-channel logout tracking
@@ -142,7 +142,7 @@ func New(ctx *storm.PluginContext) *Plugin {
 		allowPrivateIPs:   ctx.AllowPrivateIPs,
 		skipTLSCertVerify: ctx.SkipTLSCertVerify,
 		tracer:            ctx.Tracer,
-		endpointResolver:  ctx.EndpointResolver,
+		endpointConfigs:   ctx.EndpointConfigs,
 	}
 	// Register custom parser for OIDC §5.5 claims parameter (JSON object).
 	ctx.Decoder.RegisterParser(
@@ -238,9 +238,12 @@ func (p *Plugin) recordSession(ctx context.Context, authReq storm.AuthRequest) {
 // This is NOT an OIDC standard endpoint. It is the URL the login UI
 // redirects to after successful user authentication.
 func (p *Plugin) Register(r chi.Router) {
-	r.Get("/authorize", p.handleAuthorize)
-	r.Post("/authorize", p.handleAuthorize)
-	r.Get("/authorize/callback", p.handleCallback)
+	authorizePath := p.getRoutePath("authorize", "/authorize")
+	callbackPath := p.getRoutePath("authorize_callback", "/authorize/callback")
+
+	r.Get(authorizePath, p.handleAuthorize)
+	r.Post(authorizePath, p.handleAuthorize)
+	r.Get(callbackPath, p.handleCallback)
 }
 
 // Contribute populates the discovery fields for the authorization endpoint.
@@ -295,13 +298,24 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 }
 
 // resolveEndpoint resolves the absolute URL for the given endpoint.
-// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// If EndpointConfigs is configured, it uses that; otherwise it falls back
 // to the default behavior of building the URL from the issuer in context.
 func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
-	if p.endpointResolver != nil {
-		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	// Check if there's a custom discovery URL configured
+	if p.endpointConfigs != nil {
+		defaultURL := shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+		return p.endpointConfigs.GetDiscoveryURL(endpointName, defaultURL)
 	}
 	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+}
+
+// getRoutePath returns the route path for the given endpoint.
+// If EndpointConfigs is configured, it uses that; otherwise it returns defaultPath.
+func (p *Plugin) getRoutePath(endpointName, defaultPath string) string {
+	if p.endpointConfigs != nil {
+		return p.endpointConfigs.GetRoutePath(endpointName, defaultPath)
+	}
+	return defaultPath
 }
 
 // --- authorize handler ---

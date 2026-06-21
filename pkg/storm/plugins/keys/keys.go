@@ -19,15 +19,15 @@ import (
 
 // Plugin serves the JWKS endpoint.
 type Plugin struct {
-	store            storm.KeyStore
-	endpointResolver shared.EndpointResolver // endpoint URL resolver (optional)
+	store           storm.KeyStore
+	endpointConfigs shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
 // New creates a new Keys plugin from a PluginContext.
 func New(ctx *storm.PluginContext) *Plugin {
 	return &Plugin{
-		store:            ctx.Storage.(storm.KeyStore),
-		endpointResolver: ctx.EndpointResolver,
+		store:           ctx.Storage.(storm.KeyStore),
+		endpointConfigs: ctx.EndpointConfigs,
 	}
 }
 
@@ -54,7 +54,8 @@ func (p *Plugin) Name() string { return "keys" }
 
 // Register installs the JWKS route.
 func (p *Plugin) Register(r chi.Router) {
-	r.Get("/.well-known/jwks.json", p.handle)
+	keysPath := p.getRoutePath("keys", "/.well-known/jwks.json")
+	r.Get(keysPath, p.handle)
 }
 
 // Contribute returns the discovery fields for the JWKS endpoint.
@@ -63,13 +64,22 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 }
 
 // resolveEndpoint resolves the absolute URL for the given endpoint.
-// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// If EndpointConfigs is configured, it uses that; otherwise it falls back
 // to the default behavior of building the URL from the issuer in context.
 func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
-	if p.endpointResolver != nil {
-		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	if p.endpointConfigs != nil {
+		defaultURL := shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+		return p.endpointConfigs.GetDiscoveryURL(endpointName, defaultURL)
 	}
 	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+}
+
+// getRoutePath returns the route path for the given endpoint.
+func (p *Plugin) getRoutePath(endpointName, defaultPath string) string {
+	if p.endpointConfigs != nil {
+		return p.endpointConfigs.GetRoutePath(endpointName, defaultPath)
+	}
+	return defaultPath
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

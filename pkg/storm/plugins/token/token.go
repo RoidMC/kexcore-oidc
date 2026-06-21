@@ -50,7 +50,7 @@ func New(ctx *storm.PluginContext) *Plugin {
 		devicePollInterval: 5 * time.Second,
 		requireDPoP:        ctx.RequireDPoP,
 		requireMtls:        ctx.RequireMtls,
-		endpointResolver:   ctx.EndpointResolver,
+		endpointConfigs:    ctx.EndpointConfigs,
 	}
 	if das, ok := ctx.Storage.(storm.DeviceAuthStore); ok {
 		p.deviceAuthStore = das
@@ -121,7 +121,8 @@ func (p *Plugin) SetDPoPNonceSender(sender DPoPNonceSender) {
 
 // Register installs the POST /token route.
 func (p *Plugin) Register(r chi.Router) {
-	r.Post("/token", p.handleToken)
+	tokenPath := p.getRoutePath("token", "/token")
+	r.Post(tokenPath, p.handleToken)
 }
 
 // Contribute returns the discovery fields for the token endpoint.
@@ -155,13 +156,24 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 }
 
 // resolveEndpoint resolves the absolute URL for the given endpoint.
-// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// If EndpointConfigs is configured, it uses that; otherwise it falls back
 // to the default behavior of building the URL from the issuer in context.
 func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
-	if p.endpointResolver != nil {
-		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	// Check if there's a custom discovery URL configured
+	if p.endpointConfigs != nil {
+		defaultURL := shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+		return p.endpointConfigs.GetDiscoveryURL(endpointName, defaultURL)
 	}
 	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+}
+
+// getRoutePath returns the route path for the given endpoint.
+// If EndpointConfigs is configured, it uses that; otherwise it returns defaultPath.
+func (p *Plugin) getRoutePath(endpointName, defaultPath string) string {
+	if p.endpointConfigs != nil {
+		return p.endpointConfigs.GetRoutePath(endpointName, defaultPath)
+	}
+	return defaultPath
 }
 
 // --- main handler ---

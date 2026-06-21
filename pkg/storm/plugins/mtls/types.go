@@ -13,7 +13,7 @@ import (
 
 // Plugin implements mTLS client authentication and certificate-bound tokens.
 type Plugin struct {
-	endpointResolver shared.EndpointResolver // endpoint URL resolver (optional)
+	endpointConfigs shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
 // NewWithConfig creates a new mTLS plugin.
@@ -21,9 +21,9 @@ func NewWithConfig() *Plugin {
 	return &Plugin{}
 }
 
-// NewWithEndpointResolver creates a new mTLS plugin with an endpoint resolver.
-func NewWithEndpointResolver(resolver shared.EndpointResolver) *Plugin {
-	return &Plugin{endpointResolver: resolver}
+// NewWithEndpointConfigs creates a new mTLS plugin with endpoint configurations.
+func NewWithEndpointConfigs(configs shared.EndpointConfigMap) *Plugin {
+	return &Plugin{endpointConfigs: configs}
 }
 
 // --- Context helpers ---

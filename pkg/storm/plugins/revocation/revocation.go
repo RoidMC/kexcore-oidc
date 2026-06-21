@@ -19,11 +19,11 @@ import (
 
 // Plugin implements the Token Revocation endpoint.
 type Plugin struct {
-	store            storm.RevocationStore
-	clientAuth       *shared.ClientAuthHelper
-	crypto           storm.UniCrypto
-	keyStore         protocol.KeyStore
-	endpointResolver shared.EndpointResolver // endpoint URL resolver (optional)
+	store           storm.RevocationStore
+	clientAuth      *shared.ClientAuthHelper
+	crypto          storm.UniCrypto
+	keyStore        protocol.KeyStore
+	endpointConfigs shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
 // Config holds the dependencies for the Revocation plugin.
@@ -42,9 +42,9 @@ func New(ctx *storm.PluginContext) *Plugin {
 		clientAuth: storm.NewClientAuthHelper(cs).
 			WithTLSSkipVerify(ctx.SkipTLSCertVerify).
 			WithAllowPrivateIPs(ctx.AllowPrivateIPs),
-		crypto:           ctx.Crypto,
-		keyStore:         ctx.Storage.(storm.KeyStore),
-		endpointResolver: ctx.EndpointResolver,
+		crypto:          ctx.Crypto,
+		keyStore:        ctx.Storage.(storm.KeyStore),
+		endpointConfigs: ctx.EndpointConfigs,
 	}
 }
 
@@ -80,7 +80,8 @@ func (p *Plugin) Name() string { return "revocation" }
 //
 // OAuth 2.0 standard endpoint: POST /revoke (RFC 7009 §2)
 func (p *Plugin) Register(r chi.Router) {
-	r.Post("/revoke", p.handle)
+	revocationPath := p.getRoutePath("revocation", "/revoke")
+	r.Post(revocationPath, p.handle)
 }
 
 // Contribute returns the discovery fields for the revocation endpoint.
@@ -97,13 +98,24 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 }
 
 // resolveEndpoint resolves the absolute URL for the given endpoint.
-// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// If EndpointConfigs is configured, it uses that; otherwise it falls back
 // to the default behavior of building the URL from the issuer in context.
 func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
-	if p.endpointResolver != nil {
-		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	// Check if there's a custom discovery URL configured
+	if p.endpointConfigs != nil {
+		defaultURL := shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+		return p.endpointConfigs.GetDiscoveryURL(endpointName, defaultURL)
 	}
 	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+}
+
+// getRoutePath returns the route path for the given endpoint.
+// If EndpointConfigs is configured, it uses that; otherwise it returns defaultPath.
+func (p *Plugin) getRoutePath(endpointName, defaultPath string) string {
+	if p.endpointConfigs != nil {
+		return p.endpointConfigs.GetRoutePath(endpointName, defaultPath)
+	}
+	return defaultPath
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

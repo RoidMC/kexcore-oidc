@@ -33,7 +33,7 @@ func NewWithConfig(cfg Config) *Plugin {
 		lifetime:          cfg.Lifetime,
 		skipTLSCertVerify: cfg.SkipTLSCertVerify,
 		allowPrivateIPs:   cfg.AllowPrivateIPs,
-		endpointResolver:  cfg.EndpointResolver,
+		endpointConfigs:   cfg.EndpointConfigs,
 	}
 }
 
@@ -51,7 +51,7 @@ func init() {
 			Lifetime:          ctx.PARLifetime,
 			SkipTLSCertVerify: ctx.SkipTLSCertVerify,
 			AllowPrivateIPs:   ctx.AllowPrivateIPs,
-			EndpointResolver:  ctx.EndpointResolver,
+			EndpointConfigs:   ctx.EndpointConfigs,
 		})
 	})
 }
@@ -70,7 +70,8 @@ func (p *Plugin) Name() string { return "par" }
 // OAuth 2.0 standard endpoint: POST /par (RFC 9126 §3)
 // Register installs the POST /par route.
 func (p *Plugin) Register(r chi.Router) {
-	r.Post("/par", p.handle)
+	parPath := p.getRoutePath("par", "/par")
+	r.Post(parPath, p.handle)
 }
 
 // Contribute returns the discovery fields for the PAR endpoint.
@@ -79,13 +80,22 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 }
 
 // resolveEndpoint resolves the absolute URL for the given endpoint.
-// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// If EndpointConfigs is configured, it uses that; otherwise it falls back
 // to the default behavior of building the URL from the issuer in context.
 func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
-	if p.endpointResolver != nil {
-		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	if p.endpointConfigs != nil {
+		defaultURL := shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+		return p.endpointConfigs.GetDiscoveryURL(endpointName, defaultURL)
 	}
 	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+}
+
+// getRoutePath returns the route path for the given endpoint.
+func (p *Plugin) getRoutePath(endpointName, defaultPath string) string {
+	if p.endpointConfigs != nil {
+		return p.endpointConfigs.GetRoutePath(endpointName, defaultPath)
+	}
+	return defaultPath
 }
 
 func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {

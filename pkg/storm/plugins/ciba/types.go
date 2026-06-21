@@ -30,7 +30,7 @@ type Plugin struct {
 	csrfHandler       *httputil.CookieHandler
 	skipTLSCertVerify bool
 	allowPrivateIPs   bool
-	endpointResolver  shared.EndpointResolver // endpoint URL resolver (optional)
+	endpointConfigs   shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
 // Config holds the dependencies for the CIBA plugin.

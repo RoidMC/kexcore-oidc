@@ -71,43 +71,37 @@ func EndpointURL(ctx context.Context, ep *protocol.Endpoint) string {
 	return ep.DiscoveryURL(IssuerFromContext(ctx))
 }
 
-// EndpointResolver resolves the absolute URL for a given endpoint.
-// It is used by plugins to determine the full URL for their endpoints
-// in the discovery document.
-type EndpointResolver interface {
-	// Resolve returns the absolute URL for the given endpoint.
-	// endpointName is a short identifier (e.g., "token", "authorize").
-	// defaultPath is the default relative path (e.g., "/token", "/authorize").
-	Resolve(ctx context.Context, endpointName, defaultPath string) string
+// EndpointConfig defines the configuration for an endpoint.
+// It allows customizing both the route path and the discovery URL.
+type EndpointConfig struct {
+	// RoutePath is the actual route path for the endpoint.
+	// For example: "/oauth2/token", "/api/v1/authorize"
+	RoutePath string
+
+	// DiscoveryURL is the URL that appears in the discovery document.
+	// If empty, the default discovery URL is used.
+	// For example: "https://op.example.com/oauth2/token"
+	DiscoveryURL string
 }
 
-// DefaultEndpointResolver is the default implementation that uses the issuer URL
-// from the request context to build endpoint URLs.
-type DefaultEndpointResolver struct{}
+// EndpointConfigMap maps endpoint names to their configurations.
+// Endpoint names are short identifiers like "token", "authorize", "userinfo".
+type EndpointConfigMap map[string]EndpointConfig
 
-func (r *DefaultEndpointResolver) Resolve(ctx context.Context, endpointName, defaultPath string) string {
-	return EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
-}
-
-// OverrideEndpointResolver allows customizing specific endpoint URLs
-// while falling back to a base resolver for non-overridden endpoints.
-//
-// Example:
-//
-//	resolver := &OverrideEndpointResolver{
-//	    Base: &DefaultEndpointResolver{},
-//	    Overrides: map[string]string{
-//	        "token": "https://token-service.example.com/token",
-//	    },
-//	}
-type OverrideEndpointResolver struct {
-	Base      EndpointResolver
-	Overrides map[string]string
-}
-
-func (r *OverrideEndpointResolver) Resolve(ctx context.Context, endpointName, defaultPath string) string {
-	if override, ok := r.Overrides[endpointName]; ok {
-		return override
+// GetRoutePath returns the route path for the given endpoint.
+// If the endpoint is not configured or RoutePath is empty, returns defaultPath.
+func (m EndpointConfigMap) GetRoutePath(endpointName, defaultPath string) string {
+	if config, ok := m[endpointName]; ok && config.RoutePath != "" {
+		return config.RoutePath
 	}
-	return r.Base.Resolve(ctx, endpointName, defaultPath)
+	return defaultPath
+}
+
+// GetDiscoveryURL returns the discovery URL for the given endpoint.
+// If the endpoint is not configured or DiscoveryURL is empty, returns defaultURL.
+func (m EndpointConfigMap) GetDiscoveryURL(endpointName, defaultURL string) string {
+	if config, ok := m[endpointName]; ok && config.DiscoveryURL != "" {
+		return config.DiscoveryURL
+	}
+	return defaultURL
 }

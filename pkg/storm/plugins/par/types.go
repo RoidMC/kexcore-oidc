@@ -16,7 +16,7 @@ type Plugin struct {
 	lifetime          time.Duration
 	skipTLSCertVerify bool
 	allowPrivateIPs   bool
-	endpointResolver  shared.EndpointResolver // endpoint URL resolver (optional)
+	endpointConfigs   shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
 // Config holds the dependencies for the PAR plugin.
@@ -30,6 +30,6 @@ type Config struct {
 	SkipTLSCertVerify bool
 	// AllowPrivateIPs disables SSRF protection for outbound HTTP (testing only).
 	AllowPrivateIPs bool
-	// EndpointResolver is an optional endpoint URL resolver for customizing endpoint URLs.
-	EndpointResolver shared.EndpointResolver
+	// EndpointConfigs is an optional endpoint configurations map for customizing endpoint URLs.
+	EndpointConfigs shared.EndpointConfigMap
 }

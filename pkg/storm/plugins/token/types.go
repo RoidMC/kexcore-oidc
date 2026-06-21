@@ -38,7 +38,7 @@ type Plugin struct {
 	dpopNonceSender        DPoPNonceSender         // optional, set via SetDPoPNonceSender
 	invalidateRefreshOnUse bool                    // RFC 6749 §10.4: invalidate old RT on refresh
 	clientLimits           sync.Map                // map[string]*clientBucket — per-client rate limiting
-	endpointResolver       shared.EndpointResolver // endpoint URL resolver (optional)
+	endpointConfigs        shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
 // Config holds the dependencies for the Token plugin.

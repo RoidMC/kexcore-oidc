@@ -47,7 +47,7 @@ func init() {
 			cibaTmpl:          cibaTmpl,
 			skipTLSCertVerify: ctx.SkipTLSCertVerify,
 			allowPrivateIPs:   ctx.AllowPrivateIPs,
-			endpointResolver:  ctx.EndpointResolver,
+			endpointConfigs:   ctx.EndpointConfigs,
 		}
 		if nc, ok := ctx.Storage.(storm.CIBANotificationCallback); ok {
 			p.notifier = nc
@@ -69,12 +69,14 @@ func (p *Plugin) Name() string { return "ciba" }
 
 // Register installs the /bc-authorize and /ciba routes.
 func (p *Plugin) Register(r chi.Router) {
-	r.Post("/bc-authorize", p.handleBackchannelAuth)
-	r.Get("/ciba", p.handleApprovalPage)
-	r.Post("/ciba", p.handleApprovalAction)
+	bcAuthPath := p.getRoutePath("ciba", "/bc-authorize")
+	cibaPagePath := p.getRoutePath("ciba_page", "/ciba")
+	r.Post(bcAuthPath, p.handleBackchannelAuth)
+	r.Get(cibaPagePath, p.handleApprovalPage)
+	r.Post(cibaPagePath, p.handleApprovalAction)
 	// Automated CIBA approval endpoint for OIDF conformance testing.
 	// No CSRF protection — only for automated test environments.
-	r.Post("/ciba/approve", p.handleAutomatedApproval)
+	r.Post(cibaPagePath+"/approve", p.handleAutomatedApproval)
 }
 
 // Contribute adds CIBA discovery fields per CIBA Core 1.0 §4.
@@ -92,13 +94,22 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 }
 
 // resolveEndpoint resolves the absolute URL for the given endpoint.
-// If an EndpointResolver is configured, it uses that; otherwise it falls back
+// If EndpointConfigs is configured, it uses that; otherwise it falls back
 // to the default behavior of building the URL from the issuer in context.
 func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
-	if p.endpointResolver != nil {
-		return p.endpointResolver.Resolve(ctx, endpointName, defaultPath)
+	if p.endpointConfigs != nil {
+		defaultURL := shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+		return p.endpointConfigs.GetDiscoveryURL(endpointName, defaultURL)
 	}
 	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
+}
+
+// getRoutePath returns the route path for the given endpoint.
+func (p *Plugin) getRoutePath(endpointName, defaultPath string) string {
+	if p.endpointConfigs != nil {
+		return p.endpointConfigs.GetRoutePath(endpointName, defaultPath)
+	}
+	return defaultPath
 }
 
 // handleBackchannelAuth handles POST /bc-authorize (CIBA Core 1.0 §7.1.1).

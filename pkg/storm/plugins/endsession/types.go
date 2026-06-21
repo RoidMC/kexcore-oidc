@@ -42,7 +42,7 @@ type Plugin struct {
 	decoder          *protocol.Decoder
 	logoutHook       LogoutHook
 	logoutTmpl       *template.Template
-	endpointResolver shared.EndpointResolver // endpoint URL resolver (optional)
+	endpointConfigs  shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
 // Config holds the dependencies for the EndSession plugin.
@@ -79,7 +79,7 @@ func New(ctx *storm.PluginContext) *Plugin {
 		defaultLogoutURI: "/",
 		decoder:          ctx.Decoder,
 		logoutTmpl:       logoutTmpl,
-		endpointResolver: ctx.EndpointResolver,
+		endpointConfigs:  ctx.EndpointConfigs,
 	}
 }
 

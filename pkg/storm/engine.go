@@ -35,10 +35,10 @@ type Engine struct {
 	logger     *slog.Logger
 	tracer     trace.Tracer
 
-	storage          Storage
-	issuerFn         shared.IssuerFromRequest
-	discoveryCfg     DiscoveryConfig
-	endpointResolver shared.EndpointResolver // endpoint URL resolver (optional)
+	storage         Storage
+	issuerFn        shared.IssuerFromRequest
+	discoveryCfg    DiscoveryConfig
+	endpointConfigs shared.EndpointConfigMap // endpoint configurations (optional)
 
 	disabled          map[string]bool   // plugins disabled via Disable()
 	explicitlyEnabled map[string]bool   // plugins explicitly enabled via Enable()
@@ -74,12 +74,12 @@ type PluginContext struct {
 	SkipTLSCertVerify bool // WARNING: disables TLS certificate verification on outbound HTTP requests.
 	// Only for testing with self-signed certificates.
 	// NEVER enable in production.
-	RequireDPoP      bool                     // FAPI 2.0: require DPoP proof for all token requests
-	RequireMtls      bool                     // FAPI 2.0: require mTLS client certificate for all token requests
-	PARLifetime      time.Duration            // PAR request_uri lifetime (default: 0 means use plugin default, usually 90s)
-	IssuerFn         shared.IssuerFromRequest // issuer URL function
-	EndpointResolver shared.EndpointResolver  // endpoint URL resolver (optional, defaults to DefaultEndpointResolver)
-	Tracer           trace.Tracer             // otel tracer for plugins
+	RequireDPoP     bool                     // FAPI 2.0: require DPoP proof for all token requests
+	RequireMtls     bool                     // FAPI 2.0: require mTLS client certificate for all token requests
+	PARLifetime     time.Duration            // PAR request_uri lifetime (default: 0 means use plugin default, usually 90s)
+	IssuerFn        shared.IssuerFromRequest // issuer URL function
+	EndpointConfigs shared.EndpointConfigMap // endpoint configurations (optional, for customizing route paths and discovery URLs)
+	Tracer          trace.Tracer             // otel tracer for plugins
 }
 
 // PluginFactory creates a plugin from a PluginContext.
@@ -285,22 +285,26 @@ func WithRateLimiter(rl *RateLimiter) EngineOption {
 	}
 }
 
-// WithEndpointResolver sets a custom endpoint resolver for the engine.
-// This allows overriding the URL for specific endpoints in the discovery document.
+// WithEndpointConfigs sets custom endpoint configurations for the engine.
+// This allows customizing both the route paths and discovery URLs for specific endpoints.
 //
 // Example:
 //
-//	engine := storm.New(storage, issuerFn, storm.WithEndpointResolver(
-//	    &shared.OverrideEndpointResolver{
-//	        Base: &shared.DefaultEndpointResolver{},
-//	        Overrides: map[string]string{
-//	            "token": "https://token-service.example.com/token",
+//	engine := storm.New(storage, issuerFn, storm.WithEndpointConfigs(
+//	    shared.EndpointConfigMap{
+//	        "token": {
+//	            RoutePath:    "/oauth2/token",
+//	            DiscoveryURL: "https://op.example.com/oauth2/token",
+//	        },
+//	        "authorize": {
+//	            RoutePath:    "/oauth2/authorize",
+//	            DiscoveryURL: "https://op.example.com/oauth2/authorize",
 //	        },
 //	    },
 //	))
-func WithEndpointResolver(resolver shared.EndpointResolver) EngineOption {
+func WithEndpointConfigs(configs shared.EndpointConfigMap) EngineOption {
 	return func(e *Engine) {
-		e.endpointResolver = resolver
+		e.endpointConfigs = configs
 	}
 }
 
@@ -348,7 +352,7 @@ func (e *Engine) autoRegisterPlugins() {
 		RequireMtls:       e.requireMtls,
 		PARLifetime:       e.parLifetime,
 		IssuerFn:          e.issuerFn,
-		EndpointResolver:  e.endpointResolver,
+		EndpointConfigs:   e.endpointConfigs,
 		Tracer:            e.tracer,
 	}
 	if pctx.Decoder == nil {
