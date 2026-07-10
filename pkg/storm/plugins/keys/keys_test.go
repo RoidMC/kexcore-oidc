@@ -297,6 +297,27 @@ func TestKeys_ValidJSONResponse(t *testing.T) {
 	assert.Contains(t, raw, "keys")
 }
 
+// Cache-Control header is set for JWKS responses (RFC 7517 §5).
+func TestKeys_CacheControl(t *testing.T) {
+	ecKey := generateECDSAKey(t)
+	store := &fakeKeyStore{
+		keys: []protocol.Key{
+			&fakeKey{id: "key-1", alg: "ES256", use: "sig", key: ecKey},
+		},
+	}
+	p := newTestPlugin(store)
+
+	r := httptest.NewRequest(http.MethodGet, "/.well-known/jwks.json", nil)
+	ctx := shared.ContextWithIssuer(r.Context(), "https://op.example.com")
+	r = r.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	p.handle(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "public, max-age=3600", w.Header().Get("Cache-Control"))
+}
+
 // Private key JWK must preserve use/kid/alg after PublicKey() extraction.
 // This is the root cause of oidcc-server-rotate-keys failure:
 // jwx PublicKey() drops non-intrinsic fields, so JWKS lacked "use":"sig".

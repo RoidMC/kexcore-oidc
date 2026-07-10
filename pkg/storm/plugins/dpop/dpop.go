@@ -136,7 +136,9 @@ func (p *Plugin) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Nonce replay detection
+		// Nonce replay detection + insert.
+		// The eviction sort is done outside the lock to reduce contention.
+		needEvict := false
 		p.mu.Lock()
 		if _, exists := p.usedNonces[proof.UniqueID]; exists {
 			p.mu.Unlock()
@@ -146,54 +148,71 @@ func (p *Plugin) Middleware(next http.Handler) http.Handler {
 			_, _ = w.Write([]byte(`{"error":"invalid_dpop_proof","error_description":"DPoP proof jti replay detected"}`))
 			return
 		}
-		// Evict oldest entries if cache is at capacity
 		if len(p.usedNonces) >= maxNonceCacheSize {
-			p.evictOldestLocked()
+			needEvict = true
 		}
 		p.usedNonces[proof.UniqueID] = time.Now()
 		p.mu.Unlock()
+
+		// Eviction sort happens outside the lock.
+		if needEvict {
+			p.evictBatch()
+		}
 
 		ctx := ContextWithDPoP(r.Context(), proof)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// evictOldestLocked removes the oldest ~25% of entries.
-// Must be called with p.mu held.
-func (p *Plugin) evictOldestLocked() {
-	// Find the 25th percentile time — evict everything older
-	target := maxNonceCacheSize / 4
-	if target == 0 {
-		target = 1
-	}
+// entry is a snapshot of a nonce entry, used for eviction without holding the lock.
+type entry struct {
+	jti string
+	t   time.Time
+}
 
-	// Collect all timestamps
-	timestamps := make([]time.Time, 0, len(p.usedNonces))
-	for _, t := range p.usedNonces {
-		timestamps = append(timestamps, t)
+// evictBatch evicts the oldest ~25% of usedNonces entries.
+// It copies the map, releases the lock, sorts, then re-acquires the lock to delete.
+// This keeps the critical section short — sorting O(n log n) happens lock-free.
+func (p *Plugin) evictBatch() {
+	const evictRatio = 4 // evict oldest 1/4
+
+	// ── Phase 1: copy under lock ───────────────────────────────────
+	p.mu.Lock()
+	snapshots := make([]entry, 0, len(p.usedNonces))
+	for jti, t := range p.usedNonces {
+		snapshots = append(snapshots, entry{jti, t})
 	}
-	if len(timestamps) < target {
+	p.mu.Unlock()
+
+	// ── Phase 2: sort + select victims (lock-free) ──────────────────
+	target := len(snapshots) / evictRatio
+	if target == 0 {
 		return
 	}
-
-	// Full sort is O(n log n), replacing the previous O(n*k) selection sort
-	// where k = n/4 (i.e., O(n²) worst case).
-	slices.SortFunc(timestamps, func(a, b time.Time) int {
-		if a.Before(b) {
+	slices.SortFunc(snapshots, func(a, b entry) int {
+		if a.t.Before(b.t) {
 			return -1
 		}
-		if a.After(b) {
+		if a.t.After(b.t) {
 			return 1
 		}
 		return 0
 	})
-	cutoff := timestamps[target-1]
+	cutoff := snapshots[target-1].t
 
-	for jti, t := range p.usedNonces {
-		if !t.After(cutoff) {
-			delete(p.usedNonces, jti)
+	toDelete := make(map[string]struct{}, target)
+	for i := 0; i < target; i++ {
+		if !snapshots[i].t.After(cutoff) {
+			toDelete[snapshots[i].jti] = struct{}{}
 		}
 	}
+
+	// ── Phase 3: delete under lock ─────────────────────────────────
+	p.mu.Lock()
+	for jti := range toDelete {
+		delete(p.usedNonces, jti)
+	}
+	p.mu.Unlock()
 }
 
 // CleanupNonceCache removes expired nonces from the cache.
@@ -223,10 +242,14 @@ func (p *Plugin) GenerateNonce() string {
 	nonce := base64.RawURLEncoding.EncodeToString(b)
 
 	p.mu.Lock()
-	// Evict oldest if at capacity
-	if len(p.nonces) >= maxNonceCacheSize {
-		p.evictNoncesLocked()
+	needEvict := len(p.nonces) >= maxNonceCacheSize
+	p.mu.Unlock()
+
+	if needEvict {
+		p.evictNoncesBatch()
 	}
+
+	p.mu.Lock()
 	p.nonces[nonce] = time.Now()
 	p.mu.Unlock()
 
@@ -260,38 +283,45 @@ func (p *Plugin) ValidateNonce(nonce string) bool {
 	return true
 }
 
-// evictNoncesLocked removes the oldest ~25% of nonces.
-// Must be called with p.mu held.
-func (p *Plugin) evictNoncesLocked() {
-	target := maxNonceCacheSize / 4
-	if target == 0 {
-		target = 1
-	}
+// evictNoncesBatch evicts the oldest ~25% of server-provided nonces.
+// Sorting is performed outside the lock to reduce contention.
+func (p *Plugin) evictNoncesBatch() {
+	const evictRatio = 4
 
-	timestamps := make([]time.Time, 0, len(p.nonces))
-	for _, t := range p.nonces {
-		timestamps = append(timestamps, t)
+	p.mu.Lock()
+	snapshots := make([]entry, 0, len(p.nonces))
+	for nonce, t := range p.nonces {
+		snapshots = append(snapshots, entry{nonce, t})
 	}
-	if len(timestamps) < target {
+	p.mu.Unlock()
+
+	target := len(snapshots) / evictRatio
+	if target == 0 {
 		return
 	}
-
-	slices.SortFunc(timestamps, func(a, b time.Time) int {
-		if a.Before(b) {
+	slices.SortFunc(snapshots, func(a, b entry) int {
+		if a.t.Before(b.t) {
 			return -1
 		}
-		if a.After(b) {
+		if a.t.After(b.t) {
 			return 1
 		}
 		return 0
 	})
-	cutoff := timestamps[target-1]
+	cutoff := snapshots[target-1].t
 
-	for nonce, t := range p.nonces {
-		if !t.After(cutoff) {
-			delete(p.nonces, nonce)
+	toDelete := make(map[string]struct{}, target)
+	for i := 0; i < target; i++ {
+		if !snapshots[i].t.After(cutoff) {
+			toDelete[snapshots[i].jti] = struct{}{}
 		}
 	}
+
+	p.mu.Lock()
+	for nonce := range toDelete {
+		delete(p.nonces, nonce)
+	}
+	p.mu.Unlock()
 }
 
 // WriteNonceHeader writes the DPoP-Nonce header to the response.

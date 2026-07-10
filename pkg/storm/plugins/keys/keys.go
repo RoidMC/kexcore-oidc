@@ -196,5 +196,15 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		resp.Keys = append(resp.Keys, raw)
 	}
 
-	shared.JSONResponse(w, resp, http.StatusOK)
+	// RFC 7517 §5: JWKS is public data, safe to cache.
+	// Only set caching headers on success — errors use WriteError which has its own semantics.
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Content-Type", "application/json")
+
+	out, err := json.Marshal(resp)
+	if err != nil {
+		shared.WriteError(w, r, err, nil)
+		return
+	}
+	w.Write(out)
 }
