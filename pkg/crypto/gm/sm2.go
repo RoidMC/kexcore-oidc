@@ -93,7 +93,3 @@ func SM2PrivateKeyToHex(privateKey *sm2.PrivateKey) (string, error) {
 func SM2CalculateZA(publicKey *ecdsa.PublicKey, uid []byte) ([]byte, error) {
 	return sm2.CalculateZA(publicKey, uid)
 }
-
-func SM2KeyExchange(priv *sm2.PrivateKey, peerPub *ecdsa.PublicKey, uid, peerUID []byte, keyLen int, isResponder bool) (*sm2.KeyExchange, error) {
-	return sm2.NewKeyExchange(priv, peerPub, uid, peerUID, keyLen, isResponder)
-}
