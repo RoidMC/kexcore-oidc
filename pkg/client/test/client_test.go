@@ -12,8 +12,8 @@ import (
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/client"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/go-openapi/testify/v2/assert"
+	"github.com/go-openapi/testify/v2/require"
 )
 
 func TestDiscover(t *testing.T) {

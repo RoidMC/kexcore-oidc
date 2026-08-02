@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/go-openapi/testify/v2/assert"
+	"github.com/go-openapi/testify/v2/require"
 	"golang.org/x/oauth2"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/client/profile"

@@ -29,8 +29,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/securecookie"
 	"github.com/jeremija/gosubmit"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/go-openapi/testify/v2/assert"
+	"github.com/go-openapi/testify/v2/require"
 	"golang.org/x/oauth2"
 
 	"github.com/roidmc/kexcore-oidc/v2/example/storm-server/storage"

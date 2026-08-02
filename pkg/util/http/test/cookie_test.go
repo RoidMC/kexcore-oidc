@@ -11,8 +11,8 @@ import (
 
 	"github.com/gorilla/securecookie"
 	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/go-openapi/testify/v2/assert"
+	"github.com/go-openapi/testify/v2/require"
 )
 
 var (

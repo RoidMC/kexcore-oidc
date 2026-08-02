@@ -2,11 +2,12 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/go-openapi/testify/v2/assert"
+	"github.com/go-openapi/testify/v2/require"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
@@ -89,7 +90,7 @@ func TestContribute_SigningAlgorithms_FallbackRS256(t *testing.T) {
 	})
 
 	t.Run("error", func(t *testing.T) {
-		p := New(&fakeKeyStore{err: assert.AnError})
+		p := New(&fakeKeyStore{err: errors.New("fake keystore error")})
 		cfg := newDiscoveryCfg()
 		p.Contribute(context.Background(), cfg)
 		assert.Equal(t, []string{"RS256"}, cfg.IDTokenSigningAlgValuesSupported)

@@ -3,13 +3,33 @@
 // It handles the /authorize route (RFC 6749 Section 3.1 / OpenID Connect Core Section 3.1.1),
 // covering:
 //   - Parsing and validating authorization requests
-//   - Redirecting to the login UI
+//   - Redirecting to the login UI (redirect-based flow)
+//   - Challenge-based REST API for external SSG Login UI
 //   - Processing the callback after authentication
 //   - Generating authorization codes or implicit tokens
 //
-// The callback path (/authorize/callback) is an internal route for the
-// login UI to redirect back to after user authentication. This is not
-// part of the OIDC standard but is a common implementation pattern.
+// # Redirect-based flow (default)
+//
+// The engine creates an AuthRequest and redirects the user agent to the Login UI
+// via Client.LoginURL(authRequestID). The Login UI authenticates the user and
+// redirects back to /authorize/callback?id=xxx.
+//
+// Internal callback: GET /authorize/callback
+// This is NOT an OIDC standard endpoint. It is the URL the login UI
+// redirects to after successful user authentication.
+//
+// # Challenge-based REST API (for external SSG/SPA Login UI)
+//
+// The engine exposes two REST API endpoints for external Login UIs to
+// accept or reject a login challenge. This is the StormEngine equivalent
+// of Hydra's PUT /oauth2/auth/requests/login/accept.
+//
+//	POST /authorize/complete — Accept a login challenge
+//	POST /authorize/reject   — Reject a login challenge
+//
+// The Login UI calls these endpoints after authenticating the user, and
+// receives a redirect_to URL in response. It then redirects the user agent
+// to that URL to complete the OIDC flow.
 package authorization
 
 import (
@@ -237,13 +257,26 @@ func (p *Plugin) recordSession(ctx context.Context, authReq storm.AuthRequest) {
 // Internal callback: GET /authorize/callback
 // This is NOT an OIDC standard endpoint. It is the URL the login UI
 // redirects to after successful user authentication.
+//
+// Challenge-based REST API (for external SSG Login UI):
+//
+//	POST /authorize/complete — Accept a login challenge.
+//	  Request:  { "auth_request_id": "...", "subject": "...", "auth_time": 0, "sid": "..." }
+//	  Response: { "redirect_to": "..." }
+//	POST /authorize/reject — Reject a login challenge.
+//	  Request:  { "auth_request_id": "...", "error": "access_denied", "error_description": "..." }
+//	  Response: { "redirect_to": "..." }
 func (p *Plugin) Register(r chi.Router) {
 	authorizePath := p.getRoutePath("authorize", "/authorize")
 	callbackPath := p.getRoutePath("authorize_callback", "/authorize/callback")
+	acceptPath := p.getRoutePath("authorize_accept", "/authorize/complete")
+	rejectPath := p.getRoutePath("authorize_reject", "/authorize/reject")
 
 	r.Get(authorizePath, p.handleAuthorize)
 	r.Post(authorizePath, p.handleAuthorize)
 	r.Get(callbackPath, p.handleCallback)
+	r.Post(acceptPath, p.handleAccept)
+	r.Post(rejectPath, p.handleReject)
 }
 
 // Contribute populates the discovery fields for the authorization endpoint.
@@ -769,6 +802,220 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.authResponse(w, r, authReq)
+}
+
+// ─── challenge-based REST API handlers ────────────────────────────────
+
+// handleAccept accepts a login challenge from an external Login UI (REST API).
+//
+// This is the StormEngine equivalent of Hydra's PUT /oauth2/auth/requests/login/accept.
+// The Login UI authenticates the user and calls
+// this endpoint to complete the authorization request.
+//
+// Request:  POST /authorize/complete
+//
+//	{ "auth_request_id": "...", "subject": "...", "auth_time": 0, "sid": "..." }
+//
+// Response: 200 OK
+//
+//	{ "redirect_to": "https://op.example.com/authorize/callback?id=..." }
+//
+// The Login UI should redirect the user agent to the returned redirect_to URL.
+func (p *Plugin) handleAccept(w http.ResponseWriter, r *http.Request) {
+	ctx, span := shared.TracerSpan(r.Context(), p.tracer, "authorization.accept")
+	defer span.End()
+
+	var req struct {
+		AuthRequestID string `json:"auth_request_id"`
+		Subject       string `json:"subject"`
+		AuthTime      int64  `json:"auth_time,omitempty"`
+		SID           string `json:"sid,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		shared.JSONResponse(w, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "invalid request body",
+		}, http.StatusBadRequest)
+		return
+	}
+	if req.AuthRequestID == "" || req.Subject == "" {
+		shared.JSONResponse(w, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "auth_request_id and subject are required",
+		}, http.StatusBadRequest)
+		return
+	}
+
+	span.SetAttributes(
+		attribute.String("auth_request_id", req.AuthRequestID),
+		attribute.String("subject", req.Subject),
+	)
+
+	// Verify the auth request exists.
+	authReq, err := p.authStore.AuthRequestByID(ctx, req.AuthRequestID)
+	if err != nil {
+		span.RecordError(err)
+		shared.JSONResponse(w, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "auth request not found",
+		}, http.StatusNotFound)
+		return
+	}
+
+	// Idempotency: reject if the auth request is already completed.
+	// This prevents replay attacks where a stolen auth_request_id is
+	// used to accept the challenge a second time.
+	if authReq.Done() {
+		span.SetStatus(codes.Error, "auth request already completed")
+		shared.JSONResponse(w, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "auth request already completed",
+		}, http.StatusConflict)
+		return
+	}
+
+	// Store clientID in context for JARM error responses.
+	if authReq.GetClientID() != "" {
+		r = r.WithContext(contextWithJARMClientID(r.Context(), authReq.GetClientID()))
+	}
+	// Store client's preferred signing algorithm for JARM signing.
+	if jarmClient, err := p.clientStore.GetClientByClientID(ctx, authReq.GetClientID()); err == nil {
+		if alg := shared.ResolvePreferredSigningAlg(jarmClient); alg != "" {
+			r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
+		}
+	}
+
+	// Complete the auth request via AutoCompleteAuthRequest.
+	completer, ok := p.authStore.(storm.AutoCompleteAuthRequest)
+	if !ok {
+		span.SetStatus(codes.Error, "AutoCompleteAuthRequest not supported")
+		shared.JSONResponse(w, map[string]string{
+			"error":             "server_error",
+			"error_description": "AutoCompleteAuthRequest not supported by storage",
+		}, http.StatusInternalServerError)
+		return
+	}
+
+	authTime := time.Now()
+	if req.AuthTime > 0 {
+		authTime = time.Unix(req.AuthTime, 0)
+	}
+	if err := completer.CompleteAuthRequest(ctx, req.AuthRequestID, req.Subject, authTime, req.SID); err != nil {
+		span.RecordError(err)
+		shared.JSONResponse(w, map[string]string{
+			"error":             "server_error",
+			"error_description": "failed to complete auth request",
+		}, http.StatusInternalServerError)
+		return
+	}
+
+	// Build the callback redirect URL.
+	callbackPath := p.getRoutePath("authorize_callback", "/authorize/callback")
+	redirectTo := strings.TrimRight(shared.IssuerFromContext(ctx), "/") + callbackPath + "?id=" + url.QueryEscape(req.AuthRequestID)
+
+	span.SetAttributes(attribute.String("redirect_to", redirectTo))
+
+	shared.JSONResponse(w, map[string]string{
+		"redirect_to": redirectTo,
+	}, http.StatusOK)
+}
+
+// handleReject rejects a login challenge from an external Login UI (REST API).
+//
+// This is the StormEngine equivalent of Hydra's PUT /oauth2/auth/requests/login/reject.
+// The Login UI calls this when authentication fails
+// or the user cancels.
+//
+// Request:  POST /authorize/reject
+//
+//	{ "auth_request_id": "...", "error": "access_denied", "error_description": "..." }
+//
+// Response: 200 OK
+//
+//	{ "redirect_to": "https://op.example.com/authorize/callback?id=...&error=access_denied" }
+//
+// The Login UI should redirect the user agent to the returned redirect_to URL.
+func (p *Plugin) handleReject(w http.ResponseWriter, r *http.Request) {
+	ctx, span := shared.TracerSpan(r.Context(), p.tracer, "authorization.reject")
+	defer span.End()
+
+	var req struct {
+		AuthRequestID    string `json:"auth_request_id"`
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		shared.JSONResponse(w, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "invalid request body",
+		}, http.StatusBadRequest)
+		return
+	}
+	if req.AuthRequestID == "" {
+		shared.JSONResponse(w, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "auth_request_id is required",
+		}, http.StatusBadRequest)
+		return
+	}
+	if req.Error == "" {
+		req.Error = "access_denied"
+	}
+
+	span.SetAttributes(
+		attribute.String("auth_request_id", req.AuthRequestID),
+		attribute.String("error", req.Error),
+	)
+
+	// Verify the auth request exists (for redirect_uri/state extraction).
+	authReq, err := p.authStore.AuthRequestByID(ctx, req.AuthRequestID)
+	if err != nil {
+		span.RecordError(err)
+		shared.JSONResponse(w, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "auth request not found",
+		}, http.StatusNotFound)
+		return
+	}
+
+	// Idempotency: cannot reject an already-completed auth request.
+	if authReq.Done() {
+		span.SetStatus(codes.Error, "auth request already completed")
+		shared.JSONResponse(w, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "auth request already completed",
+		}, http.StatusConflict)
+		return
+	}
+
+	// Store clientID in context for JARM error responses.
+	if authReq.GetClientID() != "" {
+		r = r.WithContext(contextWithJARMClientID(r.Context(), authReq.GetClientID()))
+	}
+	if jarmClient, err := p.clientStore.GetClientByClientID(ctx, authReq.GetClientID()); err == nil {
+		if alg := shared.ResolvePreferredSigningAlg(jarmClient); alg != "" {
+			r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
+		}
+	}
+	if p.jarmSigner != nil {
+		r = r.WithContext(contextWithJARMSigner(r.Context(), p.jarmSigner))
+	}
+
+	// Build the error callback URL.
+	callbackPath := p.getRoutePath("authorize_callback", "/authorize/callback")
+	params := url.Values{}
+	params.Set("id", req.AuthRequestID)
+	params.Set("error", req.Error)
+	if req.ErrorDescription != "" {
+		params.Set("error_description", req.ErrorDescription)
+	}
+	redirectTo := strings.TrimRight(shared.IssuerFromContext(ctx), "/") + callbackPath + "?" + params.Encode()
+
+	span.SetAttributes(attribute.String("redirect_to", redirectTo))
+
+	shared.JSONResponse(w, map[string]string{
+		"redirect_to": redirectTo,
+	}, http.StatusOK)
 }
 
 // authResponse creates the successful authentication response.

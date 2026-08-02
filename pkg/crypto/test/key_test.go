@@ -15,7 +15,7 @@ import (
 	"encoding/pem"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/go-openapi/testify/v2/assert"
 
 	gmsm "github.com/emmansun/gmsm/sm2"
 

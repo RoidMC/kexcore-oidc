@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/stretchr/testify/assert"
+	"github.com/go-openapi/testify/v2/assert"
 )
 
 func TestUserInfo_AppendClaims(t *testing.T) {

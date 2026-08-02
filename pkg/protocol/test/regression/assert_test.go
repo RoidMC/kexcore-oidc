@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/go-openapi/testify/v2/assert"
+	"github.com/go-openapi/testify/v2/require"
 )
 
 func TestJSONSerializationStability(t *testing.T) {

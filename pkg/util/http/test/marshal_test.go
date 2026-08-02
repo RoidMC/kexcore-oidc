@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
-	"github.com/stretchr/testify/assert"
+	"github.com/go-openapi/testify/v2/assert"
 )
 
 func TestConcatenateJSON(t *testing.T) {

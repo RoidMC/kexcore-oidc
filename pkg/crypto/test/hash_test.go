@@ -7,8 +7,8 @@ package crypto_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/go-openapi/testify/v2/assert"
+	"github.com/go-openapi/testify/v2/require"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
 )

@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/go-openapi/testify/v2/assert"
+	"github.com/go-openapi/testify/v2/require"
 
 	crypto_pkg "github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
