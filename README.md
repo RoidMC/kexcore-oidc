@@ -321,4 +321,4 @@ language governing permissions and limitations under the License.
 [oidf-backchannel]: https://www.certification.openid.net/plan-detail.html?plan=eD4txBOvstik4&public=true
 [oidf-backchannel-dynamic]: https://www.certification.openid.net/log-detail.html?log=kXMjAHzAHyqaItK&public=true
 [oidf-3rdparty-init-login]: https://www.certification.openid.net/plan-detail.html?plan=CL0WAfURJnc5a&public=true
-[oidf-dynamic]: https://www.certification.openid.net/plan-detail.html?plan=sgIlsSj6Kf70z&public=true 
+[oidf-dynamic]: https://www.certification.openid.net/plan-detail.html?plan=sgIlsSj6Kf70z&public=true
