@@ -1729,6 +1729,44 @@ func (p *Plugin) createAccessToken(ctx context.Context, request storm.TokenReque
 	// 对于 refresh_token grant：始终为 true（刷新后必须返回新 refresh_token）
 	needsRefresh := issueRefresh && validateGrantType(client, protocol.GrantTypeRefreshToken)
 
+	// JWT-format access tokens (RFC 9068): when the client opts in via
+	// AccessTokenFormatClient and the storage implements JWTAccessTokenStore,
+	// mint a signed JWT instead of an opaque bearer token. Opaque remains the
+	// engine default for clients that don't opt in — KexCore's first-party
+	// clients always opt in (no opaque access tokens).
+	if jwtStore, ok := p.tokenStore.(storm.JWTAccessTokenStore); ok {
+		if afc, ok := client.(storm.AccessTokenFormatClient); ok && afc.AccessTokenFormat() == storm.AccessTokenTypeJWT {
+			tokenID, token, expiration, err := jwtStore.CreateJWTAccessToken(ctx, request, cnf, 0)
+			if err != nil {
+				return "", "", "", 0, err
+			}
+			// Optional JWE encryption (signed JWT + optional JWE). Mirrors the
+			// id_token encryption path. Clients that don't implement
+			// AccessTokenEncryptionClient receive the signed JWT as-is.
+			if encClient, ok := client.(storm.AccessTokenEncryptionClient); ok {
+				alg, enc := encClient.AccessTokenEncryptionAlg(), encClient.AccessTokenEncryptionEnc()
+				if alg != "" && enc != "" {
+					encrypted, eerr := encryptIDToken(token, client, p.crypto, alg, enc)
+					if eerr != nil {
+						return "", "", "", 0, fmt.Errorf("encrypt access token: %w", eerr)
+					}
+					token = encrypted
+				}
+			}
+			var refreshToken string
+			if needsRefresh {
+				if rs, ok := jwtStore.(storm.JWTRefreshTokenStore); ok {
+					refreshToken, _, err = rs.CreateRefreshToken(ctx, request, currentRefreshToken, cnf)
+					if err != nil {
+						return "", "", "", 0, err
+					}
+				}
+			}
+			validity = expiration.Sub(time.Now().UTC())
+			return token, tokenID, refreshToken, validity, nil
+		}
+	}
+
 	var expiration time.Time
 	if needsRefresh {
 		tokenID, refreshToken, expiration, err = p.tokenStore.CreateAccessAndRefreshTokens(ctx, request, currentRefreshToken, cnf)

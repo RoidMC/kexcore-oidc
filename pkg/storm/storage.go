@@ -1011,6 +1011,32 @@ type JWTAccessTokenStore interface {
 	CreateJWTAccessToken(ctx context.Context, req TokenRequest, cnf map[string]any, lifetime time.Duration) (tokenID, token string, expiration time.Time, err error)
 }
 
+// ExtraAccessTokenClaimsProvider is optionally implemented by TokenRequest to
+// inject additional claims into a JWT-format access token (RFC 9068).
+//
+// This is used by first-party token minting (KexCore session tokens) to embed
+// tenant (tid) and role claims that the generic TokenRequest interface does not
+// carry. Base RFC 9068 claims take precedence over keys returned here.
+type ExtraAccessTokenClaimsProvider interface {
+	// ExtraAccessTokenClaims returns additional claims to merge into the
+	// JWT access token (e.g. tid, roles).
+	ExtraAccessTokenClaims() map[string]any
+}
+
+// JWTRefreshTokenStore is optionally implemented by TokenStore to create a
+// refresh token alongside a JWT-format access token.
+//
+// JWT access tokens are self-contained (stateless), but refresh tokens remain
+// opaque server-side state. When a client requests JWT access tokens AND a
+// refresh token, the token plugin calls this method instead of the opaque
+// CreateAccessAndRefreshTokens flow.
+type JWTRefreshTokenStore interface {
+	// CreateRefreshToken creates an opaque refresh token. The returned
+	// expiration is the refresh token's lifetime. currentRefreshToken, when
+	// non-empty, is the prior refresh token to rotate out.
+	CreateRefreshToken(ctx context.Context, req TokenRequest, currentRefreshToken string, cnf map[string]any) (refreshToken string, expiration time.Time, err error)
+}
+
 // UserinfoFromRequestProvider is optionally implemented by UserinfoStore
 // to allow per-request customization of userinfo claims.
 //
@@ -1076,4 +1102,16 @@ type GrantTypeClient interface {
 // server's default.
 type JWTAccessTokenSigningClient interface {
 	AccessTokenSigningAlgorithm() string
+}
+
+// AccessTokenEncryptionClient is optionally implemented by Client to encrypt
+// JWT-format access tokens (JWE). This mirrors idTokenEncryptionClient and
+// enables "signed JWT + optional JWE" deployments where a resource server is
+// a separate party that should not read the access token claims in clear.
+//
+// When not implemented, the JWT access token is returned signed-only (JWS),
+// which is the default and what KexCore's first-party tokens use.
+type AccessTokenEncryptionClient interface {
+	AccessTokenEncryptionAlg() string
+	AccessTokenEncryptionEnc() string
 }
