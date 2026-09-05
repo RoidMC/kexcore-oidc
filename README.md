@@ -277,8 +277,8 @@ Versions that also build are marked with :warning:.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| <1.26.5    | :x: |
-| 1.26.5    | :white_check_mark: |
+| <1.27.0    | :x: |
+| 1.27.1    | :white_check_mark: |
 
 ## Why another library
 
