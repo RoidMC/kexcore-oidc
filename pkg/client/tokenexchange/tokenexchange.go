@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	httphelper "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
 )
 
 type TokenExchanger interface {

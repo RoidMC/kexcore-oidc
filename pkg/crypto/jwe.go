@@ -16,8 +16,8 @@ import (
 
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/provider/std"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/util"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto/provider/std"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto/util"
 )
 
 // --- Shared JWE types (re-exported from crypto/util) ---

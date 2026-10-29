@@ -13,9 +13,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
 // init self-registers the device plugin in the global registry.

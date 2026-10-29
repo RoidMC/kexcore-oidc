@@ -1,4 +1,4 @@
-module github.com/roidmc/kexcore-oidc/v2
+module github.com/roidmc/kexcore-oidc/v3
 
 go 1.27.3
 

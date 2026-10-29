@@ -32,10 +32,10 @@ import (
 	"github.com/go-openapi/testify/v2/assert"
 	"github.com/go-openapi/testify/v2/require"
 
-	crypto_pkg "github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
+	crypto_pkg "github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
 var errNotFound = errors.New("not found")

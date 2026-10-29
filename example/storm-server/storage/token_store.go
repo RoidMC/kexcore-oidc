@@ -17,8 +17,8 @@ import (
 
 	"github.com/google/uuid"
 
-	crypto_pkg "github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	crypto_pkg "github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 )
 
 // =================================================================

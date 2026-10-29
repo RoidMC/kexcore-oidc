@@ -20,9 +20,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
 // --- authorize handler ---

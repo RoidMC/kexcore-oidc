@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
-	httputil "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
+	httputil "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
 )
 
 //go:embed template/ciba.html.tmpl

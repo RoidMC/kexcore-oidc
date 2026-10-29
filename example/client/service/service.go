@@ -18,8 +18,8 @@ import (
 
 	"golang.org/x/oauth2"
 
-	oidcclient "github.com/roidmc/kexcore-oidc/v2/pkg/client"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client/profile"
+	oidcclient "github.com/roidmc/kexcore-oidc/v3/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client/profile"
 )
 
 var client = http.DefaultClient

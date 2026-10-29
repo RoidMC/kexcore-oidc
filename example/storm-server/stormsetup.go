@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/roidmc/kexcore-oidc/v2/example/storm-server/stormsetup"
+	"github.com/roidmc/kexcore-oidc/v3/example/storm-server/stormsetup"
 )
 
 // TenantConfig re-exports the stormsetup.TenantConfig for use in main.

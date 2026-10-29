@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client"
-	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client"
+	httphelper "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 )
 
 type ResourceServer interface {

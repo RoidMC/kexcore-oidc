@@ -44,9 +44,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp"
-	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client/rp"
+	httphelper "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 )
 
 var (

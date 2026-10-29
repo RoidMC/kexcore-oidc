@@ -11,9 +11,9 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
-	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
+	httphelper "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 )
 
 // Endpoints holds all OAuth2/OIDC endpoints discovered from an issuer.

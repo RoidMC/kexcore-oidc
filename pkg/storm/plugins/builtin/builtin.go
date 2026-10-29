@@ -12,25 +12,25 @@
 package builtin
 
 import (
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/authorization"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/backchannel"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/ciba"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/dcr"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/device"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/discovery"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/dpop"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/endsession"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/introspection"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/jarm"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/keys"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/mtls"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/par"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/revocation"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/token"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/userinfo"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/plugins/webfinger"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/authorization"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/backchannel"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/ciba"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/dcr"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/device"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/discovery"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/dpop"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/endsession"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/introspection"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/jarm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/keys"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/mtls"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/par"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/revocation"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/token"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/userinfo"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/webfinger"
 )
 
 // All returns the default plugin set in priority order (the Engine sorts

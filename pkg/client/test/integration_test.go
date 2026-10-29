@@ -33,13 +33,13 @@ import (
 	"github.com/go-openapi/testify/v2/require"
 	"golang.org/x/oauth2"
 
-	"github.com/roidmc/kexcore-oidc/v2/example/storm-server/storage"
-	"github.com/roidmc/kexcore-oidc/v2/example/storm-server/stormsetup"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rs"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client/tokenexchange"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v3/example/storm-server/storage"
+	"github.com/roidmc/kexcore-oidc/v3/example/storm-server/stormsetup"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client/rp"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client/rs"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client/tokenexchange"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	httphelper "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
 )
 
 var Logger = slog.New(

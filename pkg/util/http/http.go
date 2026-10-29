@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 )
 
 var DefaultHTTPClient = &http.Client{

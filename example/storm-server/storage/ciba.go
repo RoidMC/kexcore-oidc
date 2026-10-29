@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 )
 
 // Compile-time interface check.

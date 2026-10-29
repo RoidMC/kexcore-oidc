@@ -30,10 +30,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
 // New creates a new Token plugin from a PluginContext.

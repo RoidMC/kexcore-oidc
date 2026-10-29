@@ -121,10 +121,10 @@
 ## 🔴 协议功能（SDK 应提供）
 
 ### 1. Dynamic Client Registration (DCR)
-- [ ] 实现 `ClientRegistration` Storage 接口方法
-- [ ] 添加 `/register` 端点处理
-- [ ] 在 Discovery 文档中声明 `registration_endpoint`
-- [ ] 编写 DCR 测试用例
+- [x] 实现 `ClientRegistration` Storage 接口方法
+- [x] 添加 `/register` 端点处理
+- [x] 在 Discovery 文档中声明 `registration_endpoint`
+- [x] 编写 DCR 测试用例
 
 ### 2. mTLS 支持（RFC 8705）
 - [ ] 实现客户端证书认证

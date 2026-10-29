@@ -3,7 +3,7 @@ package protocol
 import (
 	"crypto/sha256"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
 )
 
 type CodeChallengeMethod string

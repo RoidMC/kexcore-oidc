@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
 	"github.com/go-openapi/testify/v2/assert"
 )
 

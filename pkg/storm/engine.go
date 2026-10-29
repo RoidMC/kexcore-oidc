@@ -16,9 +16,9 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/roidmc/kexcore-oidc/v2/internal/otel"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v3/internal/otel"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
 // Engine is the core orchestrator for StormEngine.
@@ -377,7 +377,7 @@ func New(storage Storage, issuerFn shared.IssuerFromRequest, opts ...EngineOptio
 	e := &Engine{
 		router:            chi.NewRouter(),
 		logger:            slog.Default(),
-		tracer:            otel.Tracer("github.com/roidmc/kexcore-oidc/v2/pkg/storm"),
+		tracer:            otel.Tracer("github.com/roidmc/kexcore-oidc/v3/pkg/storm"),
 		storage:           storage,
 		issuerFn:          issuerFn,
 		disabled:          make(map[string]bool),

@@ -51,9 +51,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
 // Plugin implements the OIDC Authorization endpoint.

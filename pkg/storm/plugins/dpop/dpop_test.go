@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 )
 
 // --- tests ---

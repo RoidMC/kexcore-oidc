@@ -17,7 +17,7 @@ import (
 	"github.com/go-openapi/testify/v2/assert"
 	"github.com/go-openapi/testify/v2/require"
 
-	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
+	httphelper "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
 )
 
 func TestHttpRequest_NilClient(t *testing.T) {

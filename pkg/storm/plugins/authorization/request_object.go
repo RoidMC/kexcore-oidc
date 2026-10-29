@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
 // applyRequestObject parses and validates a JWT request object (OIDC Core §6.1).

@@ -10,7 +10,7 @@ import (
 	"github.com/go-openapi/testify/v2/assert"
 	"github.com/go-openapi/testify/v2/require"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
 )
 
 func TestGetHashAlgorithm_KnownAlgorithms(t *testing.T) {

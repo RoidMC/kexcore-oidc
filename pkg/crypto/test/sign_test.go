@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/testify/v2/assert"
 	"github.com/go-openapi/testify/v2/require"
 
-	zcrypto "github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
+	zcrypto "github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
 )
 
 func newTestSigner(t *testing.T) (*zcrypto.Signer, *rsa.PrivateKey) {

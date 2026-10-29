@@ -16,7 +16,7 @@ import (
 	"github.com/go-openapi/testify/v2/require"
 	"golang.org/x/oauth2"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client/profile"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client/profile"
 )
 
 var ecKey = []byte(`-----BEGIN PRIVATE KEY-----

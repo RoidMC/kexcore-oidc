@@ -14,8 +14,8 @@ import (
 	"github.com/go-openapi/testify/v2/require"
 	"golang.org/x/oauth2"
 
-	tu "github.com/roidmc/kexcore-oidc/v2/internal/testutil"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	tu "github.com/roidmc/kexcore-oidc/v3/internal/testutil"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 )
 
 func Test_verifyTokenResponse(t *testing.T) {

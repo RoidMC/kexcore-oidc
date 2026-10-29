@@ -13,8 +13,8 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/google/uuid"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/storm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 )
 
 const (

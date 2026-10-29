@@ -20,11 +20,11 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
-	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/util/logctx"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
+	httphelper "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/util/logctx"
 )
 
 const (

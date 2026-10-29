@@ -13,8 +13,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rs"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client/rs"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 )
 
 const (

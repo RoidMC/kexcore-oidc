@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto/gm"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto/gm"
 )
 
 func TestSM2GenerateKey(t *testing.T) {

@@ -20,10 +20,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
-	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/util/logctx"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/client/rp"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	httphelper "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/util/logctx"
 )
 
 var (
