@@ -239,19 +239,23 @@ func (p *optionalPlugin) Category() storm.PluginCategory {
 	return storm.CategoryOptional
 }
 
-func (p *optionalPlugin) Requires() []string {
+func (p *optionalPlugin) Requires() []storm.StorageCapability {
 	return nil
 }
 
 func TestEngineEnableOptionalPlugin(t *testing.T) {
-	// Register an optional plugin factory
-	storm.RegisterPlugin("test_optional", 9999, func(ctx *storm.PluginContext) storm.Plugin {
-		return &optionalPlugin{name: "test_optional"}
-	})
+	// Optional plugin factory provided explicitly via WithPlugins.
+	factory := storm.NamedPluginFactory{
+		Name:     "test_optional",
+		Priority: 9999,
+		Factory: func(ctx *storm.PluginContext) storm.Plugin {
+			return &optionalPlugin{name: "test_optional"}
+		},
+	}
 
 	t.Run("optional plugin skipped by default", func(t *testing.T) {
 		store := &stubStorage{}
-		engine := storm.New(store, shared.StaticIssuer("https://example.com"))
+		engine := storm.New(store, shared.StaticIssuer("https://example.com"), storm.WithPlugins(factory))
 		handler := engine.Build()
 
 		req := httptest.NewRequest(http.MethodGet, "/test_optional", nil)
@@ -267,6 +271,7 @@ func TestEngineEnableOptionalPlugin(t *testing.T) {
 	t.Run("optional plugin enabled via Enable()", func(t *testing.T) {
 		store := &stubStorage{}
 		engine := storm.New(store, shared.StaticIssuer("https://example.com"),
+			storm.WithPlugins(factory),
 			storm.Enable("test_optional"))
 		handler := engine.Build()
 

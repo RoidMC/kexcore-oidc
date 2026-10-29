@@ -28,31 +28,38 @@ import (
 
 const csrfCookieName = "ciba_csrf"
 
+// New creates a new CIBA plugin from a PluginContext.
+// Returns nil if the storage does not implement CIBAStore or ClientStore —
+// the Engine treats a nil plugin as "declined".
+func New(ctx *storm.PluginContext) *Plugin {
+	cibaStore, ok := ctx.Storage.(storm.CIBAStore)
+	if !ok {
+		return nil
+	}
+	cs, ok := ctx.Storage.(storm.ClientStore)
+	if !ok {
+		return nil
+	}
+	p := &Plugin{
+		store:             cibaStore,
+		clientStore:       cs,
+		lifetime:          5 * time.Minute, // default, can be overridden via CIBAConfig.Lifetime
+		interval:          5 * time.Second,
+		cibaTmpl:          cibaTmpl,
+		skipTLSCertVerify: ctx.SkipTLSCertVerify,
+		allowPrivateIPs:   ctx.AllowPrivateIPs,
+		endpointConfigs:   ctx.EndpointConfigs,
+	}
+	if nc, ok := ctx.Storage.(storm.CIBANotificationCallback); ok {
+		p.notifier = nc
+	}
+	return p
+}
+
 // init self-registers the CIBA plugin in the global registry.
 func init() {
 	storm.RegisterPlugin("ciba", storm.PriorityCIBA, func(ctx *storm.PluginContext) storm.Plugin {
-		cibaStore, ok := ctx.Storage.(storm.CIBAStore)
-		if !ok {
-			return nil
-		}
-		cs, ok := ctx.Storage.(storm.ClientStore)
-		if !ok {
-			return nil
-		}
-		p := &Plugin{
-			store:             cibaStore,
-			clientStore:       cs,
-			lifetime:          5 * time.Minute, // default, can be overridden via CIBAConfig.Lifetime
-			interval:          5 * time.Second,
-			cibaTmpl:          cibaTmpl,
-			skipTLSCertVerify: ctx.SkipTLSCertVerify,
-			allowPrivateIPs:   ctx.AllowPrivateIPs,
-			endpointConfigs:   ctx.EndpointConfigs,
-		}
-		if nc, ok := ctx.Storage.(storm.CIBANotificationCallback); ok {
-			p.notifier = nc
-		}
-		return p
+		return New(ctx)
 	})
 }
 
@@ -60,8 +67,8 @@ func init() {
 func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
 
 // Requires returns the storage dependencies.
-func (p *Plugin) Requires() []string {
-	return []string{"CIBAStore", "ClientStore"}
+func (p *Plugin) Requires() []storm.StorageCapability {
+	return []storm.StorageCapability{storm.CapCIBAStore, storm.CapClientStore}
 }
 
 // Name returns the plugin name.

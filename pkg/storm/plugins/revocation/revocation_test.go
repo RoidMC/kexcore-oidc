@@ -281,6 +281,6 @@ func TestRevocation_PluginLifecycle(t *testing.T) {
 	p := &Plugin{}
 	assert.Equal(t, "revocation", p.Name())
 	assert.Equal(t, storm.CategoryStandard, p.Category())
-	assert.Contains(t, p.Requires(), "RevocationStore")
-	assert.Contains(t, p.Requires(), "ClientStore")
+	assert.Contains(t, p.Requires(), storm.CapRevocationStore)
+	assert.Contains(t, p.Requires(), storm.CapClientStore)
 }

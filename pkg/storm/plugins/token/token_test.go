@@ -1670,10 +1670,10 @@ func TestPlugin_Category(t *testing.T) {
 func TestPlugin_Requires(t *testing.T) {
 	p := newTestPlugin(t, &fakeClientStore{}, newFakeAuthStore(), newFakeTokenStore())
 	requires := p.Requires()
-	assert.Contains(t, requires, "TokenStore")
-	assert.Contains(t, requires, "AuthStore")
-	assert.Contains(t, requires, "ClientStore")
-	assert.Contains(t, requires, "KeyStore")
+	assert.Contains(t, requires, storm.CapTokenStore)
+	assert.Contains(t, requires, storm.CapAuthStore)
+	assert.Contains(t, requires, storm.CapClientStore)
+	assert.Contains(t, requires, storm.CapKeyStore)
 }
 
 func TestPlugin_Contribute(t *testing.T) {

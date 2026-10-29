@@ -21,34 +21,41 @@ import (
 // init self-registers the device plugin in the global registry.
 func init() {
 	storm.RegisterPlugin("device", storm.PriorityDevice, func(ctx *storm.PluginContext) storm.Plugin {
-		das, ok := ctx.Storage.(storm.DeviceAuthStore)
-		if !ok {
-			return nil
-		}
-		cs, ok := ctx.Storage.(storm.ClientStore)
-		if !ok {
-			return nil
-		}
-		return &Plugin{
-			store:       das,
-			clientStore: cs,
-			clientAuth: storm.NewClientAuthHelper(cs).
-				WithTLSSkipVerify(ctx.SkipTLSCertVerify).
-				WithAllowPrivateIPs(ctx.AllowPrivateIPs),
-			lifetime:        15 * time.Minute,
-			interval:        5 * time.Second,
-			deviceTmpl:      deviceTmpl,
-			endpointConfigs: ctx.EndpointConfigs,
-		}
+		return New(ctx)
 	})
+}
+
+// New creates a new Device plugin from a PluginContext.
+// Returns nil if the storage does not implement DeviceAuthStore or
+// ClientStore — the Engine treats a nil plugin as "declined".
+func New(ctx *storm.PluginContext) *Plugin {
+	das, ok := ctx.Storage.(storm.DeviceAuthStore)
+	if !ok {
+		return nil
+	}
+	cs, ok := ctx.Storage.(storm.ClientStore)
+	if !ok {
+		return nil
+	}
+	return &Plugin{
+		store:       das,
+		clientStore: cs,
+		clientAuth: storm.NewClientAuthHelper(cs).
+			WithTLSSkipVerify(ctx.SkipTLSCertVerify).
+			WithAllowPrivateIPs(ctx.AllowPrivateIPs),
+		lifetime:        15 * time.Minute,
+		interval:        5 * time.Second,
+		deviceTmpl:      deviceTmpl,
+		endpointConfigs: ctx.EndpointConfigs,
+	}
 }
 
 // Category returns CategoryStandard — device is optional but enabled by default.
 func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
 
 // Requires returns the storage dependencies.
-func (p *Plugin) Requires() []string {
-	return []string{"DeviceAuthStore", "ClientStore"}
+func (p *Plugin) Requires() []storm.StorageCapability {
+	return []storm.StorageCapability{storm.CapDeviceAuthStore, storm.CapClientStore}
 }
 
 // Name returns the plugin name.

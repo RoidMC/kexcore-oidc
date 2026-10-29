@@ -694,7 +694,7 @@ func TestUserInfo_PluginLifecycle(t *testing.T) {
 
 	assert.Equal(t, storm.CategoryStandard, plugin.Category())
 	assert.Equal(t, "userinfo", plugin.Name())
-	assert.Equal(t, []string{"UserinfoStore", "KeyStore"}, plugin.Requires())
+	assert.Equal(t, []storm.StorageCapability{storm.CapUserinfoStore, storm.CapKeyStore}, plugin.Requires())
 }
 
 // --- scope filtering tests ---

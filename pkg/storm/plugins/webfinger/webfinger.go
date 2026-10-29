@@ -23,6 +23,11 @@ import (
 // Plugin implements the WebFinger endpoint (RFC 7033).
 type Plugin struct{}
 
+// New creates a new WebFinger plugin from a PluginContext.
+func New(ctx *storm.PluginContext) *Plugin {
+	return &Plugin{}
+}
+
 // NewWithConfig creates a new WebFinger plugin.
 func NewWithConfig() *Plugin {
 	return &Plugin{}
@@ -31,7 +36,7 @@ func NewWithConfig() *Plugin {
 // init self-registers the WebFinger plugin in the global registry.
 func init() {
 	storm.RegisterPlugin("webfinger", storm.PriorityWebFinger, func(ctx *storm.PluginContext) storm.Plugin {
-		return NewWithConfig()
+		return New(ctx)
 	})
 }
 

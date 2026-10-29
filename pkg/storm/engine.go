@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"sort"
 	"time"
 
@@ -42,6 +43,7 @@ type Engine struct {
 
 	disabled          map[string]bool   // plugins disabled via Disable()
 	explicitlyEnabled map[string]bool   // plugins explicitly enabled via Enable()
+	namedFactories    []NamedPluginFactory // plugins registered via WithPlugins()
 	factories         []PluginFactory   // plugins registered via WithPlugin()
 	crypto            UniCrypto         // optional, for token encryption/signing
 	decoder           *protocol.Decoder // optional, for form parsing
@@ -83,11 +85,37 @@ type PluginContext struct {
 }
 
 // PluginFactory creates a plugin from a PluginContext.
-// Used by WithPlugin and RegisterPlugin for deferred plugin construction.
+// Used by WithPlugin and WithPlugins for deferred plugin construction.
 type PluginFactory func(ctx *PluginContext) Plugin
 
+// NamedPluginFactory pairs a plugin factory with its name and priority.
+// The Engine registers named factories in priority order (lower first).
+type NamedPluginFactory struct {
+	Name     string
+	Priority int // lower = registered earlier
+	Factory  PluginFactory
+}
+
+// FactoryOf adapts a concrete plugin constructor (a function returning a
+// concrete *Plugin type) to the PluginFactory signature. If the constructor
+// returns a typed nil (declining registration, e.g. because Storage lacks a
+// required capability), the returned factory yields a true nil Plugin.
+func FactoryOf[T Plugin](f func(*PluginContext) T) PluginFactory {
+	return func(ctx *PluginContext) Plugin {
+		p := f(ctx)
+		// A typed nil (*Plugin)(nil) wrapped in a Plugin interface is not
+		// equal to nil — normalize it so the Engine's nil check works.
+		if v := reflect.ValueOf(p); v.Kind() == reflect.Pointer && v.IsNil() {
+			return nil
+		}
+		return p
+	}
+}
+
 // globalRegistry holds plugin factories registered via RegisterPlugin.
-// This enables automatic plugin discovery without import-time side effects.
+// This is an optional convenience for third-party plugins: New() does NOT
+// load the global registry automatically. Pass RegisteredPlugins() to
+// WithPlugins to opt in.
 var globalRegistry = []struct {
 	name     string
 	factory  PluginFactory
@@ -117,14 +145,41 @@ const (
 )
 
 // RegisterPlugin registers a plugin factory in the global registry.
-// Call this in init() or at package level. Plugins are auto-discovered
-// by New() and sorted by priority.
+// Call this in init() or at package level.
+//
+// NOTE: Engine.New() does NOT automatically load globally registered
+// plugins — plugin registration in New() is explicit. Use
+//
+//	storm.New(storage, issuerFn, storm.WithPlugins(storm.RegisteredPlugins()))
+//
+// to opt in, or pass an explicit set via WithPlugins.
 func RegisterPlugin(name string, priority int, factory PluginFactory) {
 	globalRegistry = append(globalRegistry, struct {
 		name     string
 		factory  PluginFactory
 		priority int
 	}{name, factory, priority})
+}
+
+// RegisteredPlugins returns a snapshot of the global registry populated
+// via RegisterPlugin. Combine with WithPlugins to make init()-side-effect
+// registration explicit at the Engine construction site.
+func RegisteredPlugins() []NamedPluginFactory {
+	out := make([]NamedPluginFactory, 0, len(globalRegistry))
+	for _, reg := range globalRegistry {
+		out = append(out, NamedPluginFactory{Name: reg.name, Priority: reg.priority, Factory: reg.factory})
+	}
+	return out
+}
+
+// WithPlugins adds a set of named plugin factories to the Engine.
+// Factories are called during Build() and registered in priority order.
+// This is the explicit way to provide the default plugin set, e.g. via
+// the storm/plugins/builtin package.
+func WithPlugins(named ...NamedPluginFactory) EngineOption {
+	return func(e *Engine) {
+		e.namedFactories = append(e.namedFactories, named...)
+	}
 }
 
 // WithPlugin adds a plugin factory to the Engine.
@@ -335,8 +390,8 @@ func New(storage Storage, issuerFn shared.IssuerFromRequest, opts ...EngineOptio
 	return e
 }
 
-// autoRegisterPlugins discovers plugins from the global registry,
-// filters disabled ones, checks storage dependencies, and registers
+// autoRegisterPlugins registers explicitly provided plugins, filters
+// disabled ones, checks storage dependencies, and registers
 // them in priority order.
 func (e *Engine) autoRegisterPlugins() {
 	// Build plugin context with all dependencies
@@ -359,7 +414,7 @@ func (e *Engine) autoRegisterPlugins() {
 		pctx.Decoder = protocol.NewDecoder()
 	}
 
-	// Collect all candidate plugins (global + explicit factories)
+	// Collect all candidate plugins (named + explicit factories)
 	type candidate struct {
 		name     string
 		factory  PluginFactory
@@ -367,16 +422,16 @@ func (e *Engine) autoRegisterPlugins() {
 	}
 	var candidates []candidate
 
-	// Global registry plugins
-	for _, reg := range globalRegistry {
+	// Named factories (WithPlugins — the explicit default plugin set)
+	for _, nf := range e.namedFactories {
 		candidates = append(candidates, candidate{
-			name:     reg.name,
-			factory:  reg.factory,
-			priority: reg.priority,
+			name:     nf.Name,
+			factory:  nf.Factory,
+			priority: nf.Priority,
 		})
 	}
 
-	// Explicitly added factories (use max priority so they register after globals)
+	// Unnamed factories (WithPlugin — use max priority so they register last)
 	for _, f := range e.factories {
 		candidates = append(candidates, candidate{
 			name:     "custom",

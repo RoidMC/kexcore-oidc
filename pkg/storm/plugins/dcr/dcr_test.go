@@ -81,7 +81,7 @@ var _ storm.DCRStore = (*fakeDCRStore)(nil)
 // --- helpers ---
 
 func newTestPlugin(store storm.DCRStore) *Plugin {
-	return New(Config{Store: store})
+	return NewWithConfig(Config{Store: store})
 }
 
 func newJSONRequest(method, path string, body interface{}) *http.Request {
@@ -309,7 +309,7 @@ func getDCRFactory() storm.PluginFactory {
 		if !ok {
 			return nil
 		}
-		return New(Config{Store: dcrStore})
+		return NewWithConfig(Config{Store: dcrStore})
 	}
 }
 

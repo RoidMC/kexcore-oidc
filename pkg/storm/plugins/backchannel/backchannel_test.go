@@ -302,8 +302,8 @@ func TestBackChannel_Category(t *testing.T) {
 func TestBackChannel_Requires(t *testing.T) {
 	p := newTestPlugin(&fakeBackChannelStore{}, &fakeKeyStore{})
 	requires := p.Requires()
-	assert.Contains(t, requires, "BackChannelStore")
-	assert.Contains(t, requires, "KeyStore")
+	assert.Contains(t, requires, storm.CapBackChannelStore)
+	assert.Contains(t, requires, storm.CapKeyStore)
 }
 
 // SetLogger updates the logger.

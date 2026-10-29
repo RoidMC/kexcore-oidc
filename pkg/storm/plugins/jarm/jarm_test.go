@@ -65,8 +65,8 @@ func TestRequires(t *testing.T) {
 	})
 
 	requires := p.Requires()
-	if len(requires) != 1 || requires[0] != "KeyStore" {
-		t.Errorf("Requires() = %v, want %v", requires, []string{"KeyStore"})
+	if len(requires) != 1 || requires[0] != storm.CapKeyStore {
+		t.Errorf("Requires() = %v, want %v", requires, []storm.StorageCapability{storm.CapKeyStore})
 	}
 }
 

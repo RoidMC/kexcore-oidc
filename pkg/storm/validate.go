@@ -35,11 +35,11 @@ func (e *Engine) Validate() error {
 			continue
 		}
 
-		for _, ifaceName := range required {
-			if !e.storageImplements(ifaceName) {
-				hint := storageMissingHint(ifaceName)
+		for _, cap := range required {
+			if !e.storageImplements(cap) {
+				hint := storageMissingHint(cap)
 				return fmt.Errorf("storm: plugin %q requires storage interface %q, but Storage does not implement it.\n  → %s\n  See storage.go for full interface definition and implementation guide.",
-					p.Name(), ifaceName, hint)
+					p.Name(), cap, hint)
 			}
 		}
 	}
@@ -62,70 +62,73 @@ func (e *Engine) Validate() error {
 	return nil
 }
 
-// storageImplements checks if the Storage implements the named interface.
+// storageImplements checks if the Storage implements the required capability.
 // When the interface is NOT implemented, storageMissingHint returns a
 // developer-friendly message listing the required methods.
-func (e *Engine) storageImplements(ifaceName string) bool {
-	switch ifaceName {
-	case "AuthStore":
+func (e *Engine) storageImplements(cap StorageCapability) bool {
+	switch cap {
+	case CapClientStore, CapKeyStore:
+		return true // always satisfied by Storage interface
+	case CapAuthStore:
 		_, ok := e.storage.(AuthStore)
 		return ok
-	case "TokenStore":
+	case CapTokenStore:
 		_, ok := e.storage.(TokenStore)
 		return ok
-	case "UserinfoStore":
+	case CapUserinfoStore:
 		_, ok := e.storage.(UserinfoStore)
 		return ok
-	case "IntrospectStore":
+	case CapIntrospectStore:
 		_, ok := e.storage.(IntrospectStore)
 		return ok
-	case "RevocationStore":
+	case CapRevocationStore:
 		_, ok := e.storage.(RevocationStore)
 		return ok
-	case "SessionStore":
+	case CapSessionStore:
 		_, ok := e.storage.(SessionStore)
 		return ok
-	case "DeviceAuthStore":
+	case CapDeviceAuthStore:
 		_, ok := e.storage.(DeviceAuthStore)
 		return ok
-	case "BackChannelStore":
+	case CapBackChannelStore:
 		_, ok := e.storage.(BackChannelStore)
 		return ok
-	case "PARStore":
+	case CapPARStore:
 		_, ok := e.storage.(PARStore)
 		return ok
-	case "ClientStore", "KeyStore":
-		return true // always satisfied by Storage interface
-	case "TokenCNFStore":
+	case CapTokenCNFStore:
 		_, ok := e.storage.(TokenCNFStore)
 		return ok
-	case "PairwiseTransformer":
+	case CapPairwiseTransformer:
 		_, ok := e.storage.(PairwiseTransformer)
 		return ok
-	case "AutoCompleteAuthRequest":
+	case CapAutoCompleteAuthRequest:
 		_, ok := e.storage.(AutoCompleteAuthRequest)
 		return ok
-	case "CodeReuseDetector":
+	case CapCodeReuseDetector:
 		_, ok := e.storage.(CodeReuseDetector)
 		return ok
-	case "ClientCredentialsStore":
+	case CapClientCredentialsStore:
 		_, ok := e.storage.(ClientCredentialsStore)
 		return ok
-	case "JWTProfileStore":
+	case CapJWTProfileStore:
 		_, ok := e.storage.(JWTProfileStore)
 		return ok
-	case "TokenExchangeStore":
+	case CapTokenExchangeStore:
 		_, ok := e.storage.(TokenExchangeStore)
 		return ok
-	case "DCRStore":
+	case CapDCRStore:
 		_, ok := e.storage.(DCRStore)
 		return ok
-	case "CIBAStore":
+	case CapCIBAStore:
 		_, ok := e.storage.(CIBAStore)
 		return ok
 	default:
+		// Unknown capability values (e.g. from a newer SDK version) are
+		// treated as satisfied; the missing interface will surface at
+		// first use with a runtime type assertion panic in the plugin.
 		if e.logger != nil {
-			e.logger.Debug("unrecognized storage interface in Requires()", "name", ifaceName)
+			e.logger.Debug("unrecognized storage capability in Requires()", "capability", cap.String())
 		}
 		return true
 	}
@@ -134,10 +137,8 @@ func (e *Engine) storageImplements(ifaceName string) bool {
 // storageMissingHint returns a developer-friendly hint for a missing storage interface.
 // It uses reflection to extract method names from the interface type, so hints
 // stay in sync with interface definitions — no manual maintenance required.
-// Third-party plugin interfaces that are not in the registry fall back to a
-// generic message.
-func storageMissingHint(ifaceName string) string {
-	if t, ok := knownStorageInterfaces[ifaceName]; ok {
+func storageMissingHint(cap StorageCapability) string {
+	if t, ok := knownStorageInterfaces[cap]; ok {
 		methods := extractMethodNames(t)
 		if len(methods) == 0 {
 			return "Interface has no methods — check if the interface definition is correct"
@@ -147,43 +148,27 @@ func storageMissingHint(ifaceName string) string {
 	return "See storage.go for interface definition"
 }
 
-// knownStorageInterfaces maps interface names (as used in Plugin.Requires())
-// to their Go reflect.Type. Used by storageMissingHint to auto-generate
-// method hints via reflection.
-//
-// Third-party plugins can register their own interfaces via
-// RegisterStorageInterface().
-var knownStorageInterfaces = map[string]reflect.Type{
-	"AuthStore":               reflect.TypeOf((*AuthStore)(nil)).Elem(),
-	"TokenStore":              reflect.TypeOf((*TokenStore)(nil)).Elem(),
-	"UserinfoStore":           reflect.TypeOf((*UserinfoStore)(nil)).Elem(),
-	"IntrospectStore":         reflect.TypeOf((*IntrospectStore)(nil)).Elem(),
-	"RevocationStore":         reflect.TypeOf((*RevocationStore)(nil)).Elem(),
-	"SessionStore":            reflect.TypeOf((*SessionStore)(nil)).Elem(),
-	"DeviceAuthStore":         reflect.TypeOf((*DeviceAuthStore)(nil)).Elem(),
-	"BackChannelStore":        reflect.TypeOf((*BackChannelStore)(nil)).Elem(),
-	"PARStore":                reflect.TypeOf((*PARStore)(nil)).Elem(),
-	"DCRStore":                reflect.TypeOf((*DCRStore)(nil)).Elem(),
-	"ClientCredentialsStore":  reflect.TypeOf((*ClientCredentialsStore)(nil)).Elem(),
-	"JWTProfileStore":         reflect.TypeOf((*JWTProfileStore)(nil)).Elem(),
-	"TokenExchangeStore":      reflect.TypeOf((*TokenExchangeStore)(nil)).Elem(),
-	"TokenCNFStore":           reflect.TypeOf((*TokenCNFStore)(nil)).Elem(),
-	"PairwiseTransformer":     reflect.TypeOf((*PairwiseTransformer)(nil)).Elem(),
-	"AutoCompleteAuthRequest": reflect.TypeOf((*AutoCompleteAuthRequest)(nil)).Elem(),
-	"CodeReuseDetector":       reflect.TypeOf((*CodeReuseDetector)(nil)).Elem(),
-	"CIBAStore":               reflect.TypeOf((*CIBAStore)(nil)).Elem(),
-}
-
-// RegisterStorageInterface registers a third-party storage interface so that
-// Validate() can provide method hints when it is missing.
-//
-// Usage in a third-party plugin:
-//
-//	func init() {
-//	    storm.RegisterStorageInterface("MyCustomStore", reflect.TypeOf((*MyCustomStore)(nil)).Elem())
-//	}
-func RegisterStorageInterface(name string, t reflect.Type) {
-	knownStorageInterfaces[name] = t
+// knownStorageInterfaces maps storage capabilities to their Go reflect.Type.
+// Used by storageMissingHint to auto-generate method hints via reflection.
+var knownStorageInterfaces = map[StorageCapability]reflect.Type{
+	CapAuthStore:               reflect.TypeOf((*AuthStore)(nil)).Elem(),
+	CapTokenStore:              reflect.TypeOf((*TokenStore)(nil)).Elem(),
+	CapUserinfoStore:           reflect.TypeOf((*UserinfoStore)(nil)).Elem(),
+	CapIntrospectStore:         reflect.TypeOf((*IntrospectStore)(nil)).Elem(),
+	CapRevocationStore:         reflect.TypeOf((*RevocationStore)(nil)).Elem(),
+	CapSessionStore:            reflect.TypeOf((*SessionStore)(nil)).Elem(),
+	CapDeviceAuthStore:         reflect.TypeOf((*DeviceAuthStore)(nil)).Elem(),
+	CapBackChannelStore:        reflect.TypeOf((*BackChannelStore)(nil)).Elem(),
+	CapPARStore:                reflect.TypeOf((*PARStore)(nil)).Elem(),
+	CapDCRStore:                reflect.TypeOf((*DCRStore)(nil)).Elem(),
+	CapClientCredentialsStore:  reflect.TypeOf((*ClientCredentialsStore)(nil)).Elem(),
+	CapJWTProfileStore:         reflect.TypeOf((*JWTProfileStore)(nil)).Elem(),
+	CapTokenExchangeStore:      reflect.TypeOf((*TokenExchangeStore)(nil)).Elem(),
+	CapTokenCNFStore:           reflect.TypeOf((*TokenCNFStore)(nil)).Elem(),
+	CapPairwiseTransformer:     reflect.TypeOf((*PairwiseTransformer)(nil)).Elem(),
+	CapAutoCompleteAuthRequest: reflect.TypeOf((*AutoCompleteAuthRequest)(nil)).Elem(),
+	CapCodeReuseDetector:       reflect.TypeOf((*CodeReuseDetector)(nil)).Elem(),
+	CapCIBAStore:               reflect.TypeOf((*CIBAStore)(nil)).Elem(),
 }
 
 // extractMethodNames returns the method names of a reflect.Type (interface),

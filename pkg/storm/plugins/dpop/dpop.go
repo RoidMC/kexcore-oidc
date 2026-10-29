@@ -56,10 +56,15 @@ func NewWithConfig() *Plugin {
 	return p
 }
 
+// New creates a new DPoP plugin from a PluginContext.
+func New(ctx *storm.PluginContext) *Plugin {
+	return NewWithConfig()
+}
+
 // init self-registers the DPoP plugin in the global registry.
 func init() {
 	storm.RegisterPlugin("dpop", storm.PriorityDPoP, func(ctx *storm.PluginContext) storm.Plugin {
-		return NewWithConfig()
+		return New(ctx)
 	})
 }
 
@@ -67,7 +72,7 @@ func init() {
 func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
 
 // Requires returns no storage dependencies (DPoP is stateless except nonce cache).
-func (p *Plugin) Requires() []string { return nil }
+func (p *Plugin) Requires() []storm.StorageCapability { return nil }
 
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "dpop" }

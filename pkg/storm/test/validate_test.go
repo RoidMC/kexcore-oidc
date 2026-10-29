@@ -85,7 +85,7 @@ func (s *fullStoreStub) RevokeToken(ctx context.Context, tokenOrTokenID, userID,
 type mockPlugin struct {
 	name     string
 	category storm.PluginCategory
-	requires []string
+	requires []storm.StorageCapability
 }
 
 func (p *mockPlugin) Name() string { return p.name }
@@ -94,7 +94,9 @@ func (p *mockPlugin) Register(r chi.Router) {
 	r.Get("/"+p.name, func(w http.ResponseWriter, r *http.Request) {})
 }
 func (p *mockPlugin) Category() storm.PluginCategory { return p.category }
-func (p *mockPlugin) Requires() []string             { return p.requires }
+func (p *mockPlugin) Requires() []storm.StorageCapability {
+	return p.requires
+}
 
 // --- tests ---
 
@@ -117,7 +119,7 @@ func TestValidate_StorageMissingAuthStore(t *testing.T) {
 	engine.Register(&mockPlugin{
 		name:     "auth",
 		category: storm.CategoryCore,
-		requires: []string{"AuthStore"},
+		requires: []storm.StorageCapability{storm.CapAuthStore},
 	})
 
 	defer func() {
@@ -135,7 +137,7 @@ func TestValidate_StorageSatisfiesAuthStore(t *testing.T) {
 	engine.Register(&mockPlugin{
 		name:     "auth",
 		category: storm.CategoryCore,
-		requires: []string{"AuthStore"},
+		requires: []storm.StorageCapability{storm.CapAuthStore},
 	})
 
 	// Should NOT panic — authStoreStub implements AuthStore
@@ -154,7 +156,7 @@ func TestValidate_StorageMissingTokenStore(t *testing.T) {
 	engine.Register(&mockPlugin{
 		name:     "token",
 		category: storm.CategoryCore,
-		requires: []string{"TokenStore"},
+		requires: []storm.StorageCapability{storm.CapTokenStore},
 	})
 
 	defer func() {
@@ -172,7 +174,7 @@ func TestValidate_StorageSatisfiesTokenStore(t *testing.T) {
 	engine.Register(&mockPlugin{
 		name:     "token",
 		category: storm.CategoryCore,
-		requires: []string{"TokenStore"},
+		requires: []storm.StorageCapability{storm.CapTokenStore},
 	})
 
 	defer func() {
@@ -191,7 +193,7 @@ func TestValidate_RFCConstraint_AuthNeedsToken(t *testing.T) {
 	engine.Register(&mockPlugin{
 		name:     "authorization",
 		category: storm.CategoryCore,
-		requires: []string{"AuthStore"},
+		requires: []storm.StorageCapability{storm.CapAuthStore},
 	})
 	// NOTE: token plugin NOT registered
 
@@ -210,12 +212,12 @@ func TestValidate_RFCConstraint_AuthNeedsUserInfo(t *testing.T) {
 	engine.Register(&mockPlugin{
 		name:     "authorization",
 		category: storm.CategoryCore,
-		requires: []string{"AuthStore"},
+		requires: []storm.StorageCapability{storm.CapAuthStore},
 	})
 	engine.Register(&mockPlugin{
 		name:     "token",
 		category: storm.CategoryCore,
-		requires: []string{"TokenStore"},
+		requires: []storm.StorageCapability{storm.CapTokenStore},
 	})
 	// userinfo NOT registered
 
@@ -234,27 +236,27 @@ func TestValidate_RFCConstraint_Pass(t *testing.T) {
 	engine.Register(&mockPlugin{
 		name:     "authorization",
 		category: storm.CategoryCore,
-		requires: []string{"AuthStore"},
+		requires: []storm.StorageCapability{storm.CapAuthStore},
 	})
 	engine.Register(&mockPlugin{
 		name:     "token",
 		category: storm.CategoryCore,
-		requires: []string{"TokenStore"},
+		requires: []storm.StorageCapability{storm.CapTokenStore},
 	})
 	engine.Register(&mockPlugin{
 		name:     "userinfo",
 		category: storm.CategoryCore,
-		requires: []string{"UserinfoStore"},
+		requires: []storm.StorageCapability{storm.CapUserinfoStore},
 	})
 	engine.Register(&mockPlugin{
 		name:     "keys",
 		category: storm.CategoryCore,
-		requires: []string{"KeyStore"},
+		requires: []storm.StorageCapability{storm.CapKeyStore},
 	})
 	engine.Register(&mockPlugin{
 		name:     "endsession",
 		category: storm.CategoryCore,
-		requires: []string{"SessionStore"},
+		requires: []storm.StorageCapability{storm.CapSessionStore},
 	})
 
 	defer func() {
@@ -265,20 +267,21 @@ func TestValidate_RFCConstraint_Pass(t *testing.T) {
 	engine.Build()
 }
 
-func TestValidate_UnrecognizedInterfaceName(t *testing.T) {
+func TestValidate_UnrecognizedCapabilityValue(t *testing.T) {
 	store := &tokenStoreStub{}
 	engine := storm.New(store, shared.StaticIssuer("https://example.com"))
 
-	// Unrecognized interface name — should NOT fail
+	// Out-of-range capability value (e.g. from a newer SDK version) —
+	// the Engine treats unknown capabilities as satisfied and does NOT fail.
 	engine.Register(&mockPlugin{
 		name:     "custom",
 		category: storm.CategoryCore,
-		requires: []string{"SomeUnknownInterface"},
+		requires: []storm.StorageCapability{storm.StorageCapability(999)},
 	})
 
 	defer func() {
 		if r := recover(); r != nil {
-			t.Fatalf("unexpected panic for unrecognized interface: %v", r)
+			t.Fatalf("unexpected panic for unrecognized capability: %v", r)
 		}
 	}()
 	engine.Build()
@@ -291,7 +294,7 @@ func TestValidate_ErrorMessageContainsHint(t *testing.T) {
 	engine.Register(&mockPlugin{
 		name:     "token",
 		category: storm.CategoryCore,
-		requires: []string{"TokenStore"},
+		requires: []storm.StorageCapability{storm.CapTokenStore},
 	})
 
 	defer func() {
@@ -323,7 +326,7 @@ func TestValidate_AuthStoreHint(t *testing.T) {
 	engine.Register(&mockPlugin{
 		name:     "auth",
 		category: storm.CategoryCore,
-		requires: []string{"AuthStore"},
+		requires: []storm.StorageCapability{storm.CapAuthStore},
 	})
 
 	defer func() {
@@ -346,7 +349,7 @@ func TestValidate_UserinfoStoreHint(t *testing.T) {
 	engine.Register(&mockPlugin{
 		name:     "userinfo",
 		category: storm.CategoryCore,
-		requires: []string{"UserinfoStore"},
+		requires: []storm.StorageCapability{storm.CapUserinfoStore},
 	})
 
 	defer func() {

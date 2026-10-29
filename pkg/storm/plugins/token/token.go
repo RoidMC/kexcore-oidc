@@ -106,8 +106,8 @@ func init() {
 func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryCore }
 
 // Requires returns the storage dependencies.
-func (p *Plugin) Requires() []string {
-	return []string{"TokenStore", "AuthStore", "ClientStore", "KeyStore"}
+func (p *Plugin) Requires() []storm.StorageCapability {
+	return []storm.StorageCapability{storm.CapTokenStore, storm.CapAuthStore, storm.CapClientStore, storm.CapKeyStore}
 }
 
 // Name returns the plugin name.

@@ -37,22 +37,29 @@ func NewWithConfig(cfg Config) *Plugin {
 	}
 }
 
+// New creates a new PAR plugin from a PluginContext.
+// Returns nil if the storage does not implement PARStore — the Engine
+// treats a nil plugin as "declined" and skips registration.
+func New(ctx *storm.PluginContext) *Plugin {
+	parStore, ok := ctx.Storage.(storm.PARStore)
+	if !ok {
+		return nil
+	}
+	return NewWithConfig(Config{
+		Store:             parStore,
+		ClientStore:       ctx.Storage.(storm.ClientStore),
+		Decoder:           ctx.Decoder,
+		Lifetime:          ctx.PARLifetime,
+		SkipTLSCertVerify: ctx.SkipTLSCertVerify,
+		AllowPrivateIPs:   ctx.AllowPrivateIPs,
+		EndpointConfigs:   ctx.EndpointConfigs,
+	})
+}
+
 // init self-registers the PAR plugin in the global registry.
 func init() {
 	storm.RegisterPlugin("par", storm.PriorityPAR, func(ctx *storm.PluginContext) storm.Plugin {
-		parStore, ok := ctx.Storage.(storm.PARStore)
-		if !ok {
-			return nil
-		}
-		return NewWithConfig(Config{
-			Store:             parStore,
-			ClientStore:       ctx.Storage.(storm.ClientStore),
-			Decoder:           ctx.Decoder,
-			Lifetime:          ctx.PARLifetime,
-			SkipTLSCertVerify: ctx.SkipTLSCertVerify,
-			AllowPrivateIPs:   ctx.AllowPrivateIPs,
-			EndpointConfigs:   ctx.EndpointConfigs,
-		})
+		return New(ctx)
 	})
 }
 
@@ -60,8 +67,8 @@ func init() {
 func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
 
 // Requires returns the storage dependencies.
-func (p *Plugin) Requires() []string {
-	return []string{"PARStore", "ClientStore"}
+func (p *Plugin) Requires() []storm.StorageCapability {
+	return []storm.StorageCapability{storm.CapPARStore, storm.CapClientStore}
 }
 
 // Name returns the plugin name.

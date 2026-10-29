@@ -86,7 +86,7 @@ func TestCategory(t *testing.T) {
 
 func TestRequires(t *testing.T) {
 	p := newTestPlugin(t, &fakeSessionStore{}, &fakeClientStore{})
-	assert.Equal(t, []string{"SessionStore", "ClientStore", "KeyStore"}, p.Requires())
+	assert.Equal(t, []storm.StorageCapability{storm.CapSessionStore, storm.CapClientStore, storm.CapKeyStore}, p.Requires())
 }
 
 func TestContribute(t *testing.T) {

@@ -19,10 +19,15 @@ import (
 	"github.com/roidmc/kexcore-oidc/v2/pkg/storm/shared"
 )
 
+// New creates a new mTLS plugin from a PluginContext.
+func New(ctx *storm.PluginContext) *Plugin {
+	return NewWithEndpointConfigs(ctx.EndpointConfigs)
+}
+
 // init self-registers the mTLS plugin in the global registry.
 func init() {
 	storm.RegisterPlugin("mtls", storm.PriorityMTLS, func(ctx *storm.PluginContext) storm.Plugin {
-		return NewWithEndpointConfigs(ctx.EndpointConfigs)
+		return New(ctx)
 	})
 }
 
@@ -30,7 +35,7 @@ func init() {
 func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
 
 // Requires returns no storage dependencies.
-func (p *Plugin) Requires() []string { return nil }
+func (p *Plugin) Requires() []storm.StorageCapability { return nil }
 
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "mtls" }

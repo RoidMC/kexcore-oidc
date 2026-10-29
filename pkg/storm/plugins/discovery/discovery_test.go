@@ -42,13 +42,13 @@ func newDiscoveryCfg() *protocol.DiscoveryConfiguration {
 
 func TestNew_WithKeyStore(t *testing.T) {
 	ks := &fakeKeyStore{algs: []string{"ES256", "PS256"}}
-	p := New(ks)
+	p := NewWithConfig(ks, Config{})
 	require.NotNil(t, p)
 	assert.Equal(t, "discovery", p.Name())
 }
 
 func TestNew_NilKeyStore(t *testing.T) {
-	p := New(nil)
+	p := NewWithConfig(nil, Config{})
 	require.NotNil(t, p)
 }
 
@@ -57,14 +57,14 @@ func TestNew_WithConfig(t *testing.T) {
 		SubjectTypes: []string{"pairwise"},
 		ExtraFields:  map[string]any{"custom_field": "value"},
 	}
-	p := New(nil, cfg)
+	p := NewWithConfig(nil, cfg)
 	assert.Equal(t, []string{"pairwise"}, p.config.SubjectTypes)
 	assert.Equal(t, "value", p.config.ExtraFields["custom_field"])
 }
 
 func TestContribute_SigningAlgorithms_FromKeyStore(t *testing.T) {
 	ks := &fakeKeyStore{algs: []string{"ES256", "PS384"}}
-	p := New(ks)
+	p := NewWithConfig(ks, Config{})
 	cfg := newDiscoveryCfg()
 
 	p.Contribute(context.Background(), cfg)
@@ -76,21 +76,21 @@ func TestContribute_SigningAlgorithms_FromKeyStore(t *testing.T) {
 
 func TestContribute_SigningAlgorithms_FallbackRS256(t *testing.T) {
 	t.Run("nil keystore", func(t *testing.T) {
-		p := New(nil)
+		p := NewWithConfig(nil, Config{})
 		cfg := newDiscoveryCfg()
 		p.Contribute(context.Background(), cfg)
 		assert.Equal(t, []string{"RS256"}, cfg.IDTokenSigningAlgValuesSupported)
 	})
 
 	t.Run("empty algs", func(t *testing.T) {
-		p := New(&fakeKeyStore{algs: []string{}})
+		p := NewWithConfig(&fakeKeyStore{algs: []string{}}, Config{})
 		cfg := newDiscoveryCfg()
 		p.Contribute(context.Background(), cfg)
 		assert.Equal(t, []string{"RS256"}, cfg.IDTokenSigningAlgValuesSupported)
 	})
 
 	t.Run("error", func(t *testing.T) {
-		p := New(&fakeKeyStore{err: errors.New("fake keystore error")})
+		p := NewWithConfig(&fakeKeyStore{err: errors.New("fake keystore error")}, Config{})
 		cfg := newDiscoveryCfg()
 		p.Contribute(context.Background(), cfg)
 		assert.Equal(t, []string{"RS256"}, cfg.IDTokenSigningAlgValuesSupported)
@@ -99,7 +99,7 @@ func TestContribute_SigningAlgorithms_FallbackRS256(t *testing.T) {
 
 func TestContribute_AuthSigningAlgorithms_IncludeHS(t *testing.T) {
 	ks := &fakeKeyStore{algs: []string{"ES256"}}
-	p := New(ks)
+	p := NewWithConfig(ks, Config{})
 	cfg := newDiscoveryCfg()
 
 	p.Contribute(context.Background(), cfg)
@@ -118,7 +118,7 @@ func TestContribute_AuthSigningAlgorithms_IncludeHS(t *testing.T) {
 
 func TestContribute_AuthSigningAlgorithms_Sorted(t *testing.T) {
 	ks := &fakeKeyStore{algs: []string{"PS256", "ES256"}}
-	p := New(ks)
+	p := NewWithConfig(ks, Config{})
 	cfg := newDiscoveryCfg()
 
 	p.Contribute(context.Background(), cfg)
@@ -129,7 +129,7 @@ func TestContribute_AuthSigningAlgorithms_Sorted(t *testing.T) {
 }
 
 func TestContribute_SubjectTypes_Default(t *testing.T) {
-	p := New(nil)
+	p := NewWithConfig(nil, Config{})
 	cfg := newDiscoveryCfg()
 
 	p.Contribute(context.Background(), cfg)
@@ -138,7 +138,7 @@ func TestContribute_SubjectTypes_Default(t *testing.T) {
 }
 
 func TestContribute_SubjectTypes_Custom(t *testing.T) {
-	p := New(nil, Config{SubjectTypes: []string{"pairwise"}})
+	p := NewWithConfig(nil, Config{SubjectTypes: []string{"pairwise"}})
 	cfg := newDiscoveryCfg()
 
 	p.Contribute(context.Background(), cfg)
@@ -147,7 +147,7 @@ func TestContribute_SubjectTypes_Custom(t *testing.T) {
 }
 
 func TestContribute_StaticFields(t *testing.T) {
-	p := New(nil)
+	p := NewWithConfig(nil, Config{})
 	cfg := newDiscoveryCfg()
 
 	p.Contribute(context.Background(), cfg)
@@ -161,7 +161,7 @@ func TestContribute_StaticFields(t *testing.T) {
 }
 
 func TestContribute_ClaimsSupported(t *testing.T) {
-	p := New(nil)
+	p := NewWithConfig(nil, Config{})
 	cfg := newDiscoveryCfg()
 
 	p.Contribute(context.Background(), cfg)
@@ -174,7 +174,7 @@ func TestContribute_ClaimsSupported(t *testing.T) {
 }
 
 func TestContribute_ExtraFields(t *testing.T) {
-	p := New(nil, Config{
+	p := NewWithConfig(nil, Config{
 		ExtraFields: map[string]any{
 			"custom_bool":   true,
 			"custom_string": "hello",
@@ -189,7 +189,7 @@ func TestContribute_ExtraFields(t *testing.T) {
 }
 
 func TestContribute_ExtraFields_Nil(t *testing.T) {
-	p := New(nil)
+	p := NewWithConfig(nil, Config{})
 	cfg := newDiscoveryCfg()
 
 	p.Contribute(context.Background(), cfg)
@@ -199,7 +199,7 @@ func TestContribute_ExtraFields_Nil(t *testing.T) {
 }
 
 func TestRegister_IsNoOp(t *testing.T) {
-	p := New(nil)
+	p := NewWithConfig(nil, Config{})
 	// Register should not panic with nil router (it's a no-op)
 	assert.NotPanics(t, func() {
 		p.Register(nil)

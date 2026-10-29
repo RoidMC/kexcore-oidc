@@ -40,15 +40,23 @@ type Config struct {
 	ExtraFields map[string]any
 }
 
-// New creates a new Discovery plugin.
+// New creates a new Discovery plugin from a PluginContext.
+// Returns nil if the storage does not implement KeyStore — the Engine
+// treats a nil plugin as "declined" and skips registration.
+func New(ctx *storm.PluginContext) *Plugin {
+	keyStore, ok := ctx.Storage.(storm.KeyStore)
+	if !ok {
+		return nil
+	}
+	return &Plugin{keyStore: keyStore}
+}
+
+// NewWithConfig creates a new Discovery plugin with an explicit key store
+// and configuration overrides.
 // If keyStore is non-nil, the discovery document will include the
 // signing algorithms declared by the key store (including GM/T algorithms).
-func New(keyStore storm.KeyStore, cfg ...Config) *Plugin {
-	var config Config
-	if len(cfg) > 0 {
-		config = cfg[0]
-	}
-	return &Plugin{keyStore: keyStore, config: config}
+func NewWithConfig(keyStore storm.KeyStore, cfg Config) *Plugin {
+	return &Plugin{keyStore: keyStore, config: cfg}
 }
 
 // Name returns the plugin name.
@@ -125,10 +133,6 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 
 func init() {
 	storm.RegisterPlugin("discovery", storm.PriorityDiscovery, func(ctx *storm.PluginContext) storm.Plugin {
-		var ks storm.KeyStore
-		if ks, _ = ctx.Storage.(storm.KeyStore); ks == nil {
-			return nil
-		}
-		return New(ks)
+		return New(ctx)
 	})
 }

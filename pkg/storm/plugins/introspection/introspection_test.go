@@ -286,6 +286,6 @@ func TestIntrospection_PluginLifecycle(t *testing.T) {
 	p := &Plugin{}
 	assert.Equal(t, "introspection", p.Name())
 	assert.Equal(t, storm.CategoryStandard, p.Category())
-	assert.Contains(t, p.Requires(), "IntrospectStore")
-	assert.Contains(t, p.Requires(), "ClientStore")
+	assert.Contains(t, p.Requires(), storm.CapIntrospectStore)
+	assert.Contains(t, p.Requires(), storm.CapClientStore)
 }

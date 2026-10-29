@@ -24,15 +24,7 @@ import (
 
 func init() {
 	storm.RegisterPlugin("dcr", storm.PriorityDCR, func(ctx *storm.PluginContext) storm.Plugin {
-		if dcrStore, ok := ctx.Storage.(storm.DCRStore); ok {
-			return New(Config{
-				Store:             dcrStore,
-				AllowPrivateIPs:   ctx.AllowPrivateIPs,
-				SkipTLSCertVerify: ctx.SkipTLSCertVerify,
-				EndpointConfigs:   ctx.EndpointConfigs,
-			})
-		}
-		return nil
+		return New(ctx)
 	})
 }
 
@@ -52,8 +44,25 @@ type Config struct {
 	EndpointConfigs   shared.EndpointConfigMap
 }
 
-// New creates a new DCR plugin.
-func New(cfg Config) *Plugin {
+// New creates a new DCR plugin from a PluginContext.
+// Returns nil if the storage does not implement DCRStore — the Engine
+// treats a nil plugin as "declined" and skips registration.
+func New(ctx *storm.PluginContext) *Plugin {
+	store, ok := ctx.Storage.(storm.DCRStore)
+	if !ok {
+		return nil
+	}
+	return &Plugin{
+		store:             store,
+		allowPrivateIPs:   ctx.AllowPrivateIPs,
+		skipTLSCertVerify: ctx.SkipTLSCertVerify,
+		endpointConfigs:   ctx.EndpointConfigs,
+	}
+}
+
+// NewWithConfig creates a new DCR plugin with explicit configuration.
+// Use this when constructing the plugin outside the Engine wiring.
+func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
 		store:             cfg.Store,
 		allowPrivateIPs:   cfg.AllowPrivateIPs,

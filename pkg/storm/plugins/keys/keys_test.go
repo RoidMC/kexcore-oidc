@@ -263,7 +263,7 @@ func TestKeys_Category(t *testing.T) {
 func TestKeys_Requires(t *testing.T) {
 	p := newTestPlugin(&fakeKeyStore{})
 	requires := p.Requires()
-	assert.Contains(t, requires, "KeyStore")
+	assert.Contains(t, requires, storm.CapKeyStore)
 }
 
 // Register installs the JWKS route.

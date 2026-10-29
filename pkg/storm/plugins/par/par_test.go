@@ -288,7 +288,7 @@ func TestPAR_PluginMetadata(t *testing.T) {
 
 	assert.Equal(t, "par", p.Name())
 	assert.Equal(t, storm.CategoryStandard, p.Category())
-	assert.Equal(t, []string{"PARStore", "ClientStore"}, p.Requires())
+	assert.Equal(t, []storm.StorageCapability{storm.CapPARStore, storm.CapClientStore}, p.Requires())
 }
 
 // Public client (AuthMethodNone) skips secret validation.
