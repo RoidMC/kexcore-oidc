@@ -11,6 +11,9 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
+# Code Coverage Report
+*.cov
+
 **/__debug_bin
 .vscode
 .DS_Store
