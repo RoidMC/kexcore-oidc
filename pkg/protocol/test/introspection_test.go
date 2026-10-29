@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/muhlemmer/gu"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 	"github.com/go-openapi/testify/v2/assert"
 	"github.com/go-openapi/testify/v2/require"
@@ -31,7 +30,7 @@ func TestIntrospectionResponse_SetUserInfo(t *testing.T) {
 				Subject:         userInfo.Subject,
 				Username:        userInfo.PreferredUsername,
 				UserInfoProfile: userInfo.UserInfoProfile,
-				Claims:          gu.MapCopy(userInfo.Claims),
+				Claims:          map[string]any{"foo": "bar"},
 			},
 		},
 		{

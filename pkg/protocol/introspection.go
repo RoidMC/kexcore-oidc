@@ -1,8 +1,6 @@
 package protocol
 
-import (
-	"github.com/muhlemmer/gu"
-)
+import "maps"
 
 type IntrospectionRequest struct {
 	Token string `schema:"token"`
@@ -46,14 +44,14 @@ type IntrospectionResponse struct {
 func (i *IntrospectionResponse) SetUserInfo(u *UserInfo) {
 	i.Subject = u.Subject
 	i.Username = u.PreferredUsername
-	i.Address = gu.PtrCopy(u.Address)
+	i.Address = ptrCopy(u.Address)
 	i.UserInfoProfile = u.UserInfoProfile
 	i.UserInfoEmail = u.UserInfoEmail
 	i.UserInfoPhone = u.UserInfoPhone
 	if i.Claims == nil {
-		i.Claims = gu.MapCopy(u.Claims)
+		i.Claims = maps.Clone(u.Claims)
 	} else {
-		gu.MapMerge(u.Claims, i.Claims)
+		maps.Copy(i.Claims, u.Claims)
 	}
 }
 

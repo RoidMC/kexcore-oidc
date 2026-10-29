@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sirupsen/logrus"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rs"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
@@ -30,7 +30,8 @@ func main() {
 
 	provider, err := rs.NewResourceServerFromKeyFile(context.TODO(), issuer, keyPath)
 	if err != nil {
-		logrus.Fatalf("error creating provider %s", err.Error())
+		slog.Error(fmt.Sprintf("error creating provider %s", err.Error()))
+		os.Exit(1)
 	}
 
 	router := chi.NewRouter()

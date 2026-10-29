@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 
-	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 
 	oidcclient "github.com/roidmc/kexcore-oidc/v2/pkg/client"
@@ -33,11 +33,13 @@ func main() {
 	if keyPath != "" {
 		keyData, err := oidcclient.ConfigFromKeyFile(keyPath)
 		if err != nil {
-			logrus.Fatalf("error reading key file %s", err.Error())
+			slog.Error(fmt.Sprintf("error reading key file %s", err.Error()))
+			os.Exit(1)
 		}
 		ts, err := profile.NewJWTProfileTokenSource(context.TODO(), issuer, keyData.UserID, keyData.KeyID, []byte(keyData.Key), scopes)
 		if err != nil {
-			logrus.Fatalf("error creating token source %s", err.Error())
+			slog.Error(fmt.Sprintf("error creating token source %s", err.Error()))
+			os.Exit(1)
 		}
 		client = oauth2.NewClient(context.Background(), ts)
 	}
@@ -160,8 +162,11 @@ func main() {
 		}
 	})
 	lis := fmt.Sprintf("127.0.0.1:%s", port)
-	logrus.Infof("listening on http://%s/", lis)
-	logrus.Fatal(http.ListenAndServe("127.0.0.1:"+port, nil))
+	slog.Info(fmt.Sprintf("listening on http://%s/", lis))
+	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
+		slog.Error(err.Error())
+		os.Exit(1)
+	}
 }
 
 func callExampleEndpoint(client *http.Client, testURL string) (any, error) {

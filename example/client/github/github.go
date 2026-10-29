@@ -3,16 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	stdhttp "net/http"
 	"os"
 
-	"github.com/google/go-github/v31/github"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	githubOAuth "golang.org/x/oauth2/github"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp/cli"
-	"github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
+	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
 )
 
@@ -35,7 +36,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	cookieHandler := http.NewCookieHandler(key, key, http.WithUnsecure())
+	cookieHandler := httphelper.NewCookieHandler(key, key, httphelper.WithUnsecure())
 	relyingParty, err := rp.NewRelyingPartyOAuth(rpConfig, rp.WithCookieHandler(cookieHandler))
 	if err != nil {
 		fmt.Printf("error creating relaying party: %v", err)
@@ -46,11 +47,25 @@ func main() {
 	}
 	token := cli.CodeFlow[*protocol.IDTokenClaims](ctx, relyingParty, callbackPath, port, state)
 
-	client := github.NewClient(relyingParty.OAuthConfig().Client(ctx, token.Token))
+	// Call the GitHub API directly with the OAuth2 client,
+	// replacing the former github.com/google/go-github dependency.
+	// GET https://api.github.com/user returns the authenticated user,
+	// equivalent to the former client.Users.Get(ctx, "") call.
+	client := relyingParty.OAuthConfig().Client(ctx, token.Token)
 
-	_, _, err = client.Users.Get(ctx, "")
+	resp, err := client.Get("https://api.github.com/user")
 	if err != nil {
 		fmt.Printf("error %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("error %v", err)
+		return
+	}
+	if resp.StatusCode != stdhttp.StatusOK {
+		fmt.Printf("error %s: %s", resp.Status, body)
 		return
 	}
 	fmt.Println("call succeeded")

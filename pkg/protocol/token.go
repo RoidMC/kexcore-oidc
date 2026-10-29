@@ -2,10 +2,10 @@ package protocol
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"time"
 
-	"github.com/muhlemmer/gu"
 	"golang.org/x/oauth2"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/crypto"
@@ -426,7 +426,7 @@ func (t *IDTokenClaims) SetUserInfo(i *UserInfo) {
 	if t.Claims == nil {
 		t.Claims = make(map[string]any, len(t.Claims))
 	}
-	gu.MapMerge(i.Claims, t.Claims)
+	maps.Copy(t.Claims, i.Claims)
 }
 
 // GetUserInfo extracts a UserInfo response from the IDTokenClaims.
@@ -437,7 +437,7 @@ func (t *IDTokenClaims) GetUserInfo() *UserInfo {
 		UserInfoEmail:   t.UserInfoEmail,
 		UserInfoPhone:   t.UserInfoPhone,
 		Address:         t.Address,
-		Claims:          gu.MapCopy(t.Claims),
+		Claims:          maps.Clone(t.Claims),
 	}
 }
 

@@ -9,6 +9,18 @@ import (
 	"strings"
 )
 
+// ptrCopy copies the value behind the pointer to a new pointer address.
+// Returns nil when the input is nil.
+// It replaces the former github.com/muhlemmer/gu.PtrCopy dependency.
+// There is no standard library equivalent for this helper.
+func ptrCopy[T any](pointer *T) *T {
+	if pointer == nil {
+		return nil
+	}
+	cpy := *pointer
+	return &cpy
+}
+
 // mergeAndMarshalClaims merges registered and the custom
 // claims map into a single JSON object.
 // Registered fields overwrite custom claims.

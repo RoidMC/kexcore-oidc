@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp"
 	"github.com/roidmc/kexcore-oidc/v2/pkg/protocol"
@@ -47,7 +46,8 @@ func main() {
 		var err error
 		pkce, err = strconv.ParseBool(pkceEnv)
 		if err != nil {
-			logrus.Fatalf("error parsing PKCE %s", err.Error())
+			slog.Error(fmt.Sprintf("error parsing PKCE %s", err.Error()))
+			os.Exit(1)
 		}
 	}
 	redirectURI := fmt.Sprintf("http://localhost:%v%v", port, callbackPath)
@@ -86,7 +86,8 @@ func main() {
 	if keyPath != "" {
 		signingKey, err := os.ReadFile(keyPath)
 		if err != nil {
-			logrus.Fatalf("error reading key file %s", err.Error())
+			slog.Error(fmt.Sprintf("error reading key file %s", err.Error()))
+			os.Exit(1)
 		}
 		options = append(options, rp.WithJWTProfile(rp.SignerFromKeyAndKeyID(signingKey, keyID)))
 	}
@@ -99,7 +100,8 @@ func main() {
 	ctx := logctx.ToContext(context.TODO(), logger)
 	provider, err := rp.NewRelyingPartyOIDC(ctx, issuer, clientID, clientSecret, redirectURI, scopes, options...)
 	if err != nil {
-		logrus.Fatalf("error creating provider %s", err.Error())
+		slog.Error(fmt.Sprintf("error creating provider %s", err.Error()))
+		os.Exit(1)
 	}
 
 	// generate some state (representing the state of the user in your application,

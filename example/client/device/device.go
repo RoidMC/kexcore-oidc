@@ -37,13 +37,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/sirupsen/logrus"
 
 	"github.com/roidmc/kexcore-oidc/v2/pkg/client/rp"
 	httphelper "github.com/roidmc/kexcore-oidc/v2/pkg/util/http"
@@ -74,42 +73,48 @@ func main() {
 	if keyPath != "" {
 		signingKey, err := os.ReadFile(keyPath)
 		if err != nil {
-			logrus.Fatalf("error reading key file %s", err.Error())
+			slog.Error(fmt.Sprintf("error reading key file %s", err.Error()))
+			os.Exit(1)
 		}
 		options = append(options, rp.WithJWTProfile(rp.SignerFromKeyAndKeyID(signingKey, keyID)))
 	}
 
 	provider, err := rp.NewRelyingPartyOIDC(ctx, issuer, clientID, clientSecret, "", scopes, options...)
 	if err != nil {
-		logrus.Fatalf("error creating provider %s", err.Error())
+		slog.Error(fmt.Sprintf("error creating provider %s", err.Error()))
+		os.Exit(1)
 	}
 
-	logrus.Info("starting device authorization flow")
+	slog.Info("starting device authorization flow")
 	resp, err := rp.DeviceAuthorization(ctx, scopes, provider, nil)
 	if err != nil {
-		logrus.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
-	logrus.Info("resp", resp)
+	slog.Info("resp", "resp", resp)
 	fmt.Printf("\nPlease browse to %s and enter code %s\n", resp.VerificationURI, resp.UserCode)
 
-	logrus.Info("start polling")
+	slog.Info("start polling")
 	token, err := rp.DeviceAccessToken(ctx, resp.DeviceCode, time.Duration(resp.Interval)*time.Second, provider)
 	if err != nil {
-		logrus.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
-	logrus.Infof("successfully obtained token: %#v", token)
+	slog.Info(fmt.Sprintf("successfully obtained token: %#v", token))
 
-	logrus.Infof("Going to refresh token")
+	slog.Info("Going to refresh token")
 	refreshedToken, err := rp.RefreshTokens[*protocol.IDTokenClaims](ctx, provider, token.RefreshToken, "", "")
 	if err != nil {
-		logrus.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
-	logrus.Infof("refreshedToken: %#v", refreshedToken.Token)
+	slog.Info(fmt.Sprintf("refreshedToken: %#v", refreshedToken.Token))
 
-	logrus.Infof("Going to revoke token")
+	slog.Info("Going to revoke token")
 	err = rp.RevokeToken(ctx, provider, token.AccessToken, "refresh_token")
 	if err != nil {
-		logrus.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
-	logrus.Info("Token revoked")
+	slog.Info("Token revoked")
 }
