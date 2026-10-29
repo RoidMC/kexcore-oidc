@@ -184,23 +184,22 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// DEBUG: dump all form keys AND values (truncated)
-	formDump := make(map[string]string, len(r.Form))
+	// DEBUG: log form keys only — values may contain secrets
+	// (client_secret, client_assertion, refresh_token, code) and
+	// must never be logged, even at debug level (CWE-312).
+	formKeys := make([]string, 0, len(r.Form))
 	for k := range r.Form {
-		v := r.Form.Get(k)
-		if len(v) > 80 {
-			v = v[:80] + "..."
-		}
-		formDump[k] = v
+		formKeys = append(formKeys, k)
 	}
-	// DEBUG: dump relevant headers
-	headersDump := make(map[string]string)
-	for _, h := range []string{"Authorization", "DPoP", "Content-Type", "client_id"} {
-		if v := r.Header.Get(h); v != "" {
-			if len(v) > 120 {
-				v = v[:120] + "..."
-			}
-			headersDump[h] = v
+	// DEBUG: log auth scheme and presence/length of sensitive headers,
+	// never their values: Authorization carries client credentials and
+	// DPoP carries a signed proof JWT.
+	authScheme := ""
+	if v := r.Header.Get("Authorization"); v != "" {
+		if i := strings.IndexByte(v, ' '); i > 0 {
+			authScheme = v[:i]
+		} else {
+			authScheme = "unknown"
 		}
 	}
 	// dump TLS info
@@ -211,13 +210,13 @@ func (p *Plugin) handleToken(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Debug("token handleToken",
 		"grant_type", r.Form.Get("grant_type"),
-		"form_dump", formDump,
+		"form_keys", formKeys,
 		"assertion_type", r.Form.Get("client_assertion_type"),
 		"assertion_len", len(r.Form.Get("client_assertion")),
-		"has_dpop", r.Header.Get("DPoP") != "",
+		"dpop_len", len(r.Header.Get("DPoP")),
 		"global_requireDPoP", p.requireDPoP,
 		"global_requireMtls", p.requireMtls,
-		"headers", headersDump,
+		"auth_scheme", authScheme,
 		"has_tls", hasTLS,
 		"peer_certs", peerCerts,
 		"content_length", r.ContentLength,

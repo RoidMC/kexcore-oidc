@@ -65,11 +65,6 @@ func New(cfg Config) *Plugin {
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "dcr" }
 
-// httpClient returns an HTTP client for fetching remote URLs.
-func (p *Plugin) httpClient() *http.Client {
-	return shared.NewHTTPClient(p.skipTLSCertVerify)
-}
-
 // Register installs the /register routes.
 //
 // OAuth 2.0 standard endpoint: POST /register (RFC 7591 §3)
@@ -148,14 +143,7 @@ func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// If jwks_uri specified but jwks not, fetch the key set and populate jwks
 	// so the storage layer can parse encryption keys from it.
 	if len(req.JWKS) == 0 && req.JWKSURI != "" {
-		if !p.allowPrivateIPs {
-			if err := shared.ValidateRemoteURL(req.JWKSURI); err != nil {
-				shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid jwks_uri: %s", err.Error()), nil)
-				return
-			}
-		}
-		client := p.httpClient()
-		resp, err := client.Get(req.JWKSURI)
+		resp, err := shared.FetchRemoteURL(req.JWKSURI, p.skipTLSCertVerify, p.allowPrivateIPs)
 		if err != nil {
 			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("failed to fetch jwks_uri: %s", req.JWKSURI).WithParent(err), nil)
 			return
@@ -289,14 +277,7 @@ func (p *Plugin) validateSectorIdentifierURI(sectorURI string, redirectURIs []st
 		return fmt.Errorf("sector_identifier_uri must use https scheme")
 	}
 
-	if !p.allowPrivateIPs {
-		if err := shared.ValidateRemoteURL(sectorURI); err != nil {
-			return fmt.Errorf("sector_identifier_uri is not reachable: %w", err)
-		}
-	}
-
-	client := p.httpClient()
-	resp, err := client.Get(sectorURI)
+	resp, err := shared.FetchRemoteURL(sectorURI, p.skipTLSCertVerify, p.allowPrivateIPs)
 	if err != nil {
 		return fmt.Errorf("failed to fetch sector_identifier_uri: %w", err)
 	}

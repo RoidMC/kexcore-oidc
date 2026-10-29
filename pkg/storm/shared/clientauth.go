@@ -300,15 +300,10 @@ func AuthenticatePrivateKeyJWT(r *http.Request, getClientByClientID func(ctx con
 }
 
 // FetchJWKSFromURI fetches and parses a JWKS from a remote URI.
-// If allowPrivateIPs is false, the URI is validated to prevent SSRF attacks.
+// SSRF protections: pre-flight URL validation plus dial-time IP checks
+// (see FetchRemoteURL), unless allowPrivateIPs is set (test-only).
 func FetchJWKSFromURI(uri string, skipTLSVerify, allowPrivateIPs bool) ([]jwk.Key, error) {
-	if !allowPrivateIPs {
-		if err := ValidateRemoteURL(uri); err != nil {
-			return nil, fmt.Errorf("invalid jwks_uri: %w", err)
-		}
-	}
-	client := NewHTTPClient(skipTLSVerify)
-	resp, err := client.Get(uri)
+	resp, err := FetchRemoteURL(uri, skipTLSVerify, allowPrivateIPs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch jwks_uri: %w", err)
 	}

@@ -10,7 +10,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"net/http/httputil"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -150,13 +149,17 @@ func (lt *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, err
 	}
 
-	dump, _ := httputil.DumpResponse(resp, true)
+	// Log only non-sensitive metadata: response bodies of OAuth/OIDC
+	// endpoints carry tokens (access_token/refresh_token/id_token) and
+	// headers may carry Set-Cookie, so they must never be dumped to the
+	// log, even at debug level (CWE-312).
 	lt.logger.Debug("http client request",
 		slog.String("method", req.Method),
 		slog.String("url", req.URL.String()),
 		slog.Int("status", resp.StatusCode),
 		slog.Duration("duration", time.Since(start)),
-		slog.String("response", string(dump)),
+		slog.String("content_type", resp.Header.Get("Content-Type")),
+		slog.Int64("content_length", resp.ContentLength),
 	)
 
 	return resp, nil

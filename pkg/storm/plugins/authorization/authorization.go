@@ -1553,9 +1553,9 @@ func (p *Plugin) applyRequestObject(ctx context.Context, authReq *protocol.AuthR
 
 // applyRequestURI fetches and validates a signed JWT request object from a URL (OIDC Core §6.1).
 func (p *Plugin) applyRequestURI(ctx context.Context, authReq *protocol.AuthRequest) error {
-	// Fetch the JWT from the URL
-	client := shared.NewHTTPClient(p.skipTLSCertVerify)
-	resp, err := client.Get(authReq.RequestURI)
+	// Fetch the JWT from the URL, with SSRF protections: pre-flight URL
+	// validation plus dial-time IP checks (see shared.FetchRemoteURL).
+	resp, err := shared.FetchRemoteURL(authReq.RequestURI, p.skipTLSCertVerify, p.allowPrivateIPs)
 	if err != nil {
 		return protocol.ErrInvalidRequestObject().WithDescription("failed to fetch request_uri: %s", authReq.RequestURI).WithParent(err)
 	}
