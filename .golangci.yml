@@ -1,0 +1,37 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Errors that can never be acted upon: the response is already being
+      # written, or the call happens during init().
+      exclude-functions:
+        - (net/http.ResponseWriter).Write
+        - (*encoding/json.Encoder).Encode
+        - (*bytes.Buffer).WriteTo
+        - github.com/lestrrat-go/jwx/v4/jwa.RegisterSignatureAlgorithm
+        - github.com/lestrrat-go/jwx/v4/jwa.RegisterKeyEncryptionAlgorithm
+        - github.com/lestrrat-go/jwx/v4/jwa.RegisterContentEncryptionAlgorithm
+  exclusions:
+    presets:
+      # Errors from Close/print/Setenv are conventionally ignored.
+      - std-error-handling
+    rules:
+      # Test fixtures: unchecked writes to httptest recorders cannot affect
+      # the behaviour under test.
+      - path: _test\.go
+        linters:
+          - errcheck
+      # Example programs are documentation scaffolding, kept close to the
+      # upstream samples they were derived from.
+      - path: example/
+        linters:
+          - errcheck
+          - unused
+      # crypto/ecdsa.PublicKey.X/Y and elliptic.Curve.IsOnCurve are deprecated
+      # since Go 1.26/1.21. Behaviour is correct today; migrating to
+      # PublicKey.Bytes / crypto/ecdh is tracked separately.
+      - path: pkg/crypto/
+        linters:
+          - staticcheck
+        text: deprecated since Go 1.
