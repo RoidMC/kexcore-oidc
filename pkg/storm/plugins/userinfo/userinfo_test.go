@@ -155,12 +155,6 @@ func serveRequest(plugin *Plugin, r *http.Request) *httptest.ResponseRecorder {
 	return w
 }
 
-func setupChiRouter(plugin *Plugin) *chi.Mux {
-	r := chi.NewRouter()
-	plugin.Register(r)
-	return r
-}
-
 // extractErrorBody parses an OIDC error JSON body.
 func extractErrorBody(t *testing.T, body []byte) *protocol.Error {
 	t.Helper()

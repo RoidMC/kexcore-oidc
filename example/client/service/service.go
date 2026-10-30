@@ -81,7 +81,7 @@ func main() {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 
 			key, err := io.ReadAll(file)
 			if err != nil {

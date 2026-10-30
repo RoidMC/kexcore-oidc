@@ -299,7 +299,7 @@ func (r *RefreshTokenRequest) GetSubject() string                        { retur
 func (r *RefreshTokenRequest) SetCurrentScopes(scopes []string)          { r.Scopes = scopes }
 func (r *RefreshTokenRequest) GetCodeChallenge() *protocol.CodeChallenge { return nil }
 func (r *RefreshTokenRequest) GetNonce() string                          { return "" }
-func (r *RefreshTokenRequest) GetID() string                             { return r.RefreshToken.ID }
+func (r *RefreshTokenRequest) GetID() string                             { return r.ID }
 func (r *RefreshTokenRequest) GetSessionID() string                      { return r.SessionID }
 func (r *RefreshTokenRequest) GetDPoPJKT() string                        { return r.DPoPJKT }
 

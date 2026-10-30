@@ -343,6 +343,8 @@ func (p *Plugin) storeDPoPCodeBinding(ctx context.Context, authRequestID string,
 		return
 	}
 	if bindingStore, ok := p.authStore.(storm.DPoPCodeBindingStore); ok {
-		bindingStore.SetAuthRequestDPoPJKT(ctx, authRequestID, jkt)
+		// Best-effort (RFC 9449 §7.1): a storage failure here must not abort the
+		// authorization flow; the token plugin will reject the exchange instead.
+		_ = bindingStore.SetAuthRequestDPoPJKT(ctx, authRequestID, jkt)
 	}
 }

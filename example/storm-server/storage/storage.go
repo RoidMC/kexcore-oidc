@@ -84,7 +84,6 @@ type Storage struct {
 
 	tokenTTL   time.Duration
 	refreshTTL time.Duration
-	issuer     string
 
 	// dpopJKTs stores DPoP JWK thumbprints for authorization code binding (RFC 9449 §7.1).
 	// Key: auth request ID, Value: JWK thumbprint.

@@ -7,9 +7,11 @@ package client
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"time"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 
 	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
 	httphelper "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
@@ -126,26 +128,23 @@ func ClientCredentials(ctx context.Context, tokenURL string, req *protocol.Clien
 	ctx, span := Tracer.Start(ctx, "ClientCredentials")
 	defer span.End()
 
-	config := &oauth2.Config{
+	config := &clientcredentials.Config{
 		ClientID:     req.ClientID,
 		ClientSecret: req.ClientSecret,
 		Scopes:       req.Scope,
-		Endpoint: oauth2.Endpoint{
-			TokenURL:  tokenURL,
-			AuthStyle: oauth2.AuthStyleAutoDetect,
-		},
+		TokenURL:     tokenURL,
+		AuthStyle:    oauth2.AuthStyleAutoDetect,
 	}
 
-	var opts []oauth2.AuthCodeOption
 	if req.ClientAssertion != "" {
-		opts = append(opts,
-			oauth2.SetAuthURLParam("client_assertion", req.ClientAssertion),
-			oauth2.SetAuthURLParam("client_assertion_type", req.ClientAssertionType),
-		)
+		config.EndpointParams = url.Values{
+			"client_assertion":      {req.ClientAssertion},
+			"client_assertion_type": {req.ClientAssertionType},
+		}
 	}
 
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
-	token, err := config.TokenSource(ctx, &oauth2.Token{}).Token()
+	token, err := config.TokenSource(ctx).Token()
 	if err != nil {
 		return nil, err
 	}

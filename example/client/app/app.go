@@ -173,7 +173,7 @@ func main() {
 		// Store target_link_uri in a cookie so the callback handler can
 		// redirect the user there after a successful login.
 		if targetLinkURI != "" {
-			cookieHandler.SetCookie(w, "target_link_uri", targetLinkURI)
+			_ = cookieHandler.SetCookie(w, "target_link_uri", targetLinkURI)
 		}
 
 		// Generate state and redirect to the OP.
@@ -201,7 +201,7 @@ func main() {
 			return
 		}
 		w.Header().Set("content-type", "application/json")
-		w.Write(data)
+		_, _ = w.Write(data)
 	}
 
 	// you could also just take the access_token and id_token without calling the userinfo endpoint:

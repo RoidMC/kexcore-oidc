@@ -20,14 +20,11 @@ import (
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
-var errNotFound = errors.New("not found")
-
 // --- fakes ---
 
 type fakeClient struct {
-	id              string
-	logoutURI       string
-	registrationURI string
+	id        string
+	logoutURI string
 }
 
 func (c *fakeClient) GetID() string                   { return c.id }

@@ -6,13 +6,9 @@
 package main
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/tls"
-	"encoding/base64"
 	"fmt"
 	"log/slog"
-	"math/big"
 	"net/http"
 	"os"
 
@@ -60,19 +56,19 @@ func main() {
 		storage.WebClient("api", "secret", cfg.RedirectURI...),
 		// Clients for rp-initiated-logout (no backchannel_logout_uri)
 		storage.OIDFTestClientSecretPost("Test Client 1", "test-secret-1",
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
 		),
 		storage.OIDFTestClientSecretPost("Test Client 2", "test-secret-2",
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
 		),
 		// Clients for backchannel-rp-initiated-logout (with backchannel_logout_uri)
 		storage.OIDFBackChannelLogoutTestClient("BCL Client 1", "bcl-secret-1",
-			"https://192.168.2.167:8443/test/a/kexcore-test/backchannel_logout",
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+			"https://192.168.2.133:8443/test/a/kexcore-test/backchannel_logout",
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
 		),
 		storage.OIDFBackChannelLogoutTestClient("BCL Client 2", "bcl-secret-2",
-			"https://192.168.2.167:8443/test/a/kexcore-test/backchannel_logout",
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+			"https://192.168.2.133:8443/test/a/kexcore-test/backchannel_logout",
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
 		),
 		storage.EncryptedWebClient("web-dir-sm4", "secret", "dir", "A256GCM",
 			cfg.RedirectURI...,
@@ -88,45 +84,57 @@ func main() {
 		),
 		// FAPI test clients — Security Profile (no request_object_signing_alg)
 		storage.FAPIClient("FAPI Client 1", []jwk.Key{fapiJWK1},
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
-		).WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint"),
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
+		).WithNotificationEndpoint("https://192.168.2.133:8443/test/a/kexcore-test/ciba-notification-endpoint"),
 		storage.FAPIClient("FAPI Client 2", []jwk.Key{fapiJWK2},
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
-		).WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint"),
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
+		).WithNotificationEndpoint("https://192.168.2.133:8443/test/a/kexcore-test/ciba-notification-endpoint"),
 		// FAPI test clients — Message Signing (request_object_signing_alg = PS256)
 		// Same JWK keys and mTLS certificates, but requires signed request objects.
 		storage.FAPIClient("FAPI Client 1 MS", []jwk.Key{fapiJWK1},
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
-		).WithRequestObjectSigningAlg("PS256").WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint"),
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
+		).WithRequestObjectSigningAlg("PS256").WithNotificationEndpoint("https://192.168.2.133:8443/test/a/kexcore-test/ciba-notification-endpoint"),
 		storage.FAPIClient("FAPI Client 2 MS", []jwk.Key{fapiJWK2},
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
-		).WithRequestObjectSigningAlg("PS256").WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint"),
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
+		).WithRequestObjectSigningAlg("PS256").WithNotificationEndpoint("https://192.168.2.133:8443/test/a/kexcore-test/ciba-notification-endpoint"),
 		// FAPI test clients — mTLS (tls_client_auth, no client_assertion)
 		// Used for CIBA mtls variants where client authenticates via TLS cert.
 		// JWKS is still needed for request object signature verification.
 		storage.FAPIClientMTLS("FAPI Client 1 MTLS", []jwk.Key{fapiJWK1},
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
-		).WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint").
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
+		).WithNotificationEndpoint("https://192.168.2.133:8443/test/a/kexcore-test/ciba-notification-endpoint").
 			WithCertCN("FAPI Client 1"),
 		storage.FAPIClientMTLS("FAPI Client 2 MTLS", []jwk.Key{fapiJWK2},
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
-		).WithNotificationEndpoint("https://192.168.2.167:8443/test/a/kexcore-test/ciba-notification-endpoint").
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
+		).WithNotificationEndpoint("https://192.168.2.133:8443/test/a/kexcore-test/ciba-notification-endpoint").
 			WithCertCN("FAPI Client 2"),
 		// FAPI test clients — mTLS auth + DPoP sender constraining only (requireDPoP=true, requireMtls=false)
 		// Used for sender_constrain=dpop variants where the server must reject
 		// requests without DPoP proof even when mTLS certificates are present.
 		storage.FAPIClientMTLSDPoP("FAPI Client 1 MTLS DPoP", []jwk.Key{fapiJWK1},
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
 		).WithCertCN("FAPI Client 1"),
 		storage.FAPIClientMTLSDPoP("FAPI Client 2 MTLS DPoP", []jwk.Key{fapiJWK2},
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
 		).WithCertCN("FAPI Client 2"),
 		// FAPI test clients — Message Signing mTLS (tls_client_auth, request_object_signing_alg=PS256)
 		storage.FAPIClientMTLS("FAPI Client 1 MS MTLS", []jwk.Key{fapiJWK1},
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
 		).WithRequestObjectSigningAlg("PS256").WithCertCN("FAPI Client 1"),
 		storage.FAPIClientMTLS("FAPI Client 2 MS MTLS", []jwk.Key{fapiJWK2},
-			"https://192.168.2.167:8443/test/a/kexcore-test/callback",
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
+		).WithRequestObjectSigningAlg("PS256").WithCertCN("FAPI Client 2"),
+		// Message Signing mTLS clients for sender_constrain=dpop variants
+		// (requireDPoP=true, requireMtls=false). The sender_constrain=dpop
+		// variants share the mTLS client auth method but must issue DPoP-bound
+		// tokens only, so they need their own registration — otherwise the
+		// token would also be certificate-bound and a bad DPoP proof would
+		// still be accepted through the certificate.
+		storage.FAPIClientMTLSDPoP("FAPI Client 1 MS MTLS DPoP", []jwk.Key{fapiJWK1},
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
+		).WithRequestObjectSigningAlg("PS256").WithCertCN("FAPI Client 1"),
+		storage.FAPIClientMTLSDPoP("FAPI Client 2 MS MTLS DPoP", []jwk.Key{fapiJWK2},
+			"https://192.168.2.133:8443/test/a/kexcore-test/callback",
 		).WithRequestObjectSigningAlg("PS256").WithCertCN("FAPI Client 2"),
 	}
 
@@ -193,17 +201,12 @@ func main() {
 // mustParseFAPIKey returns a fixed JWK for FAPI private_key_jwt testing.
 // The key must match the fapi_client.jwks in testsuite/config.yml.
 func mustParseFAPIKey(xStr, yStr, kid string) jwk.Key {
-	x, _ := base64.RawURLEncoding.DecodeString(xStr)
-	y, _ := base64.RawURLEncoding.DecodeString(yStr)
-
-	pub := &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     new(big.Int).SetBytes(x),
-		Y:     new(big.Int).SetBytes(y),
+	key, err := jwk.ParseKey([]byte(fmt.Sprintf(
+		`{"kty":"EC","crv":"P-256","x":%q,"y":%q,"kid":%q,"alg":"ES256","use":"sig"}`,
+		xStr, yStr, kid,
+	)))
+	if err != nil {
+		panic(fmt.Errorf("mustParseFAPIKey: %w", err))
 	}
-	key, _ := jwk.Import[jwk.Key](pub)
-	key.Set(jwk.KeyIDKey, kid)
-	key.Set(jwk.AlgorithmKey, "ES256")
-	key.Set(jwk.KeyUsageKey, "sig")
 	return key
 }

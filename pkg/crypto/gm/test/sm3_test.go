@@ -56,8 +56,8 @@ func TestSM3Sum(t *testing.T) {
 	data := []byte("test message")
 	hash := gm.SM3Sum(data)
 
-	if len(hash) != 32 {
-		t.Errorf("expected hash length 32, got %d", len(hash))
+	if got, want := string(hash[:]), string(gm.SM3Hash(data)); got != want {
+		t.Errorf("SM3Sum = %x, want %x", got, want)
 	}
 }
 

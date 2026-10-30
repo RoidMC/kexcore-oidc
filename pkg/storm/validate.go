@@ -38,7 +38,7 @@ func (e *Engine) Validate() error {
 		for _, cap := range required {
 			if !e.storageImplements(cap) {
 				hint := storageMissingHint(cap)
-				return fmt.Errorf("storm: plugin %q requires storage interface %q, but Storage does not implement it.\n  → %s\n  See storage.go for full interface definition and implementation guide.",
+				return fmt.Errorf("storm: plugin %q requires storage interface %q, but Storage does not implement it (%s); see storage.go for the full interface definition",
 					p.Name(), cap, hint)
 			}
 		}
@@ -263,12 +263,9 @@ func (e *Engine) validateProductionSafety() error {
 	}
 
 	// Validate issuer URL if issuerFn is set and returns a non-empty value.
-	// We can only check at build time if the issuerFn is deterministic.
-	// For runtime validation, the issuer is checked per-request.
-	if e.issuerFn != nil {
-		// Try with a dummy request to see if issuer is configured
-		// (Some issuerFns are request-dependent, so we can't always validate here)
-	}
+	// We can only check at build time if the issuerFn is deterministic
+	// (some issuerFns are request-dependent, so we can't always validate here);
+	// for runtime validation, the issuer is checked per-request.
 
 	return nil
 }

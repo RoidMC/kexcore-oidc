@@ -245,7 +245,9 @@ func TestBackchannelAuth_PingMode(t *testing.T) {
 	}
 
 	var resp protocol.BackchannelAuthResponse
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 
 	stored, _ := cs.GetCIBARequestByAuthReqID(context.Background(), resp.AuthReqID)
 	if stored.DeliveryMode != protocol.CIBAModePing {
@@ -737,7 +739,9 @@ func TestBackchannelAuth_RequestedExpiry(t *testing.T) {
 	}
 
 	var resp protocol.BackchannelAuthResponse
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 
 	if resp.ExpiresIn != 60 {
 		t.Errorf("expected expires_in=60, got %d", resp.ExpiresIn)

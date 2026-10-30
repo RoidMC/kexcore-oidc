@@ -188,7 +188,17 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		"has_dpop", shared.DPoPFromContext(r.Context()) != nil,
 	)
 	if p.cnfLookup != nil {
-		if cnf, err := p.cnfLookup.TokenCNF(r.Context(), tokenID); err == nil && len(cnf) > 0 {
+		cnf, err := p.cnfLookup.TokenCNF(r.Context(), tokenID)
+		if err != nil {
+			// Fail closed: if the binding cannot be determined, the token cannot
+			// be proven to be unbound, so treat it as invalid rather than skipping
+			// the sender-constraining check.
+			slog.Debug("userinfo TokenCNF lookup FAILED", "tokenID", tokenID, "error", err)
+			shared.WriteError(w, r, shared.NewStatusError(
+				protocol.ErrInvalidRequest().WithDescription("cannot determine token binding"), http.StatusUnauthorized), nil)
+			return
+		}
+		if len(cnf) > 0 {
 			slog.Debug("userinfo cnf claim retrieved", "cnf", fmt.Sprintf("%v", cnf))
 			if err := shared.VerifyTokenBinding(r.Context(), cnf); err != nil {
 				slog.Debug("userinfo VerifyTokenBinding FAILED", "error", err)
@@ -197,7 +207,7 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 			}
 			slog.Debug("userinfo VerifyTokenBinding PASSED")
 		} else {
-			slog.Debug("userinfo cnf claim empty or error", "err", err, "cnf_len", len(cnf))
+			slog.Debug("userinfo cnf claim empty", "tokenID", tokenID)
 		}
 	} else {
 		slog.Debug("userinfo cnfLookup is nil, skipping sender-constraining check")

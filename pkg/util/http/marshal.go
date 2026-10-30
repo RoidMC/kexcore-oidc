@@ -19,7 +19,7 @@ func MarshalJSON(w http.ResponseWriter, i any) {
 
 func MarshalJSONWithStatus(w http.ResponseWriter, i any, status int) {
 	w.Header().Set("content-type", "application/json")
-	if i == nil || (reflect.ValueOf(i).Kind() == reflect.Ptr && reflect.ValueOf(i).IsNil()) {
+	if i == nil || (reflect.ValueOf(i).Kind() == reflect.Pointer && reflect.ValueOf(i).IsNil()) {
 		w.WriteHeader(status)
 		return
 	}

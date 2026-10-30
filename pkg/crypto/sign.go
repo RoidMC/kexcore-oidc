@@ -190,6 +190,7 @@ func signSM2(algorithm, keyID, tokenType string, priv *gmsm.PrivateKey, payload 
 	return BuildJWSCompact(algorithm, keyID, tokenType, payload, signature, nil)
 }
 
+//nolint:unused // reserved for SM2 signing support
 func (s *Signer) signSM2(payload []byte) (string, error) {
 	return signSM2(s.algorithm, s.keyID, s.tokenTypeOrDefault(), s.sm2Priv, payload)
 }
@@ -246,6 +247,7 @@ func signSM9(algorithm, keyID, tokenType string, priv *sm9.SignPrivateKey, uid [
 		map[string]string{"uid": base64.RawURLEncoding.EncodeToString(uid)})
 }
 
+//nolint:unused // reserved for SM9 signing support
 func (s *Signer) signSM9(payload []byte) (string, error) {
 	return signSM9(s.algorithm, s.keyID, s.tokenTypeOrDefault(), s.sm9Priv, s.sm9UID, payload)
 }

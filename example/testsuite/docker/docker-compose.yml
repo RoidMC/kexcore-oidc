@@ -1,0 +1,36 @@
+services:
+  mongodb:
+    image: mongo:6.0.13
+    volumes:
+      - ./mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  server:
+    image: registry.gitlab.com/openid/conformance-suite:latest
+    environment:
+      BASE_URL: https://192.168.2.133:8443
+      BASE_MTLS_URL: https://192.168.2.133:8444
+      MONGODB_HOST: mongodb
+      SPRING_PROFILES_ACTIVE: dev
+      # 关键：设置这些值（随便填，测试套件内部用）
+      OIDC_GOOGLE_CLIENTID: google-client
+      OIDC_GOOGLE_SECRET: google-secret
+      OIDC_GITLAB_CLIENTID: gitlab-client
+      OIDC_GITLAB_SECRET: gitlab-secret
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: on-failure
+
+  nginx:
+    image: registry.gitlab.com/openid/conformance-suite/nginx:latest
+    ports:
+      - "8443:8443"
+      - "8444:8444"
+    depends_on:
+      - server

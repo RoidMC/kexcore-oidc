@@ -128,6 +128,29 @@ func TestPAR_SuccessfulRequest(t *testing.T) {
 	assert.Equal(t, 90, resp.ExpiresIn) // default 90s
 }
 
+// RFC 7523 §2.2 / FAPI 2.0: a client registered for private_key_jwt that omits
+// the client_assertion must be rejected instead of silently falling back to
+// client_id + client_secret authentication.
+func TestPAR_PrivateKeyJWTRequiresAssertion(t *testing.T) {
+	client := &fakeClient{
+		id:         "fapi-client",
+		authMethod: protocol.AuthMethodPrivateKeyJWT,
+		redirects:  []string{"https://app.example.com/callback"},
+	}
+	p := newTestPlugin(&fakePARStore{}, &fakeClientStore{client: client})
+
+	form := url.Values{
+		"client_id":     {"fapi-client"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid"},
+	}
+	w := serveRequest(p, newFormRequest(form))
+
+	assert.GreaterOrEqual(t, w.Code, http.StatusBadRequest)
+	assert.Contains(t, w.Body.String(), "invalid_client")
+}
+
 // RFC 9126 §3: Missing client_id returns invalid_request.
 func TestPAR_MissingClientID(t *testing.T) {
 	client := &fakeClient{id: "myclient", authMethod: protocol.AuthMethodBasic}

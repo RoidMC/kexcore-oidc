@@ -110,7 +110,7 @@ type Encoder struct {
 // Custom types implementing encoding.TextMarshaler are supported.
 func (e *Encoder) Encode(src any, dst map[string][]string) error {
 	v := reflect.ValueOf(src)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
@@ -152,7 +152,7 @@ func (e *Encoder) fieldToString(fv reflect.Value, omitempty bool) (string, bool)
 		}
 		return s, true
 	}
-	if fv.Kind() == reflect.Ptr {
+	if fv.Kind() == reflect.Pointer {
 		if fv.IsNil() {
 			if omitempty {
 				return "", false
@@ -239,7 +239,7 @@ func (d *Decoder) Decode(dst any, src map[string][]string, opts ...DecodeOption)
 	}
 
 	v := reflect.ValueOf(dst)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
+	if v.Kind() != reflect.Pointer || v.IsNil() {
 		return fmt.Errorf("protocol: Decode expects non-nil pointer, got %T", dst)
 	}
 	v = v.Elem()
@@ -291,7 +291,7 @@ func (d *Decoder) setField(fv reflect.Value, s string) error {
 		fv.Set(parsed)
 		return nil
 	}
-	if fv.Kind() == reflect.Ptr {
+	if fv.Kind() == reflect.Pointer {
 		if fv.IsNil() {
 			fv.Set(reflect.New(fv.Type().Elem()))
 		}

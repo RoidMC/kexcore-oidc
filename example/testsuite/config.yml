@@ -4,7 +4,7 @@
 
 # Shared variables — referenced via ${VAR} in this file
 vars:
-  suite_url: "https://192.168.2.167:8443"
+  suite_url: "https://192.168.2.133:8443"
   issuer_url: "https://192.168.2.133:9998"
   issuer_host: "192.168.2.133"
 
@@ -151,6 +151,22 @@ plan_config:
     scope: "profile"
   fapi_client2_ms_mtls_oauth: &fapi_client2_ms_mtls_oauth
     <<: *fapi_client2_ms_mtls
+    scope: "profile"
+  # Message Signing mTLS client auth + DPoP-only sender constraining.
+  # sender_constrain=dpop variants must use a registration whose only token
+  # binding is DPoP (requireDPoP=true, requireMtls=false); sharing the plain
+  # MS MTLS client would also certificate-bind the token.
+  fapi_client_ms_mtls_dpop: &fapi_client_ms_mtls_dpop
+    <<: *fapi_client_ms_mtls
+    client_id: "FAPI Client 1 MS MTLS DPoP"
+  fapi_client2_ms_mtls_dpop: &fapi_client2_ms_mtls_dpop
+    <<: *fapi_client2_ms_mtls
+    client_id: "FAPI Client 2 MS MTLS DPoP"
+  fapi_client_ms_mtls_dpop_oauth: &fapi_client_ms_mtls_dpop_oauth
+    <<: *fapi_client_ms_mtls_dpop
+    scope: "profile"
+  fapi_client2_ms_mtls_dpop_oauth: &fapi_client2_ms_mtls_dpop_oauth
+    <<: *fapi_client2_ms_mtls_dpop
     scope: "profile"
   # FAPI mTLS clients (tls_client_auth authentication, no client_assertion)
   # Used for CIBA mtls variants where client authenticates via TLS certificate.

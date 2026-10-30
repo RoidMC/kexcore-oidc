@@ -286,7 +286,7 @@ func OIDFEncryptedTestClient(id, secret string, alg, enc string, key interface{}
 // and uses the provided JWK set for JWT bearer verification.
 func FAPIClient(id string, clientJWKS []jwk.Key, redirectURIs ...string) *Client {
 	if len(redirectURIs) == 0 {
-		redirectURIs = []string{"https://192.168.2.167:8443/test/a/kexcore-test/callback"}
+		redirectURIs = []string{"https://192.168.2.133:8443/test/a/kexcore-test/callback"}
 	}
 	c := &Client{
 		id:           id,
@@ -354,7 +354,7 @@ func FAPIClientWithJWKSURI(id, jwksURI string, redirectURIs ...string) *Client {
 // clientJWKS is still needed for request object signature verification.
 func FAPIClientMTLS(id string, clientJWKS []jwk.Key, redirectURIs ...string) *Client {
 	if len(redirectURIs) == 0 {
-		redirectURIs = []string{"https://192.168.2.167:8443/test/a/kexcore-test/callback"}
+		redirectURIs = []string{"https://192.168.2.133:8443/test/a/kexcore-test/callback"}
 	}
 	c := &Client{
 		id:           id,

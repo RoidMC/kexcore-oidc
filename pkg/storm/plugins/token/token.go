@@ -1317,25 +1317,12 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 	}
 
 	// FAPI 2.0 / RFC 7523: private_key_jwt clients MUST authenticate via
-	// client_assertion. If the client's registered auth method is
-	// private_key_jwt but the assertion was already verified upstream
-	// (pre-authenticated context), allow mTLS certificate as sender-
-	// constraining evidence. Without a pre-authenticated context, reject
-	// because the mandatory client_assertion was not provided.
+	// client_assertion. Assertion-authenticated clients are returned earlier
+	// from the pre-authenticated context, so reaching this point means the
+	// mandatory assertion was not provided — client_secret must not be used
+	// as a fallback.
 	if client.AuthMethod() == protocol.AuthMethodPrivateKeyJWT {
-		if c := shared.AuthenticatedClientFromContext(r.Context()); c == nil {
-			return nil, protocol.ErrInvalidClient().WithDescription("client_assertion required for private_key_jwt client")
-		}
-		// Pre-authenticated via assertion — verify mTLS cert for sender-constraining.
-		cert := shared.ClientCertFromContext(r.Context())
-		if cert == nil {
-			return nil, protocol.ErrInvalidClient().WithDescription("mTLS client certificate required for sender-constraining")
-		}
-		slog.Debug("token authenticateClient: private_key_jwt client authenticated via assertion + mTLS", "client_id", clientID, "cert_cn", cert.Subject.CommonName)
-		if err := shared.ValidateSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
-			return nil, err
-		}
-		return client, nil
+		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion required for private_key_jwt client")
 	}
 
 	// tls_client_auth: require mTLS certificate and validate certificate identity
@@ -1385,15 +1372,25 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 		return p.clientStore.GetClientByClientID(ctx, clientID)
 	}
 	getAudiences := func(client shared.Client) []string {
-		// FAPI 2.0 §5.3.2.1: aud should be issuer URL.
-		// OIDF conformance suite may send token endpoint URL or bc-authorize endpoint URL.
-		return []string{issuer, tokenEndpoint, bcAuthorizeEndpoint}
+		return assertionAudiences(client, issuer, tokenEndpoint, bcAuthorizeEndpoint)
 	}
 	client, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences, p.skipTLSCertVerify, p.allowPrivateIPs)
 	if err != nil {
 		return nil, err
 	}
 	return client.(storm.Client), nil
+}
+
+// assertionAudiences returns the allowed aud values for a client_assertion.
+// FAPI 2.0 §5.3.2.1 restricts FAPI clients to the issuer URL only — accepting
+// the token endpoint URL would let the negative conformance case "client
+// assertion with token endpoint as aud" succeed. Non-FAPI clients may also
+// identify the AS by endpoint URL (RFC 7523 §3; CIBA includes bc-authorize).
+func assertionAudiences(client shared.Client, issuer, tokenEndpoint, bcAuthorizeEndpoint string) []string {
+	if fapiClient, ok := client.(interface{ FAPIProfile() bool }); ok && fapiClient.FAPIProfile() {
+		return []string{issuer}
+	}
+	return []string{issuer, tokenEndpoint, bcAuthorizeEndpoint}
 }
 
 // --- token creation ---
@@ -1448,14 +1445,19 @@ func (p *Plugin) createTokenResponseFromTokenRequest(ctx context.Context, reques
 
 	// Resolve cnf claim from mTLS certificate and/or DPoP proof before token
 	// creation so storage can bind refresh tokens at issuance time.
-	// Filter: only include keys that correspond to the required sender-constraining
-	// method. Without this, a DPoP-only token would still carry x5t#S256 if the
-	// mtls middleware injected a certificate into the context.
+	// Filter: only keep binding mechanisms that were actually used.
+	// x5t#S256 is dropped unless mTLS constraining is required, because the mTLS
+	// middleware injects a certificate for every request that presents one —
+	// including clients that are not certificate-bound.
+	// jkt is kept whenever a DPoP proof was presented (RFC 9449 §6: a proof is
+	// itself a binding request), not only when DPoP is *required* for the client.
+	// Otherwise a client that is not flagged as DPoP-requiring would receive a
+	// plain bearer token despite having proved possession of a key.
 	cnf := shared.ResolveCNF(ctx)
 	if !requireMtls {
 		delete(cnf, "x5t#S256")
 	}
-	if !requireDPoP {
+	if !hasDPoP {
 		delete(cnf, "jkt")
 	}
 	if len(cnf) == 0 {
@@ -1805,11 +1807,13 @@ func (p *Plugin) createClientCredentialsResponse(ctx context.Context, tokenReque
 		return nil, protocol.ErrInvalidRequest().WithDescription("mTLS client certificate required (FAPI 2.0 sender-constrained tokens)")
 	}
 
+	// See createTokenResponseFromTokenRequest: jkt follows the presented proof,
+	// x5t#S256 follows the configured mTLS requirement.
 	cnf := shared.ResolveCNF(ctx)
 	if !requireMtls {
 		delete(cnf, "x5t#S256")
 	}
-	if !requireDPoP {
+	if !hasDPoP {
 		delete(cnf, "jkt")
 	}
 	if len(cnf) == 0 {

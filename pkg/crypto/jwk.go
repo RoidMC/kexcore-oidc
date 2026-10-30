@@ -7,13 +7,10 @@ package crypto
 import (
 	"context"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math/big"
 
-	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm9"
 
 	gm "github.com/roidmc/kexcore-oidc/v3/pkg/crypto/gm"
@@ -35,6 +32,12 @@ type SM2JWK struct {
 
 // NewSM2JWK constructs an SM2JWK from an SM2 public key.
 // Coordinates are encoded as base64url per RFC 7518 §6.2.1.2.
+//
+// The deprecated X/Y fields are read here on purpose. gmsm's official SM2
+// guide (docs/sm2.md) encodes public keys the same way —
+// elliptic.Marshal(sm2.P256(), pub.X, pub.Y) — and the non-deprecated
+// alternative, gm.SM2PublicKeyToBytes (sm2.PublicKeyToECDH), returns an error
+// that this signature cannot surface. Decoding does use gm.SM2NewPublicKey.
 func NewSM2JWK(pubKey *ecdsa.PublicKey, kid, use string) SM2JWK {
 	byteLen := (pubKey.Curve.Params().BitSize + 7) / 8
 	xBytes := pubKey.X.FillBytes(make([]byte, byteLen))
@@ -272,10 +275,8 @@ func FindJWKSKey(keys []JWKSKey, kid, alg string) *JWKSKey {
 
 // SM2PublicKeyFromJWK parses an SM2 public key from JWK fields.
 func SM2PublicKeyFromJWK(crv, xBase64, yBase64 string) (*ecdsa.PublicKey, error) {
-	var curve elliptic.Curve
 	switch crv {
 	case "SM2-P-256", "sm2p256v1":
-		curve = sm2.P256()
 	default:
 		return nil, fmt.Errorf("unsupported SM2 curve: %s", crv)
 	}
@@ -289,14 +290,18 @@ func SM2PublicKeyFromJWK(crv, xBase64, yBase64 string) (*ecdsa.PublicKey, error)
 		return nil, fmt.Errorf("error decoding y coordinate: %w", err)
 	}
 
-	x := new(big.Int).SetBytes(xBytes)
-	y := new(big.Int).SetBytes(yBytes)
+	// Rebuild the SEC 1 §2.3.3 uncompressed point (04 || x || y) and let gmsm
+	// validate the encoding and the on-curve property.
+	raw := make([]byte, 1+len(xBytes)+len(yBytes))
+	raw[0] = 4
+	copy(raw[1:], xBytes)
+	copy(raw[1+len(xBytes):], yBytes)
 
-	if !curve.IsOnCurve(x, y) {
-		return nil, fmt.Errorf("SM2 public key point is not on curve")
+	pubKey, err := gm.SM2NewPublicKey(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SM2 public key point: %w", err)
 	}
-
-	return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil
+	return pubKey, nil
 }
 
 func parseSM2PublicKey(raw rawJWK) (*ecdsa.PublicKey, error) {

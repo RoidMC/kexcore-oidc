@@ -141,14 +141,14 @@ func (p *Plugin) SignAuthResponse(ctx context.Context, params map[string]string,
 
 	now := time.Now()
 	token := jwt.New()
-	token.Set("iss", issuer)
-	token.Set("aud", clientID)
-	token.Set("iat", now.Unix())
-	token.Set("exp", now.Add(lifetime).Unix())
+	_ = token.Set("iss", issuer)
+	_ = token.Set("aud", clientID)
+	_ = token.Set("iat", now.Unix())
+	_ = token.Set("exp", now.Add(lifetime).Unix())
 
 	// Add all authorization response parameters
 	for k, v := range params {
-		token.Set(k, v)
+		_ = token.Set(k, v)
 	}
 
 	alg := determineAlg(signingKey.Algorithm())

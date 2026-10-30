@@ -15,7 +15,7 @@ import (
 // =================================================================
 
 func (s *Storage) ClientCredentials(_ context.Context, clientID, clientSecret string) (storm.Client, error) {
-	client, err := s.GetClientByClientID(nil, clientID)
+	client, err := s.GetClientByClientID(context.TODO(), clientID)
 	if err != nil {
 		return nil, err
 	}

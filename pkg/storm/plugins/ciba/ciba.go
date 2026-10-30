@@ -601,10 +601,9 @@ func (p *Plugin) notifyStatusChange(ctx context.Context, req *storm.CIBARequest)
 			return
 		}
 	}
-	if err := p.notifier.OnCIBAStatusChange(ctx, req); err != nil {
-		// CIBA Core 1.0 §10.1: notification failures should not affect the flow.
-		// The client will fall back to polling if notification fails.
-	}
+	// CIBA Core 1.0 §10.1: notification failures should not affect the flow.
+	// The client will fall back to polling if notification fails.
+	_ = p.notifier.OnCIBAStatusChange(ctx, req)
 }
 
 // validateNotificationEndpoint looks up the client's notification endpoint URL
@@ -832,7 +831,7 @@ func (p *Plugin) parseCIBARequestObject(ctx context.Context, requestParam, expec
 func verifyRequestObjectSignature(tokenString string, payload []byte, clientKeys []jwk.Key) error {
 	keySet := jwk.NewSet()
 	for _, key := range clientKeys {
-		keySet.AddKey(key)
+		_ = keySet.AddKey(key) // AddKey only fails on nil/incompatible keys collected from the client's own JWKS
 	}
 	_, err := jws.Verify([]byte(tokenString), jws.WithKeySet(keySet))
 	if err != nil {

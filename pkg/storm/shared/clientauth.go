@@ -151,6 +151,15 @@ func (h *ClientAuthHelper) AuthenticateClient(r *http.Request) (Client, error) {
 		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
+	// RFC 7523 §2.2 / FAPI 2.0: a client registered for private_key_jwt MUST
+	// authenticate via client_assertion. Reaching this point means the request
+	// carries no assertion, so falling back to client_secret authentication
+	// would accept requests that omit client authentication entirely at the
+	// introspection, revocation, and device endpoints.
+	if client.AuthMethod() == protocol.AuthMethodPrivateKeyJWT {
+		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion required for private_key_jwt client")
+	}
+
 	// --- Method 2: tls_client_auth (mTLS certificate) ---
 	if client.AuthMethod() == protocol.AuthMethodTLSClientAuth {
 		cert := ClientCertFromContext(r.Context())

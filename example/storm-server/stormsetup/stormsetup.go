@@ -123,7 +123,7 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 		slog.Default().Info("key rotation completed", "before", before, "after", after)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"ok","keys_before":%d,"keys_after":%d}`, before, after)
+		_, _ = fmt.Fprintf(w, `{"status":"ok","keys_before":%d,"keys_after":%d}`, before, after)
 	})
 	router.Mount("/login/", http.StripPrefix("/login", loginHandler(stor, cfg.Issuer)))
 	router.Mount("/", engineHandler)
@@ -218,7 +218,7 @@ func renderLogin(w http.ResponseWriter, id, issuer, errMsg string, uiInfo client
 	if u, err := url.Parse(trimmed); err == nil && u.Host != "" {
 		domain = u.Hostname()
 	}
-	loginTmpl.Execute(w, map[string]string{
+	_ = loginTmpl.Execute(w, map[string]string{
 		"ID":        id,
 		"Issuer":    trimmed,
 		"Domain":    domain,

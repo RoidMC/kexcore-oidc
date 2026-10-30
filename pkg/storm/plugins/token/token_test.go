@@ -105,7 +105,7 @@ func (r *fakeRefreshReq) GetNonce() string                          { return r.n
 func (r *fakeRefreshReq) GetAuthTime() time.Time                    { return r.authTime }
 func (r *fakeRefreshReq) GetCodeChallenge() *protocol.CodeChallenge { return r.codeChallenge }
 func (r *fakeRefreshReq) GetAMR() []string                          { return r.amr }
-func (r *fakeRefreshReq) SetCurrentScopes(scopes []string)          { r.fakeTokenRequest.scopes = scopes }
+func (r *fakeRefreshReq) SetCurrentScopes(scopes []string)          { r.scopes = scopes }
 func (r *fakeRefreshReq) GetDPoPJKT() string                        { return "" }
 
 type fakeClientStore struct {
@@ -196,6 +196,7 @@ type fakeTokenStore struct {
 	refreshTokens map[string]*fakeRefreshReq
 	nextTokenID   string
 	nextRefreshID string
+	lastCNF       map[string]any // cnf claim captured from the last Create* call
 }
 
 func newFakeTokenStore() *fakeTokenStore {
@@ -207,8 +208,9 @@ func newFakeTokenStore() *fakeTokenStore {
 	}
 }
 
-func (s *fakeTokenStore) CreateAccessToken(_ context.Context, req storm.TokenRequest, _ map[string]any) (string, time.Time, error) {
+func (s *fakeTokenStore) CreateAccessToken(_ context.Context, req storm.TokenRequest, cnf map[string]any) (string, time.Time, error) {
 	id := s.nextTokenID
+	s.lastCNF = cnf
 	s.tokens[id] = &fakeTokenRequest{
 		subject:  req.GetSubject(),
 		clientID: req.GetClientID(),
@@ -217,9 +219,10 @@ func (s *fakeTokenStore) CreateAccessToken(_ context.Context, req storm.TokenReq
 	return id, time.Now().UTC().Add(1 * time.Hour), nil
 }
 
-func (s *fakeTokenStore) CreateAccessAndRefreshTokens(_ context.Context, req storm.TokenRequest, _ string, _ map[string]any) (string, string, time.Time, error) {
+func (s *fakeTokenStore) CreateAccessAndRefreshTokens(_ context.Context, req storm.TokenRequest, _ string, cnf map[string]any) (string, string, time.Time, error) {
 	accessTokenID := s.nextTokenID
 	refreshTokenID := s.nextRefreshID
+	s.lastCNF = cnf
 	s.tokens[accessTokenID] = &fakeTokenRequest{
 		subject:  req.GetSubject(),
 		clientID: req.GetClientID(),
@@ -344,7 +347,7 @@ func newTokenForm(grantType string, extra url.Values) url.Values {
 func postTokenRequest(form url.Values) *http.Request {
 	r := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r.ParseForm()
+	_ = r.ParseForm()
 	return r
 }
 
@@ -1098,6 +1101,78 @@ func TestCreateTokenResponse_NoSenderConstraint_DefaultBehavior(t *testing.T) {
 	assert.Equal(t, protocol.BearerToken, resp.TokenType)
 }
 
+// RFC 9449 §6: presenting a DPoP proof is itself a request to bind the token.
+// Even when the client is not configured to *require* DPoP, a token issued
+// from a request carrying a proof must keep cnf.jkt, otherwise the resource
+// server cannot enforce sender-constraining (OIDF dpop-negative-tests).
+func TestCreateTokenResponse_DPoPPresentWithoutRequirement_BindsToken(t *testing.T) {
+	cs := &fakeClientStore{
+		clients: map[string]*fakeClient{
+			"client1": {id: "client1", authMethod: protocol.AuthMethodBasic, grantTypes: []protocol.GrantType{protocol.GrantTypeCode}},
+		},
+	}
+	as := newFakeAuthStore()
+	as.byCode["test-code"] = &fakeAuthRequest{
+		id:           "auth-req-1",
+		clientID:     "client1",
+		subject:      "user1",
+		redirectURI:  "https://example.com/callback",
+		scopes:       []string{"openid"},
+		responseType: protocol.ResponseTypeCode,
+	}
+	ts := newFakeTokenStore()
+	// Neither flag set: DPoP is optional for this client.
+	p := newTestPluginWithSenderConstraint(t, cs, as, ts, false, false)
+
+	form := newTokenForm("authorization_code", url.Values{
+		"code":         {"test-code"},
+		"redirect_uri": {"https://example.com/callback"},
+	})
+	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
+	r.Header.Set("DPoP", "fake-dpop-proof")
+	ctx := shared.ContextWithDPoP(r.Context(), &fakeDPoPProof{thumbprint: "abc123"})
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	p.handleAuthorizationCode(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	resp := decodeTokenResponse(t, w)
+	assert.NotEmpty(t, resp.AccessToken)
+	assert.Equal(t, "DPoP", resp.TokenType)
+	if assert.NotNil(t, ts.lastCNF) {
+		assert.Equal(t, "abc123", ts.lastCNF["jkt"])
+	}
+}
+
+// --- client_assertion audience tests (FAPI 2.0 §5.3.2.1) ---
+
+type fapiFakeClient struct{ *fakeClient }
+
+func (c *fapiFakeClient) FAPIProfile() bool { return true }
+
+// FAPI clients may only use the issuer URL as the assertion audience.
+func TestAssertionAudiences_FAPIProfile_IssuerOnly(t *testing.T) {
+	client := &fapiFakeClient{&fakeClient{id: "fapi-client"}}
+
+	auds := assertionAudiences(client, "https://op.example.com", "https://op.example.com/token", "https://op.example.com/bc-authorize")
+
+	assert.Equal(t, []string{"https://op.example.com"}, auds)
+}
+
+// Non-FAPI clients keep the RFC 7523 leniency (issuer or endpoint URLs).
+func TestAssertionAudiences_NonFAPI_AllowsEndpoints(t *testing.T) {
+	client := &fakeClient{id: "plain-client"}
+
+	auds := assertionAudiences(client, "https://op.example.com", "https://op.example.com/token", "https://op.example.com/bc-authorize")
+
+	assert.Equal(t, []string{
+		"https://op.example.com",
+		"https://op.example.com/token",
+		"https://op.example.com/bc-authorize",
+	}, auds)
+}
+
 // --- refresh_token grant tests ---
 
 func TestHandleRefreshToken_Success(t *testing.T) {
@@ -1121,7 +1196,7 @@ func TestHandleRefreshToken_Success(t *testing.T) {
 		"refresh_token": {"refresh-1"},
 	})
 	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
-	r.ParseForm()
+	_ = r.ParseForm()
 	w := httptest.NewRecorder()
 
 	p.handleRefreshToken(w, r)
@@ -1135,7 +1210,7 @@ func TestHandleRefreshToken_MissingRefreshToken(t *testing.T) {
 	p := newTestPlugin(t, &fakeClientStore{}, newFakeAuthStore(), newFakeTokenStore())
 	w := httptest.NewRecorder()
 	r := postTokenRequestWithBasicAuth(newTokenForm("refresh_token", nil), "client1", "secret")
-	r.ParseForm()
+	_ = r.ParseForm()
 
 	p.handleRefreshToken(w, r)
 
@@ -1157,7 +1232,7 @@ func TestHandleRefreshToken_InvalidRefreshToken(t *testing.T) {
 		"refresh_token": {"invalid-refresh"},
 	})
 	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
-	r.ParseForm()
+	_ = r.ParseForm()
 	w := httptest.NewRecorder()
 
 	p.handleRefreshToken(w, r)
@@ -1189,7 +1264,7 @@ func TestHandleRefreshToken_ClientMismatch(t *testing.T) {
 	})
 	// Authenticate as client2 but refresh token belongs to client1
 	r := postTokenRequestWithBasicAuth(form, "client2", "secret")
-	r.ParseForm()
+	_ = r.ParseForm()
 	w := httptest.NewRecorder()
 
 	p.handleRefreshToken(w, r)
@@ -1221,7 +1296,7 @@ func TestHandleRefreshToken_ScopeSubset(t *testing.T) {
 		"scope":         {"openid"},
 	})
 	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
-	r.ParseForm()
+	_ = r.ParseForm()
 	w := httptest.NewRecorder()
 
 	p.handleRefreshToken(w, r)
@@ -1251,7 +1326,7 @@ func TestHandleRefreshToken_ScopeNotSubset(t *testing.T) {
 		"scope":         {"openid", "admin"},
 	})
 	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
-	r.ParseForm()
+	_ = r.ParseForm()
 	w := httptest.NewRecorder()
 
 	p.handleRefreshToken(w, r)
@@ -1281,7 +1356,7 @@ func TestHandleRefreshToken_GrantTypeNotAllowed(t *testing.T) {
 		"refresh_token": {"refresh-1"},
 	})
 	r := postTokenRequestWithBasicAuth(form, "client1", "secret")
-	r.ParseForm()
+	_ = r.ParseForm()
 	w := httptest.NewRecorder()
 
 	p.handleRefreshToken(w, r)

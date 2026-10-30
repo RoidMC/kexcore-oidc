@@ -10,6 +10,7 @@ import (
 	"os"
 )
 
+//nolint:unused // key-file type identifiers, reserved for KeyFile.Type matching
 const (
 	serviceAccountKey = "serviceaccount"
 	applicationKey    = "application"

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -41,29 +40,6 @@ func generateRandomUserCode(length int) string {
 		code = code[:mid] + "-" + code[mid:]
 	}
 	return code
-}
-
-// validateDeviceAuthorizationRequest validates the incoming device authorization request.
-// Supports both form-body and HTTP Basic Auth for client credentials (RFC 8628 §3.1).
-func validateDeviceAuthorizationRequest(r *http.Request) (clientID, clientSecret string, scopes []string, err error) {
-	clientID = r.Form.Get("client_id")
-	clientSecret = r.Form.Get("client_secret")
-	scopes = r.Form["scope"]
-
-	// Basic Auth takes precedence per RFC 6749 §2.3.1
-	if id, secret, ok := r.BasicAuth(); ok {
-		if unescaped, e := url.QueryUnescape(id); e == nil {
-			clientID = unescaped
-		}
-		if unescaped, e := url.QueryUnescape(secret); e == nil {
-			clientSecret = unescaped
-		}
-	}
-
-	if clientID == "" {
-		return "", "", nil, protocol.ErrInvalidRequest().WithDescription("client_id is required")
-	}
-	return clientID, clientSecret, scopes, nil
 }
 
 // deviceCodeExpired returns true if the device authorization has expired.

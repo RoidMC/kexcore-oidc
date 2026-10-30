@@ -31,7 +31,35 @@ fapi2_message_signing:
               - "mtls"
             openid: "openid_connect"
         # --- mTLS client-auth variants ---
-        mtls_oauth:
+        # sender_constrain=dpop and =mtls must use different client
+        # registrations: a single client cannot be both DPoP-only-bound and
+        # certificate-bound, so sharing it makes the negative holder-of-key
+        # and DPoP tests accept the wrong proof.
+        mtls_dpop_oauth:
+          client: *fapi_client_ms_mtls_dpop_oauth
+          client2: *fapi_client2_ms_mtls_dpop_oauth
+          variant:
+            client_auth_type: "mtls"
+            fapi_profile: "plain_fapi"
+            fapi_request_method: "signed_non_repudiation"
+            fapi_response_mode_range:
+              - "plain_response"
+              - "jarm"
+            sender_constrain: "dpop"
+            openid: "plain_oauth"
+        mtls_dpop:
+          client: *fapi_client_ms_mtls_dpop
+          client2: *fapi_client2_ms_mtls_dpop
+          variant:
+            client_auth_type: "mtls"
+            fapi_profile: "plain_fapi"
+            fapi_request_method: "signed_non_repudiation"
+            fapi_response_mode_range:
+              - "plain_response"
+              - "jarm"
+            sender_constrain: "dpop"
+            openid: "openid_connect"
+        mtls_mtls_oauth:
           client: *fapi_client_ms_mtls_oauth
           client2: *fapi_client2_ms_mtls_oauth
           variant:
@@ -41,11 +69,9 @@ fapi2_message_signing:
             fapi_response_mode_range:
               - "plain_response"
               - "jarm"
-            sender_constrain_range:
-              - "dpop"
-              - "mtls"
+            sender_constrain: "mtls"
             openid: "plain_oauth"
-        mtls:
+        mtls_mtls:
           client: *fapi_client_ms_mtls
           client2: *fapi_client2_ms_mtls
           variant:
@@ -55,7 +81,5 @@ fapi2_message_signing:
             fapi_response_mode_range:
               - "plain_response"
               - "jarm"
-            sender_constrain_range:
-              - "dpop"
-              - "mtls"
+            sender_constrain: "mtls"
             openid: "openid_connect"

@@ -295,6 +295,15 @@ func (p *Plugin) authenticateClient(r *http.Request) (storm.Client, error) {
 		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
+	// RFC 7523 §2.2 / FAPI 2.0: a client registered for private_key_jwt MUST
+	// present a client_assertion. Reaching this branch means no assertion was
+	// supplied, so falling back to client_id + client_secret would let requests
+	// that omit client authentication entirely succeed. Negative conformance
+	// tests (ensure-invalid-client-assertions-fail) rely on this being rejected.
+	if client.AuthMethod() == protocol.AuthMethodPrivateKeyJWT {
+		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion required for private_key_jwt client")
+	}
+
 	// tls_client_auth: require mTLS certificate
 	if client.AuthMethod() == protocol.AuthMethodTLSClientAuth {
 		cert := shared.ClientCertFromContext(r.Context())

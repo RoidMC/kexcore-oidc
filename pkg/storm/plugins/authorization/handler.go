@@ -538,17 +538,6 @@ func (p *Plugin) handleAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store clientID in context for JARM error responses.
-	if authReq.GetClientID() != "" {
-		r = r.WithContext(contextWithJARMClientID(r.Context(), authReq.GetClientID()))
-	}
-	// Store client's preferred signing algorithm for JARM signing.
-	if jarmClient, err := p.clientStore.GetClientByClientID(ctx, authReq.GetClientID()); err == nil {
-		if alg := shared.ResolvePreferredSigningAlg(jarmClient); alg != "" {
-			r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
-		}
-	}
-
 	// Complete the auth request via AutoCompleteAuthRequest.
 	completer, ok := p.authStore.(storm.AutoCompleteAuthRequest)
 	if !ok {
@@ -650,19 +639,6 @@ func (p *Plugin) handleReject(w http.ResponseWriter, r *http.Request) {
 			"error_description": "auth request already completed",
 		}, http.StatusConflict)
 		return
-	}
-
-	// Store clientID in context for JARM error responses.
-	if authReq.GetClientID() != "" {
-		r = r.WithContext(contextWithJARMClientID(r.Context(), authReq.GetClientID()))
-	}
-	if jarmClient, err := p.clientStore.GetClientByClientID(ctx, authReq.GetClientID()); err == nil {
-		if alg := shared.ResolvePreferredSigningAlg(jarmClient); alg != "" {
-			r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
-		}
-	}
-	if p.jarmSigner != nil {
-		r = r.WithContext(contextWithJARMSigner(r.Context(), p.jarmSigner))
 	}
 
 	// Build the error callback URL.
