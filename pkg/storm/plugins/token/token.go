@@ -1371,8 +1371,8 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 	getClient := func(ctx context.Context, clientID string) (shared.Client, error) {
 		return p.clientStore.GetClientByClientID(ctx, clientID)
 	}
-	getAudiences := func(client shared.Client) []string {
-		return assertionAudiences(client, issuer, tokenEndpoint, bcAuthorizeEndpoint)
+	getAudiences := func(_ shared.Client) []string {
+		return assertionAudiences(issuer, tokenEndpoint, bcAuthorizeEndpoint)
 	}
 	client, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences, p.skipTLSCertVerify, p.allowPrivateIPs)
 	if err != nil {
@@ -1381,15 +1381,13 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 	return client.(storm.Client), nil
 }
 
-// assertionAudiences returns the allowed aud values for a client_assertion.
-// FAPI 2.0 §5.3.2.1 restricts FAPI clients to the issuer URL only — accepting
-// the token endpoint URL would let the negative conformance case "client
-// assertion with token endpoint as aud" succeed. Non-FAPI clients may also
-// identify the AS by endpoint URL (RFC 7523 §3; CIBA includes bc-authorize).
-func assertionAudiences(client shared.Client, issuer, tokenEndpoint, bcAuthorizeEndpoint string) []string {
-	if fapiClient, ok := client.(interface{ FAPIProfile() bool }); ok && fapiClient.FAPIProfile() {
-		return []string{issuer}
-	}
+// assertionAudiences returns the allowed aud values for a client_assertion
+// (RFC 7523 §3): the AS is identified by the issuer, the token endpoint or
+// the backchannel authentication endpoint. The token endpoint URL is required
+// by FAPI-CIBA-ID1 (the conformance suite signs token-endpoint requests with
+// aud=<token endpoint>); foreign server URLs (the FAPI 2.0 "wrong aud" negative
+// case uses a third-party URL) remain rejected.
+func assertionAudiences(issuer, tokenEndpoint, bcAuthorizeEndpoint string) []string {
 	return []string{issuer, tokenEndpoint, bcAuthorizeEndpoint}
 }
 

@@ -51,11 +51,22 @@ type Config struct {
 	CIBATemplate *template.Template
 	// Notifier is an optional callback for CIBA ping delivery mode.
 	// When set, the plugin calls OnCIBAStatusChange when a request is approved/denied.
-	// If the storage also implements CIBANotificationCallback, this takes precedence.
+	// If nil and the storage implements CIBANotificationCallback, the storage callback is used.
 	Notifier storm.CIBANotificationCallback
 	// CSRFKey is a 32-byte key for signing CSRF cookies on the approval page.
-	// If nil, CSRF protection is disabled (not recommended for production).
+	// It is also the opt-in switch for the approval page routes: when nil,
+	// Register does not install any approval page route (fail-closed default).
 	CSRFKey []byte
+	// SkipTLSCertVerify disables TLS certificate verification on outbound
+	// HTTP requests (for example when fetching a client's jwks_uri).
+	// Only for testing with self-signed certificates. Never enable in production.
+	SkipTLSCertVerify bool
+	// AllowPrivateIPs disables SSRF protection on outbound requests (jwks_uri
+	// fetching and CIBA ping notification endpoints). Only for testing.
+	// Never enable in production — use network-level controls instead.
+	AllowPrivateIPs bool
+	// EndpointConfigs customizes route paths and discovery URLs per endpoint.
+	EndpointConfigs shared.EndpointConfigMap
 }
 
 // NewWithConfig creates a new CIBA plugin with explicit config.
@@ -67,15 +78,23 @@ func NewWithConfig(cfg Config) *Plugin {
 		cfg.Interval = 5 * time.Second
 	}
 	p := &Plugin{
-		store:       cfg.Store,
-		clientStore: cfg.ClientStore,
-		notifier:    cfg.Notifier,
-		lifetime:    cfg.Lifetime,
-		interval:    cfg.Interval,
-		cibaTmpl:    cibaTmpl,
+		store:             cfg.Store,
+		clientStore:       cfg.ClientStore,
+		notifier:          cfg.Notifier,
+		lifetime:          cfg.Lifetime,
+		interval:          cfg.Interval,
+		cibaTmpl:          cibaTmpl,
+		skipTLSCertVerify: cfg.SkipTLSCertVerify,
+		allowPrivateIPs:   cfg.AllowPrivateIPs,
+		endpointConfigs:   cfg.EndpointConfigs,
 	}
 	if cfg.CIBATemplate != nil {
 		p.cibaTmpl = cfg.CIBATemplate
+	}
+	if p.notifier == nil {
+		if nc, ok := cfg.Store.(storm.CIBANotificationCallback); ok {
+			p.notifier = nc
+		}
 	}
 	if len(cfg.CSRFKey) > 0 {
 		p.csrfHandler = httputil.NewCookieHandler(cfg.CSRFKey, nil,

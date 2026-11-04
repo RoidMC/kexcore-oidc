@@ -1,7 +1,9 @@
 // Package ciba implements the OpenID Connect Client-Initiated Backchannel Authentication (CIBA) plugin.
 //
-// It handles POST /bc-authorize (CIBA Core 1.0 §7.1) and an optional
-// approval page for users to approve/deny pending authentication requests.
+// It handles POST /bc-authorize (CIBA Core 1.0 §7.1). An approval page for
+// users to approve/deny pending authentication requests is a host-facing
+// convenience, not part of the CIBA protocol surface: the routes are only
+// registered when the host opts in by supplying Config.CSRFKey.
 // The ciba grant type on the token endpoint is handled by the Token plugin.
 package ciba
 
@@ -74,16 +76,22 @@ func (p *Plugin) Requires() []storm.StorageCapability {
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "ciba" }
 
-// Register installs the /bc-authorize and /ciba routes.
+// Register installs the /bc-authorize route and, when the host opted in by
+// supplying Config.CSRFKey, the approval page routes.
+//
+// The approval page fails closed: without a CSRF handler the page routes are
+// not registered at all, so an unauthenticated approval lever never exists by
+// default. Automated approval endpoints belong to the host application, not
+// to this library.
 func (p *Plugin) Register(r chi.Router) {
-	bcAuthPath := p.getRoutePath("ciba", "/bc-authorize")
+	r.Post(p.getRoutePath("ciba", "/bc-authorize"), p.handleBackchannelAuth)
+
+	if p.csrfHandler == nil {
+		return
+	}
 	cibaPagePath := p.getRoutePath("ciba_page", "/ciba")
-	r.Post(bcAuthPath, p.handleBackchannelAuth)
 	r.Get(cibaPagePath, p.handleApprovalPage)
 	r.Post(cibaPagePath, p.handleApprovalAction)
-	// Automated CIBA approval endpoint for OIDF conformance testing.
-	// No CSRF protection — only for automated test environments.
-	r.Post(cibaPagePath+"/approve", p.handleAutomatedApproval)
 }
 
 // Contribute adds CIBA discovery fields per CIBA Core 1.0 §4.
@@ -486,73 +494,6 @@ func (p *Plugin) handleApprovalAction(w http.ResponseWriter, r *http.Request) {
 	p.notifyStatusChange(r.Context(), req)
 
 	http.Redirect(w, r, "/ciba?"+url.Values{"auth_req_id": {authReqID}}.Encode(), http.StatusFound)
-}
-
-// handleAutomatedApproval handles POST /ciba/approve — automated CIBA approval for testing.
-// No CSRF protection. Only for OIDF conformance testing.
-// URL template: /ciba/approve?token={auth_req_id}&type={action}
-func (p *Plugin) handleAutomatedApproval(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
-		return
-	}
-
-	// OIDF conformance suite sends: token={auth_req_id}&type={action}
-	authReqID := strings.TrimSpace(r.Form.Get("token"))
-	action := strings.TrimSpace(r.Form.Get("type"))
-
-	slog.Debug("ciba POST /ciba/approve: automated approval",
-		"auth_req_id", authReqID,
-		"action", action,
-	)
-
-	if authReqID == "" || action == "" {
-		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("token and type are required"), nil)
-		return
-	}
-
-	req, err := p.store.GetCIBARequestByAuthReqID(r.Context(), authReqID)
-	if err != nil {
-		slog.Debug("ciba POST /ciba/approve: request not found", "auth_req_id", authReqID, "error", err)
-		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("unknown auth_req_id"), nil)
-		return
-	}
-
-	if req.Status != protocol.CIBAStatusPending {
-		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("request already processed"), nil)
-		return
-	}
-
-	if time.Now().After(req.ExpiresAt) {
-		shared.WriteError(w, r, protocol.ErrExpiredDeviceCode().WithDescription("The auth_req_id has expired."), nil)
-		return
-	}
-
-	switch action {
-	case "allow":
-		if err := p.store.UpdateCIBARequestStatus(r.Context(), authReqID, protocol.CIBAStatusApproved, req.RequestedScopes); err != nil {
-			shared.WriteError(w, r, protocol.ErrServerError().WithDescription("error approving request").WithParent(err), nil)
-			return
-		}
-		req.Status = protocol.CIBAStatusApproved
-		req.ApprovedScopes = req.RequestedScopes
-		slog.Debug("ciba POST /ciba/approve: request approved", "auth_req_id", authReqID)
-	case "deny":
-		if err := p.store.UpdateCIBARequestStatus(r.Context(), authReqID, protocol.CIBAStatusDenied, nil); err != nil {
-			shared.WriteError(w, r, protocol.ErrServerError().WithDescription("error denying request").WithParent(err), nil)
-			return
-		}
-		req.Status = protocol.CIBAStatusDenied
-		slog.Debug("ciba POST /ciba/approve: request denied", "auth_req_id", authReqID)
-	default:
-		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid type: must be 'allow' or 'deny'"), nil)
-		return
-	}
-
-	// CIBA Core 1.0 §10: notify the client if ping delivery mode
-	p.notifyStatusChange(r.Context(), req)
-
-	shared.JSONResponse(w, map[string]string{"status": string(req.Status)}, http.StatusOK)
 }
 
 // renderApprovalPage renders the CIBA approval page template.

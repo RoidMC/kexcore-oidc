@@ -1,6 +1,7 @@
 package ciba
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
@@ -759,5 +762,46 @@ func TestPlugin_Name(t *testing.T) {
 	p := &Plugin{}
 	if p.Name() != "ciba" {
 		t.Errorf("expected name=ciba, got %s", p.Name())
+	}
+}
+
+// The approval page and automated approval endpoint are fail-closed: without
+// an explicit CSRF key neither route exists.
+func TestRegister_ApprovalRoutesFailClosed(t *testing.T) {
+	p := NewWithConfig(Config{Store: newMockCIBAStore(), ClientStore: newMockClientStore()})
+	r := chi.NewRouter()
+	p.Register(r)
+
+	for _, path := range []string{"/ciba", "/ciba/approve"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", path, w.Code)
+		}
+	}
+
+	// /bc-authorize stays available: a malformed request must not be a 404.
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/bc-authorize", strings.NewReader("")))
+	if w.Code == http.StatusNotFound {
+		t.Errorf("/bc-authorize: status = 404, want the route to be registered")
+	}
+}
+
+// Supplying a CSRF key opts the host in to the approval page routes.
+func TestRegister_ApprovalRoutesOptIn(t *testing.T) {
+	key := bytes.Repeat([]byte("k"), 32)
+	p := NewWithConfig(Config{
+		Store:       newMockCIBAStore(),
+		ClientStore: newMockClientStore(),
+		CSRFKey:     key,
+	})
+	r := chi.NewRouter()
+	p.Register(r)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ciba", nil))
+	if w.Code != http.StatusOK {
+		t.Errorf("/ciba: status = %d, want 200", w.Code)
 	}
 }

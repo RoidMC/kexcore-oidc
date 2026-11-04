@@ -449,15 +449,10 @@ plan_config:
               commands:
                 - ["wait", "id", "submission_complete", 30]
 
-    # FAPI CIBA: approve authentication request on the CIBA approval page
+    # FAPI CIBA: approval is driven by automated_ciba_approval_url in
+    # plan_config, so no browser interaction is required.
     fapi-ciba-id1:
       browser:
-        - match: "${issuer_url}/ciba*"
-          tasks:
-            - task: "Approve CIBA request"
-              match: "${issuer_url}/ciba*"
-              commands:
-                - ["click", "css", "button[value='approve']"]
         - match: "*/test/*/callback*"
           tasks:
             - task: "Verify complete"
@@ -465,15 +460,9 @@ plan_config:
               commands:
                 - ["wait", "id", "submission_complete", 5]
 
-    # FAPI CIBA user-rejects: deny instead of approve
+    # FAPI CIBA user-rejects: the automated URL is called with type=deny.
     fapi-ciba-id1-user-rejects-authentication:
       browser:
-        - match: "${issuer_url}/ciba*"
-          tasks:
-            - task: "Deny CIBA request"
-              match: "${issuer_url}/ciba*"
-              commands:
-                - ["click", "css", "button[value='deny']"]
         - match: "*/test/*/callback*"
           tasks:
             - task: "Verify complete"

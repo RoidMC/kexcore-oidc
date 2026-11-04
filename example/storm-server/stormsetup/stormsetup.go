@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/builtin"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/plugins/ciba"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
@@ -47,6 +49,10 @@ type TenantConfig struct {
 	SkipTLSCertVerify bool              // WARNING: disables TLS cert verification. Only for testing.
 	RequireDPoP       bool              // FAPI 2.0: require DPoP proof for all token requests
 	RequireMtls       bool              // FAPI 2.0: require mTLS client certificate for all token requests
+	// EnableAutomatedCIBAApproval exposes POST /ciba/approve for the OIDF
+	// conformance suite. The library does not ship this endpoint; the example
+	// server owns it so tests and production builds cannot diverge silently.
+	EnableAutomatedCIBAApproval bool
 }
 
 // SetupTenant creates a complete OIDC tenant with all core plugins registered.
@@ -89,7 +95,7 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 
 	engineOpts := []storm.EngineOption{
 		storm.WithLogger(cfg.Logger),
-		storm.WithPlugins(builtin.All()...),
+		storm.WithPlugins(examplePlugins()...),
 		storm.WithMiddleware(shared.IssuerMiddleware(shared.StaticIssuer(cfg.Issuer))),
 		storm.WithDiscoveryConfig(discovery),
 		storm.WithCrypto(tokenCrypto),
@@ -126,8 +132,114 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 		_, _ = fmt.Fprintf(w, `{"status":"ok","keys_before":%d,"keys_after":%d}`, before, after)
 	})
 	router.Mount("/login/", http.StripPrefix("/login", loginHandler(stor, cfg.Issuer)))
+	if cfg.EnableAutomatedCIBAApproval {
+		router.Post("/ciba/approve", automatedCIBAApprovalHandler(stor))
+	}
 	router.Mount("/", engineHandler)
 	return router
+}
+
+// examplePlugins returns the default plugin set with the CIBA plugin replaced
+// by an explicitly configured instance. The library only registers the
+// approval page when a CSRF key is supplied, so the example opts in here to
+// keep the demo UI available.
+func examplePlugins() []storm.NamedPluginFactory {
+	plugins := builtin.All()
+	for i, np := range plugins {
+		if np.Name != "ciba" {
+			continue
+		}
+		plugins[i] = storm.NamedPluginFactory{
+			Name:     "ciba",
+			Priority: storm.PriorityCIBA,
+			Factory:  cibaFactory(),
+		}
+		break
+	}
+	return plugins
+}
+
+func cibaFactory() storm.PluginFactory {
+	csrfKey := sha256.Sum256([]byte("storm-server-ciba-approval-page"))
+	return func(ctx *storm.PluginContext) storm.Plugin {
+		store, ok := ctx.Storage.(storm.CIBAStore)
+		if !ok {
+			return nil
+		}
+		clientStore, ok := ctx.Storage.(storm.ClientStore)
+		if !ok {
+			return nil
+		}
+		return ciba.NewWithConfig(ciba.Config{
+			Store:             store,
+			ClientStore:       clientStore,
+			CSRFKey:           csrfKey[:],
+			SkipTLSCertVerify: ctx.SkipTLSCertVerify,
+			AllowPrivateIPs:   ctx.AllowPrivateIPs,
+			EndpointConfigs:   ctx.EndpointConfigs,
+		})
+	}
+}
+
+// automatedCIBAApprovalHandler implements the automated approval endpoint used
+// by the OIDF conformance suite (automated_ciba_approval_url). This lives in
+// the example server on purpose: it is a test harness affordance, not part of
+// the library's protocol surface.
+func automatedCIBAApprovalHandler(stor *storage.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err), nil)
+			return
+		}
+
+		authReqID := strings.TrimSpace(r.Form.Get("token"))
+		action := strings.TrimSpace(r.Form.Get("type"))
+		if authReqID == "" || action == "" {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("token and type are required"), nil)
+			return
+		}
+
+		req, err := stor.GetCIBARequestByAuthReqID(r.Context(), authReqID)
+		if err != nil {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("unknown auth_req_id"), nil)
+			return
+		}
+		if req.Status != protocol.CIBAStatusPending {
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("request already processed"), nil)
+			return
+		}
+		if time.Now().After(req.ExpiresAt) {
+			shared.WriteError(w, r, protocol.ErrExpiredDeviceCode().WithDescription("The auth_req_id has expired."), nil)
+			return
+		}
+
+		var status protocol.CIBAStatus
+		switch action {
+		case "allow":
+			status = protocol.CIBAStatusApproved
+		case "deny":
+			status = protocol.CIBAStatusDenied
+		default:
+			shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("invalid type: must be 'allow' or 'deny'"), nil)
+			return
+		}
+
+		var approvedScopes []string
+		if status == protocol.CIBAStatusApproved {
+			approvedScopes = req.RequestedScopes
+		}
+		if err := stor.UpdateCIBARequestStatus(r.Context(), authReqID, status, approvedScopes); err != nil {
+			shared.WriteError(w, r, protocol.ErrServerError().WithDescription("error updating request").WithParent(err), nil)
+			return
+		}
+		req.Status = status
+		req.ApprovedScopes = approvedScopes
+
+		// CIBA Core 1.0 §10: notify the client if ping delivery mode is used.
+		_ = stor.OnCIBAStatusChange(r.Context(), req)
+
+		shared.JSONResponse(w, map[string]string{"status": string(status)}, http.StatusOK)
+	}
 }
 
 func loginHandler(stor *storage.Storage, issuer string) http.Handler {

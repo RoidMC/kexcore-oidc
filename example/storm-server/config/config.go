@@ -7,6 +7,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +31,9 @@ type Config struct {
 	CryptoMethod      string
 	TLSCertFile       string
 	TLSKeyFile        string
+	// EnableAutomatedCIBAApproval exposes POST /ciba/approve. Only for
+	// automated OIDF conformance runs; keep it disabled elsewhere.
+	EnableAutomatedCIBAApproval bool
 }
 
 func FromEnvVars(defaults *Config) *Config {
@@ -70,6 +74,11 @@ func FromEnvVars(defaults *Config) *Config {
 	}
 	if value, ok := os.LookupEnv("TLS_KEY_FILE"); ok {
 		cfg.TLSKeyFile = value
+	}
+	if value, ok := os.LookupEnv("ENABLE_AUTOMATED_CIBA_APPROVAL"); ok {
+		if enabled, err := strconv.ParseBool(value); err == nil {
+			cfg.EnableAutomatedCIBAApproval = enabled
+		}
 	}
 	// Auto-enable self-signed TLS if EnableSelfSignSSL is set and no cert/key provided
 	if EnableSelfSignSSL == "true" && cfg.TLSCertFile == "" && cfg.TLSKeyFile == "" {

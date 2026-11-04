@@ -52,7 +52,9 @@ docker compose -f example/testsuite/docker/docker-compose.yml down
 2. 启动被测 OP（仓库根目录）：
 
    ```powershell
-   $env:ISSUER="https://192.168.2.133:9998"; $env:PORT="9998"; go run ./example/storm-server
+   # ENABLE_AUTOMATED_CIBA_APPROVAL 仅 FEATURE 测试用：打开示例 OP 的 POST /ciba/approve，
+   # 库本身不注册该端点。跑 FAPI-CIBA 用例时才需要设置。
+   $env:ISSUER="https://192.168.2.133:9998"; $env:PORT="9998"; $env:ENABLE_AUTOMATED_CIBA_APPROVAL="true"; go run ./example/storm-server
    ```
 
 3. 进入 `example/testsuite`，按分组执行：

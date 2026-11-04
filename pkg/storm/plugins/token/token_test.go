@@ -1145,26 +1145,13 @@ func TestCreateTokenResponse_DPoPPresentWithoutRequirement_BindsToken(t *testing
 	}
 }
 
-// --- client_assertion audience tests (FAPI 2.0 §5.3.2.1) ---
+// --- client_assertion audience tests (RFC 7523 §3) ---
 
-type fapiFakeClient struct{ *fakeClient }
-
-func (c *fapiFakeClient) FAPIProfile() bool { return true }
-
-// FAPI clients may only use the issuer URL as the assertion audience.
-func TestAssertionAudiences_FAPIProfile_IssuerOnly(t *testing.T) {
-	client := &fapiFakeClient{&fakeClient{id: "fapi-client"}}
-
-	auds := assertionAudiences(client, "https://op.example.com", "https://op.example.com/token", "https://op.example.com/bc-authorize")
-
-	assert.Equal(t, []string{"https://op.example.com"}, auds)
-}
-
-// Non-FAPI clients keep the RFC 7523 leniency (issuer or endpoint URLs).
-func TestAssertionAudiences_NonFAPI_AllowsEndpoints(t *testing.T) {
-	client := &fakeClient{id: "plain-client"}
-
-	auds := assertionAudiences(client, "https://op.example.com", "https://op.example.com/token", "https://op.example.com/bc-authorize")
+// All clients may identify the AS by issuer or endpoint URLs; FAPI-CIBA-ID1
+// signs token-endpoint requests with aud=<token endpoint>, so the token
+// endpoint must be accepted for FAPI clients as well.
+func TestAssertionAudiences_AllowsIssuerAndEndpoints(t *testing.T) {
+	auds := assertionAudiences("https://op.example.com", "https://op.example.com/token", "https://op.example.com/bc-authorize")
 
 	assert.Equal(t, []string{
 		"https://op.example.com",

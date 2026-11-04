@@ -159,6 +159,9 @@ func main() {
 		Clients:           clients,
 		AllowPrivateIPs:   config.EnableSelfSignSSL == "true",
 		SkipTLSCertVerify: config.EnableSkipTLSCertVerify == "true",
+		// Automated CIBA approval (POST /ciba/approve) is opt-in and only used
+		// by the OIDF conformance suite.
+		EnableAutomatedCIBAApproval: cfg.EnableAutomatedCIBAApproval,
 		// DPoP/mTLS sender-constraining is configured per-client via DCR
 		// (require_dpop / require_mtls fields) or static client builder methods.
 	})
