@@ -2,6 +2,9 @@ package shared
 
 import (
 	"context"
+	"crypto"
+	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -175,6 +178,18 @@ func (h *ClientAuthHelper) AuthenticateClient(r *http.Request) (Client, error) {
 		return client, nil
 	}
 
+	// --- Method 2b: self_signed_tls_client_auth (mTLS certificate) — RFC 8705 §2.2 ---
+	if client.AuthMethod() == protocol.AuthMethodSelfSignedTLSAuth {
+		cert := ClientCertFromContext(r.Context())
+		if cert == nil {
+			return nil, protocol.ErrInvalidClient().WithDescription("mTLS client certificate is required for self_signed_tls_client_auth client")
+		}
+		if err := VerifySelfSignedTLSClientAuth(client, cert, h.skipTLSCertVerify, h.allowPrivateIPs); err != nil {
+			return nil, protocol.ErrInvalidClient().WithParent(err)
+		}
+		return client, nil
+	}
+
 	// --- Method 3: Basic Auth / form body (client_secret_basic / client_secret_post) ---
 	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := h.store.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
@@ -183,6 +198,68 @@ func (h *ClientAuthHelper) AuthenticateClient(r *http.Request) (Client, error) {
 	}
 
 	return client, nil
+}
+
+// VerifySelfSignedTLSClientAuth implements RFC 8705 §2.2 (self-signed
+// certificate mutual TLS client authentication): the presented certificate
+// must be self-signed, and its public key must match one of the client's
+// registered JWKS keys (jwks_uri preferred, static jwks fallback).
+func VerifySelfSignedTLSClientAuth(client Client, cert *x509.Certificate, skipTLSCertVerify, allowPrivateIPs bool) error {
+	// Self-signed means the certificate verifies under its own public key;
+	// CheckSignatureFrom also validates the signature itself.
+	if err := cert.CheckSignatureFrom(cert); err != nil {
+		return fmt.Errorf("certificate is not self-signed: %w", err)
+	}
+
+	keys, err := clientJWKSKeys(client, skipTLSCertVerify, allowPrivateIPs)
+	if err != nil {
+		return err
+	}
+
+	certKey, err := jwk.Import[jwk.Key](cert.PublicKey)
+	if err != nil {
+		return fmt.Errorf("unsupported certificate public key type: %w", err)
+	}
+	certThumb, err := jwkThumbprint(certKey)
+	if err != nil {
+		return fmt.Errorf("cannot compute certificate key thumbprint: %w", err)
+	}
+	for _, k := range keys {
+		t, err := jwkThumbprint(k)
+		if err != nil {
+			continue
+		}
+		if t == certThumb {
+			return nil
+		}
+	}
+	return fmt.Errorf("certificate public key does not match any registered jwks key")
+}
+
+// clientJWKSKeys resolves the client's registered keys: jwks_uri first (falling
+// back to static jwks when the fetch fails), then static jwks — same resolution
+// order as AuthenticatePrivateKeyJWT.
+func clientJWKSKeys(client Client, skipTLSCertVerify, allowPrivateIPs bool) ([]jwk.Key, error) {
+	if uriProvider, ok := client.(JWKSURIProvider); ok && uriProvider.ClientJWKSURI() != "" {
+		if keys, err := FetchJWKSFromURI(uriProvider.ClientJWKSURI(), skipTLSCertVerify, allowPrivateIPs); err == nil {
+			return keys, nil
+		}
+	}
+	if ks, ok := client.(JWKSProvider); ok {
+		if keys := ks.ClientJWKS(); len(keys) > 0 {
+			return keys, nil
+		}
+	}
+	return nil, fmt.Errorf("client has no registered jwks keys")
+}
+
+// jwkThumbprint computes the RFC 7638 JWK thumbprint (base64url, no padding).
+func jwkThumbprint(key jwk.Key) (string, error) {
+	thumb, err := key.Thumbprint(crypto.SHA256)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(thumb), nil
 }
 
 // ExtractBearerToken extracts a Bearer token from the Authorization header.

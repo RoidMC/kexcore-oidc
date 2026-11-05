@@ -538,13 +538,17 @@ func (p *Plugin) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 	// For confidential clients the conformance suite rotates the DPoP key on
 	// refresh (see RefreshTokenRequestSteps), so we only require that a valid
 	// DPoP proof is presented; the new access/refresh tokens will be bound to
-	// the new key. For public clients RFC 9449 requires the same key to be used,
-	// but FAPI 2.0 only exercises confidential clients.
+	// the new key. For public clients RFC 9449 §5 requires the same key — a
+	// stolen refresh token must not be refreshable without its DPoP key.
 	storedJKT := refreshReq.GetDPoPJKT()
 	if storedJKT != "" {
 		proof := shared.DPoPFromContext(r.Context())
 		if proof == nil {
 			tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("DPoP proof required for DPoP-bound refresh token"))
+			return
+		}
+		if client.AuthMethod() == protocol.AuthMethodNone && proof.JWKThumbprint() != storedJKT {
+			tokenError(w, r, protocol.ErrInvalidGrant().WithDescription("DPoP key does not match the key bound to this refresh token"))
 			return
 		}
 	}
@@ -1344,6 +1348,21 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 		return client, nil
 	}
 
+	if client.AuthMethod() == protocol.AuthMethodSelfSignedTLSAuth {
+		cert := shared.ClientCertFromContext(r.Context())
+		if cert == nil {
+			return nil, protocol.ErrInvalidClient().WithDescription("mTLS client certificate is required for self_signed_tls_client_auth client")
+		}
+		if err := shared.VerifySelfSignedTLSClientAuth(client, cert, p.skipTLSCertVerify, p.allowPrivateIPs); err != nil {
+			return nil, protocol.ErrInvalidClient().WithParent(err)
+		}
+		slog.Debug("token authenticateClient: self_signed_tls_client_auth client authenticated via certificate", "client_id", clientID, "cert_cn", cert.Subject.CommonName)
+		if err := shared.ValidateSenderConstraining(client, p.requireDPoP, p.requireMtls, r); err != nil {
+			return nil, err
+		}
+		return client, nil
+	}
+
 	if client.AuthMethod() != protocol.AuthMethodNone {
 		if err := p.clientStore.AuthorizeClientIDSecret(r.Context(), clientID, clientSecret); err != nil {
 			slog.Debug("token authenticateClient: AuthorizeClientIDSecret failed", "client_id", clientID, "error", err)
@@ -1540,9 +1559,14 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 	}
 	if preferredAlg != "" {
 		if algStore, ok := p.keyStore.(storm.SigningKeyByAlgProvider); ok {
-			if algKey, err := algStore.SigningKeyByAlg(ctx, preferredAlg); err == nil {
-				signingKey = algKey
+			algKey, err := algStore.SigningKeyByAlg(ctx, preferredAlg)
+			if err != nil {
+				// The client (or FAPI 2.0 §5.4 default) requires this alg;
+				// silently falling back to the server default key would issue
+				// a non-compliant ID token, so fail loudly instead.
+				return "", fmt.Errorf("sign ID token: no signing key for required alg %q: %w", preferredAlg, err)
 			}
+			signingKey = algKey
 		}
 	}
 
