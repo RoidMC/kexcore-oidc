@@ -53,6 +53,11 @@ type TenantConfig struct {
 	// conformance suite. The library does not ship this endpoint; the example
 	// server owns it so tests and production builds cannot diverge silently.
 	EnableAutomatedCIBAApproval bool
+	// Plugins adds host-owned plugins on top of builtin.All().
+	// This is the declarative way to install an external plugin without forking
+	// this package. Plugin names must be unique; a plugin that reuses a builtin
+	// name is registered in addition to the builtin one, not instead of it.
+	Plugins []storm.NamedPluginFactory
 }
 
 // SetupTenant creates a complete OIDC tenant with all core plugins registered.
@@ -95,7 +100,7 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 
 	engineOpts := []storm.EngineOption{
 		storm.WithLogger(cfg.Logger),
-		storm.WithPlugins(examplePlugins()...),
+		storm.WithPlugins(examplePlugins(cfg.Plugins)...),
 		storm.WithMiddleware(shared.IssuerMiddleware(shared.StaticIssuer(cfg.Issuer))),
 		storm.WithDiscoveryConfig(discovery),
 		storm.WithCrypto(tokenCrypto),
@@ -143,7 +148,7 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 // by an explicitly configured instance. The library only registers the
 // approval page when a CSRF key is supplied, so the example opts in here to
 // keep the demo UI available.
-func examplePlugins() []storm.NamedPluginFactory {
+func examplePlugins(extra []storm.NamedPluginFactory) []storm.NamedPluginFactory {
 	plugins := builtin.All()
 	for i, np := range plugins {
 		if np.Name != "ciba" {
@@ -156,7 +161,7 @@ func examplePlugins() []storm.NamedPluginFactory {
 		}
 		break
 	}
-	return plugins
+	return append(plugins, extra...)
 }
 
 func cibaFactory() storm.PluginFactory {

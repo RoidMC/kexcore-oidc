@@ -115,11 +115,11 @@ func (s *Signer) Algorithm() string {
 // jwx for international algorithms).
 func (s *Signer) Sign(payload []byte) (string, error) {
 	// DefaultRegistry contains built-in software providers for all supported algorithms.
-	// HSM/KMS vendors can override any algorithm by registering their own provider
-	// in init() (last registration wins).
+	// HSM/KMS vendors can replace any algorithm by calling the matching
+	// Override* method in init().
 	if provider, ok := DefaultRegistry.GetSigner(s.algorithm); ok {
 		key := s.key
-		if s.sm9Priv != nil && len(s.sm9UID) > 0 {
+		if s.sm9Priv != nil {
 			key = &SM9SignKey{PrivateKey: s.sm9Priv, UID: s.sm9UID}
 		}
 		return provider.Sign(context.Background(), s.keyID, s.tokenTypeOrDefault(), key, payload)

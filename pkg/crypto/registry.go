@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	gmsm "github.com/emmansun/gmsm/sm2"
@@ -18,8 +19,9 @@ import (
 
 // SignProvider is the interface for JWS signing implementations.
 // Both built-in software signers and HSM/KMS vendors implement this interface
-// and register it to DefaultRegistry. The last registration wins, so HSM/KMS
-// providers registered in init() will override the built-in ones.
+// and register it to DefaultRegistry. Registering the same algorithm twice
+// panics; a vendor that intentionally replaces a built-in implementation must
+// call ProviderRegistry.OverrideSigner instead.
 type SignProvider interface {
 	// Algorithm returns the supported JWA signature algorithm, e.g. "SGD_SM3_SM2".
 	Algorithm() string
@@ -104,14 +106,42 @@ func NewProviderRegistry() *ProviderRegistry {
 }
 
 // DefaultRegistry is the global provider registry.
-// Local gmsm implementations are registered in init().
+// Built-in software implementations are registered in init().
 var DefaultRegistry = NewProviderRegistry()
 
-// RegisterSigner registers a SignProvider for the given algorithm.
-func (r *ProviderRegistry) RegisterSigner(alg string, p SignProvider) {
+// putProvider is the single write path for every provider map. It enforces
+// the two invariants that used to fail silently:
+//   - the registry key must match the algorithm the provider advertises;
+//   - duplicate registration is a programming error unless the caller uses
+//     the matching Override* method.
+func putProvider[T any](r *ProviderRegistry, m map[string]T, kind, overrideName, alg, declared string, p T, override bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.signers[alg] = p
+
+	if declared != alg {
+		panic(fmt.Sprintf("crypto: %s registered for %q advertises algorithm %q", kind, alg, declared))
+	}
+	if _, exists := m[alg]; exists {
+		if !override {
+			panic(fmt.Sprintf("crypto: duplicate %s for %q; use %s to replace an existing implementation", kind, alg, overrideName))
+		}
+		slog.Info("crypto: provider overridden", "kind", kind, "alg", alg)
+	}
+	m[alg] = p
+}
+
+// RegisterSigner registers a SignProvider for the given algorithm.
+// It panics if alg is already registered or if p advertises a different
+// algorithm. Use OverrideSigner to replace an existing implementation.
+func (r *ProviderRegistry) RegisterSigner(alg string, p SignProvider) {
+	putProvider(r, r.signers, "sign provider", "OverrideSigner", alg, p.Algorithm(), p, false)
+}
+
+// OverrideSigner replaces (or adds) a SignProvider for the given algorithm.
+// This is the only supported way for HSM/KMS vendors to replace a built-in
+// implementation.
+func (r *ProviderRegistry) OverrideSigner(alg string, p SignProvider) {
+	putProvider(r, r.signers, "sign provider", "OverrideSigner", alg, p.Algorithm(), p, true)
 }
 
 // GetSigner returns the registered SignProvider for the algorithm.
@@ -123,10 +153,15 @@ func (r *ProviderRegistry) GetSigner(alg string) (SignProvider, bool) {
 }
 
 // RegisterVerifier registers a VerifyProvider for the given algorithm.
+// It panics if alg is already registered or if p advertises a different
+// algorithm. Use OverrideVerifier to replace an existing implementation.
 func (r *ProviderRegistry) RegisterVerifier(alg string, p VerifyProvider) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.verifiers[alg] = p
+	putProvider(r, r.verifiers, "verify provider", "OverrideVerifier", alg, p.Algorithm(), p, false)
+}
+
+// OverrideVerifier replaces (or adds) a VerifyProvider for the given algorithm.
+func (r *ProviderRegistry) OverrideVerifier(alg string, p VerifyProvider) {
+	putProvider(r, r.verifiers, "verify provider", "OverrideVerifier", alg, p.Algorithm(), p, true)
 }
 
 // GetVerifier returns the registered VerifyProvider for the algorithm.
@@ -138,10 +173,14 @@ func (r *ProviderRegistry) GetVerifier(alg string) (VerifyProvider, bool) {
 }
 
 // RegisterJWEEncryptor registers a JWEEncryptProvider for the given key algorithm.
+// It panics on duplicate registration or key/algorithm mismatch.
 func (r *ProviderRegistry) RegisterJWEEncryptor(alg string, p JWEEncryptProvider) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.jweEnc[alg] = p
+	putProvider(r, r.jweEnc, "JWE encrypt provider", "OverrideJWEEncryptor", alg, p.KeyAlgorithm(), p, false)
+}
+
+// OverrideJWEEncryptor replaces (or adds) a JWEEncryptProvider for the given key algorithm.
+func (r *ProviderRegistry) OverrideJWEEncryptor(alg string, p JWEEncryptProvider) {
+	putProvider(r, r.jweEnc, "JWE encrypt provider", "OverrideJWEEncryptor", alg, p.KeyAlgorithm(), p, true)
 }
 
 // GetJWEEncryptor returns the registered JWEEncryptProvider for the key algorithm.
@@ -153,10 +192,14 @@ func (r *ProviderRegistry) GetJWEEncryptor(alg string) (JWEEncryptProvider, bool
 }
 
 // RegisterJWEDecryptor registers a JWEDecryptProvider for the given key algorithm.
+// It panics on duplicate registration or key/algorithm mismatch.
 func (r *ProviderRegistry) RegisterJWEDecryptor(alg string, p JWEDecryptProvider) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.jweDec[alg] = p
+	putProvider(r, r.jweDec, "JWE decrypt provider", "OverrideJWEDecryptor", alg, p.KeyAlgorithm(), p, false)
+}
+
+// OverrideJWEDecryptor replaces (or adds) a JWEDecryptProvider for the given key algorithm.
+func (r *ProviderRegistry) OverrideJWEDecryptor(alg string, p JWEDecryptProvider) {
+	putProvider(r, r.jweDec, "JWE decrypt provider", "OverrideJWEDecryptor", alg, p.KeyAlgorithm(), p, true)
 }
 
 // GetJWEDecryptor returns the registered JWEDecryptProvider for the key algorithm.
@@ -168,10 +211,14 @@ func (r *ProviderRegistry) GetJWEDecryptor(alg string) (JWEDecryptProvider, bool
 }
 
 // RegisterContentEncryptor registers a ContentEncryptProvider for the given content encryption algorithm.
+// It panics on duplicate registration or key/algorithm mismatch.
 func (r *ProviderRegistry) RegisterContentEncryptor(alg string, p ContentEncryptProvider) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.contentEnc[alg] = p
+	putProvider(r, r.contentEnc, "content encrypt provider", "OverrideContentEncryptor", alg, p.Algorithm(), p, false)
+}
+
+// OverrideContentEncryptor replaces (or adds) a ContentEncryptProvider for the given content encryption algorithm.
+func (r *ProviderRegistry) OverrideContentEncryptor(alg string, p ContentEncryptProvider) {
+	putProvider(r, r.contentEnc, "content encrypt provider", "OverrideContentEncryptor", alg, p.Algorithm(), p, true)
 }
 
 // GetContentEncryptor returns the registered ContentEncryptProvider for the content encryption algorithm.
@@ -183,10 +230,14 @@ func (r *ProviderRegistry) GetContentEncryptor(alg string) (ContentEncryptProvid
 }
 
 // RegisterContentDecryptor registers a ContentDecryptProvider for the given content encryption algorithm.
+// It panics on duplicate registration or key/algorithm mismatch.
 func (r *ProviderRegistry) RegisterContentDecryptor(alg string, p ContentDecryptProvider) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.contentDec[alg] = p
+	putProvider(r, r.contentDec, "content decrypt provider", "OverrideContentDecryptor", alg, p.Algorithm(), p, false)
+}
+
+// OverrideContentDecryptor replaces (or adds) a ContentDecryptProvider for the given content encryption algorithm.
+func (r *ProviderRegistry) OverrideContentDecryptor(alg string, p ContentDecryptProvider) {
+	putProvider(r, r.contentDec, "content decrypt provider", "OverrideContentDecryptor", alg, p.Algorithm(), p, true)
 }
 
 // GetContentDecryptor returns the registered ContentDecryptProvider for the content encryption algorithm.
@@ -236,22 +287,17 @@ type stdSm9SignProvider struct{}
 
 func (stdSm9SignProvider) Algorithm() string { return SGD_SM3_SM9 }
 
-func (stdSm9SignProvider) Sign(ctx context.Context, keyID, tokenType string, key interface{}, payload []byte) (string, error) {
-	// SM9 requires uid. When called through Signer.Sign, key is wrapped as SM9SignKey.
+func (stdSm9SignProvider) Sign(_ context.Context, keyID, tokenType string, key interface{}, payload []byte) (string, error) {
+	// SM9 requires the signer's uid. Signer.Sign always wraps the key material
+	// in SM9SignKey, so that is the only accepted key type here.
 	signKey, ok := key.(*SM9SignKey)
-	if ok {
-		return signSM9(SGD_SM3_SM9, keyID, tokenType, signKey.PrivateKey, signKey.UID, payload)
+	if !ok {
+		return "", fmt.Errorf("stdSm9SignProvider: expected *SM9SignKey, got %T", key)
 	}
-	// Also allow bare *sm9.SignPrivateKey with uid passed via context (HSM fallback).
-	priv, ok := key.(*sm9.SignPrivateKey)
-	if ok {
-		uid, _ := ctx.Value("sm9.uid").([]byte)
-		if len(uid) == 0 {
-			return "", fmt.Errorf("stdSm9SignProvider: SM9 signing requires uid (set via Signer.SetSM9UID or ctx sm9.uid)")
-		}
-		return signSM9(SGD_SM3_SM9, keyID, tokenType, priv, uid, payload)
+	if len(signKey.UID) == 0 {
+		return "", fmt.Errorf("stdSm9SignProvider: SM9 signing requires uid; call Signer.SetSM9UID before signing")
 	}
-	return "", fmt.Errorf("stdSm9SignProvider: expected *SM9SignKey or *sm9.SignPrivateKey, got %T", key)
+	return signSM9(SGD_SM3_SM9, keyID, tokenType, signKey.PrivateKey, signKey.UID, payload)
 }
 
 // SM9SignKey wraps the SM9 signing key material with the user identifier.

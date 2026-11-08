@@ -365,12 +365,22 @@ func WithEndpointConfigs(configs shared.EndpointConfigMap) EngineOption {
 
 // New creates a new Engine with the given storage and issuer function.
 //
-// The issuerFn is used to inject the issuer into the request context
-// and into the discovery document.
+// The issuerFn is passed to plugins via PluginContext.IssuerFn and is used
+// for the discovery document. New does NOT install it into the request
+// context; install shared.IssuerMiddleware explicitly:
 //
-// Plugins are registered from two sources:
-//  1. Global registry (via RegisterPlugin) — auto-discovered and sorted by priority
-//  2. WithPlugin option factories — registered after global plugins
+//	storm.New(storage, issuerFn,
+//	    storm.WithMiddleware(shared.IssuerMiddleware(issuerFn)),
+//	)
+//
+// Plugins are registered only from explicit sources:
+//  1. WithPlugins named factories (normally builtin.All())
+//  2. WithPlugin factories — registered last (priority 9999)
+//
+// RegisterPlugin populates an opt-in global registry; New does NOT load it
+// automatically. Opt in explicitly:
+//
+//	storm.New(storage, issuerFn, storm.WithPlugins(storm.RegisteredPlugins()...))
 //
 // Use Disable() to prevent specific Standard/Optional plugins from loading.
 func New(storage Storage, issuerFn shared.IssuerFromRequest, opts ...EngineOption) *Engine {
@@ -391,8 +401,8 @@ func New(storage Storage, issuerFn shared.IssuerFromRequest, opts ...EngineOptio
 }
 
 // autoRegisterPlugins registers explicitly provided plugins, filters
-// disabled ones, checks storage dependencies, and registers
-// them in priority order.
+// disabled ones, and registers them in priority order. Storage capability
+// dependencies declared via Requires() are validated later in Build().
 func (e *Engine) autoRegisterPlugins() {
 	// Build plugin context with all dependencies
 	pctx := &PluginContext{

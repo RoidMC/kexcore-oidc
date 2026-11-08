@@ -57,7 +57,20 @@ func BytesToPrivateKey(b []byte) (crypto.PublicKey, string, error) {
 		case ed25519.PrivateKey:
 			return privateKey, "EdDSA", nil
 		case *ecdsa.PrivateKey:
-			return privateKey, "ES256", nil
+			// JWA ties the algorithm to the curve: P-256/ES256, P-384/ES384,
+			// P-521/ES512. An unknown curve must fail instead of silently
+			// being labelled ES256 (which would produce tokens that no
+			// verifier can check).
+			switch privateKey.Curve.Params().Name {
+			case "P-256":
+				return privateKey, "ES256", nil
+			case "P-384":
+				return privateKey, "ES384", nil
+			case "P-521":
+				return privateKey, "ES512", nil
+			default:
+				return nil, "", ErrUnsupportedPrivateKey
+			}
 		default:
 			return nil, "", ErrUnsupportedPrivateKey
 		}

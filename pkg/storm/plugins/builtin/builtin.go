@@ -36,8 +36,11 @@ import (
 // All returns the default plugin set in priority order (the Engine sorts
 // again, so the literal order here is documentation only).
 //
-// Each factory receives the Engine's PluginContext; plugins whose storage
-// capabilities are not satisfied decline by returning nil and are skipped.
+// Each factory receives the Engine's PluginContext. Optional plugins whose
+// storage capabilities are absent return nil and are skipped by the Engine.
+// Core plugins (authorization, token, keys, discovery) perform unchecked
+// storage assertions and panic during construction when a required
+// capability is missing: that is a configuration error, not a soft degrade.
 func All() []storm.NamedPluginFactory {
 	return []storm.NamedPluginFactory{
 		{Name: "authorization", Priority: storm.PriorityAuthorization, Factory: storm.FactoryOf(authorization.New)},

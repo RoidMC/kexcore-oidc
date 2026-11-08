@@ -22,7 +22,8 @@ func IssuerFromContext(ctx context.Context) string {
 }
 
 // IssuerMiddleware injects the issuer into the request context.
-// This is the only middleware that Engine itself needs to install.
+// Engine does not install it automatically; pass it explicitly via
+// storm.WithMiddleware(shared.IssuerMiddleware(issuerFn)).
 func IssuerMiddleware(fn IssuerFromRequest) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

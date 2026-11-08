@@ -48,7 +48,7 @@ The most important packages of the library:
 
 ### Semver
 
-This package uses [semver](https://semver.org/) for [releases](https://github.com/roidmc/kexcore-oidc/releases). Major releases ship breaking changes. Starting with the `v2` to `v3` increment we provide an [upgrade guide](UPGRADING.md) to ease migration to a newer version.
+This package uses [semver](https://semver.org/) for [releases](https://github.com/roidmc/kexcore-oidc/releases). Major releases ship breaking changes; see the [release notes](https://github.com/roidmc/kexcore-oidc/releases) for migration details.
 
 ## How To Use It
 
@@ -56,10 +56,13 @@ Check the `/example` folder where example code for different scenarios is locate
 
 ```bash
 # start oidc op server (StormEngine)
-# oidc discovery http://localhost:9998/.well-known/openid-configuration
-go run github.com/roidmc/kexcore-oidc/example/storm-server
+# oidc discovery https://localhost:9998/.well-known/openid-configuration
+# The example server auto-enables a self-signed TLS certificate
+# (example/storm-server/cert/web); run it from the repository root.
+go run github.com/roidmc/kexcore-oidc/v3/example/storm-server
 # start oidc web client (in a new terminal)
-CLIENT_ID=web CLIENT_SECRET=secret ISSUER=http://localhost:9998/ SCOPES="openid profile" PORT=9999 go run github.com/roidmc/kexcore-oidc/example/client/app
+# (the example client skips verification of the self-signed cert)
+CLIENT_ID=web CLIENT_SECRET=secret ISSUER=https://localhost:9998/ SCOPES="openid profile" PORT=9999 go run github.com/roidmc/kexcore-oidc/v3/example/client/app
 ```
 
 - open http://localhost:9999/login in your browser
@@ -67,19 +70,7 @@ CLIENT_ID=web CLIENT_SECRET=secret ISSUER=http://localhost:9998/ SCOPES="openid 
 - login with user `test-user@localhost` and password `verysecure`
 - the OP will redirect you to the client app, which displays the user info
 
-for the dynamic issuer, just start it with:
-
-```bash
-go run github.com/roidmc/kexcore-oidc/example/server/dynamic
-```
-
-the oidc web client above will still work, but if you add `oidc.local` (pointing to 127.0.0.1) in your hosts file you can also start it with:
-
-```bash
-CLIENT_ID=web CLIENT_SECRET=secret ISSUER=http://oidc.local:9998/ SCOPES="openid profile" PORT=9999 go run github.com/roidmc/kexcore-oidc/example/client/app
-```
-
-> Note: Usernames are suffixed with the hostname (`test-user@localhost` or `test-user@oidc.local`)
+> Note: Usernames are suffixed with the hostname (`test-user@localhost`)
 
 
 ### Build Tags
@@ -194,6 +185,16 @@ StormEngine 实现 [FAPI 1.0 Advanced][35] 与 [FAPI 2.0 Security Profile][36] �
 | Authorization Code + PKCE | [RFC 7636][8] + [FAPI 2.0][36] | ✅ S256 强制 |
 
 > **Known Conformance Suite Issues:** StormEngine implements mTLS client certificate reading per [RFC 8705 §2][11] (from `tls.PeerCertificates`). The OIDF Conformance Suite has a bug where `env.mapKey("mutual_tls_authentication")` does not prevent the HTTP client from sending certificates in the TLS handshake, causing `ensure-holder-of-key-required` and `refresh-token` tests to fail for `client_auth_type=mtls + sender_constrain=dpop` variants. This affects any implementation that reads certificates directly from the TLS layer. See [example/testsuite/docs/issues.md](example/testsuite/docs/issues.md) for details and proposed fix.
+
+#### Signing keys and crypto providers
+
+`pkg/crypto` is a registry, not a fixed algorithm list:
+
+- `RegisterSigner` / `RegisterVerifier` / `RegisterJWEEncryptor` / … add an algorithm. Registering the same algorithm twice panics, and so does registering a provider whose `Algorithm()` (or `KeyAlgorithm()`) does not match the registry key.
+- To replace a built-in implementation (HSM/KMS), use the matching `Override*` method (`OverrideSigner`, `OverrideJWEEncryptor`, …). Replacement is explicit on purpose — there is no "last registration wins".
+- `BytesToPrivateKey` derives the JWA algorithm from the key material: P-256 → ES256, P-384 → ES384, P-521 → ES512. An unsupported curve returns `ErrUnsupportedPrivateKey` instead of being mislabelled ES256.
+- A `storm.KeyStore` should hold one key per algorithm it advertises: `SignatureAlgorithms` returns all of them (used by discovery), `SigningKey` returns the active one, and `SigningKeyByAlg` fails closed for an algorithm the store cannot serve. Retaining the previous key after a switch keeps already issued tokens verifiable.
+- SM9 signing takes its `uid` from `Signer.SetSM9UID`; it is passed to the provider as `crypto.SM9SignKey`, not through a context key.
 
 ### Relying Party (`/pkg/client`)
 

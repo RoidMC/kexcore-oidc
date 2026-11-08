@@ -27,7 +27,7 @@ import (
 //	}
 //
 //	// Register — SDK handles hashing + JWS compact assembly
-//	crypto.DefaultRegistry.RegisterSigner(crypto.SGD_SM3_SM2,
+//	crypto.DefaultRegistry.OverrideSigner(crypto.SGD_SM3_SM2,
 //	    crypto.WrapSignPrimitive(crypto.SGD_SM3_SM2, &myHSM{}))
 // ---------------------------------------------------------------------------
 
@@ -108,7 +108,7 @@ func (w *wrappedVerifyProvider) Verify(ctx context.Context, signingInput, signat
 //	    return hsmClient.Wrap(ctx, key, keySize)
 //	}
 //
-//	crypto.DefaultRegistry.RegisterJWEEncryptor(crypto.SGD_SM2_3,
+//	crypto.DefaultRegistry.OverrideJWEEncryptor(crypto.SGD_SM2_3,
 //	    crypto.WrapKeyWrapPrimitive(crypto.SGD_SM2_3, crypto.SGD_SM4_GCM, &myHSMKeyWrap{}))
 // ---------------------------------------------------------------------------
 

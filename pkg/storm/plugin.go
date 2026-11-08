@@ -177,8 +177,10 @@ type CategorizablePlugin interface {
 	Category() PluginCategory
 
 	// Requires returns the set of storage capabilities this plugin needs.
-	// The Engine checks whether the Storage implementation satisfies these
-	// before registering the plugin. Return nil if no storage dependencies.
+	// The Engine validates these at Build time (Engine.Validate) and fails
+	// fast with an actionable error. The check does NOT run before the
+	// factory: plugins that want to soft-degrade must return nil from their
+	// factory instead of relying on Requires(). Return nil if no dependencies.
 	// Example: []StorageCapability{CapUserinfoStore, CapIntrospectStore}
 	Requires() []StorageCapability
 }

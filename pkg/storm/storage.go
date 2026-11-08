@@ -240,8 +240,10 @@ type AuditLogger interface {
 // Implementation notes:
 //   - KeySet: return all public keys as JWKS (for /jwks endpoint and token verification).
 //     Each key must implement protocol.Key (jwk.Key with KeyID and Algorithm).
-//   - SignatureAlgorithms: return the list of supported signing algorithms (e.g. ["RS256", "ES256"]).
-//     Used by discovery document.
+//   - SignatureAlgorithms: return every algorithm the store holds a key for —
+//     not just the active one — e.g. ["RS256", "ES256"]. Discovery advertises
+//     this list, and clients may then request any of them through
+//     id_token_signed_response_alg.
 //   - SigningKey: return the current signing key + algorithm for token signing.
 //     The SDK uses this to sign ID tokens and access tokens (if JWT).
 //     Rotate keys by changing what this returns — old keys stay in KeySet for verification.
@@ -261,6 +263,11 @@ type KeyStore interface {
 // SigningKeyByAlgProvider is an optional interface that a KeyStore can
 // implement to support retrieving a signing key by algorithm.
 // This enables per-client ID token signing algorithms.
+//
+// Implementations should hold one key per algorithm advertised by
+// SignatureAlgorithms and must return an error (never fall back to a
+// different algorithm) when asked for one they do not have; otherwise a
+// client's id_token_signed_response_alg would be silently ignored.
 type SigningKeyByAlgProvider interface {
 	SigningKeyByAlg(ctx context.Context, alg string) (SigningKey, error)
 }

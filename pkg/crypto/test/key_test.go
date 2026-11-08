@@ -8,8 +8,10 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
@@ -73,6 +75,19 @@ func sm2PrivateKeyToPEM(sm2Key *gmsm.PrivateKey) ([]byte, error) {
 	}
 
 	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: outer}), nil
+}
+
+func mustMarshalPKCS8(t *testing.T, curve elliptic.Curve) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(curve, rand.Reader)
+	if err != nil {
+		t.Fatalf("generate %s key: %v", curve.Params().Name, err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal %s PKCS#8: %v", curve.Params().Name, err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
 }
 
 func TestBytesToPrivateKey(t *testing.T) {
@@ -156,18 +171,45 @@ OFCrqT/emes3KytTPfa5NZtYeQ==
 			},
 		},
 		{
-			name: "PKCS#8 ECDSA",
+			name: "PKCS#8 ECDSA P-256",
 			args: args{
-				key: []byte(`-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgwwOZSU4GlP7ps/Wp
-V6o0qRwxultdfYo/uUuj48QZjSuhRANCAATMiI2Han+ABKmrk5CNlxRAGC61w4d3
-G4TAeuBpyzqJ7x/6NjCxoQzJzZHtNjIfjVATI59XFZWF59GhtSZbShAr
------END PRIVATE KEY-----`),
+				key: mustMarshalPKCS8(t, elliptic.P256()),
 			},
 			want: want{
 				key:       &ecdsa.PrivateKey{},
 				algorithm: "ES256",
 				err:       nil,
+			},
+		},
+		{
+			name: "PKCS#8 ECDSA P-384",
+			args: args{
+				key: mustMarshalPKCS8(t, elliptic.P384()),
+			},
+			want: want{
+				key:       &ecdsa.PrivateKey{},
+				algorithm: "ES384",
+				err:       nil,
+			},
+		},
+		{
+			name: "PKCS#8 ECDSA P-521",
+			args: args{
+				key: mustMarshalPKCS8(t, elliptic.P521()),
+			},
+			want: want{
+				key:       &ecdsa.PrivateKey{},
+				algorithm: "ES512",
+				err:       nil,
+			},
+		},
+		{
+			name: "PKCS#8 ECDSA unsupported curve (P-224)",
+			args: args{
+				key: mustMarshalPKCS8(t, elliptic.P224()),
+			},
+			want: want{
+				err: zcrypto.ErrUnsupportedPrivateKey,
 			},
 		},
 		{
