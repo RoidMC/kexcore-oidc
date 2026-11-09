@@ -1,176 +1,54 @@
 # KexCore OIDC TODO
 
-## 国密算法适配（GM/T 0125 系列）
+> 最后核对：2026-11-10（对照 V3.3.0 代码与 `README.md`）
+>
+> 本文件只维护**当前未完成项**。功能状态以 `README.md` 的 Features 表为准，
+> 变更历史以 git log 为准。原文件中的历史完成清单可用 `git show` 查看旧版本。
 
-### 已完成
-- [x] `pkg/crypto/sm2.go` — SM2 密钥生成、签名、验签、加解密
-- [x] `pkg/crypto/sm3.go` — SM3 哈希及 HMAC
-- [x] `pkg/crypto/sm4.go` — SM4 CBC/GCM/CCM 多模式加解密
-- [x] `pkg/crypto/sm9.go` — SM9 密钥生成、签名、验签、加解密、密钥封装
-- [x] `pkg/crypto/jwe.go` — SM2+SM4-GCM / SM9+SM4-GCM/CCM JWE 实现（符合 GM/T 0125.3）
-- [x] `pkg/crypto/hash.go` — 算法标识符统一为 SGD 标准（移除 SM2 别名，统一 SGD_SM3_SM2）
-- [x] `pkg/crypto/jwk.go` — SM2 JWK 构建、JWS 签名验证、签名输入构建、算法判断（抽取公共 util）
-- [x] `pkg/op/op.go` — SM2 JWS 签名验证使用 `crypto.VerifySM2JWSSignature` + `crypto.BuildSM2SigningInput`
-- [x] `pkg/op/verifier_jwt_profile.go` — 同上，移除重复代码
-- [x] `pkg/client/rp/jwks.go` — 同上，移除重复代码
-- [x] `pkg/op/keys.go` — JWKS 返回 SM2 公钥（手动构建 JSON map 绕过 jwx 不支持 SM2 曲线问题）
-- [x] `pkg/op/op.go` — `NewProvider` 自动从 `storage.SignatureAlgorithms()` 填充 `SupportedSignAlgorithms`，修复 discovery 各字段不一致问题
-- [x] `pkg/op/crypto.go` — 新增 `NewSM4Crypto` 支持 SM4 token 加解密
-- [x] `example/server/config/config.go` — 新增 `SIGNING_ALGORITHMS` 和 `CRYPTO_METHOD` 环境变量配置
-- [x] `example/server/storage/storage.go` — `NewStorageWithAlgorithms` 支持 RS256/RS384/RS512/ES256/ES384/ES512/EdDSA/SGD_SM3_SM2 动态配置
-- [x] `example/server/crypto.go` — `myCrypto` 支持 SM4 加解密选项
-- [x] 集成测试修复 — `SetupServer` 签名变更、RP 侧仅用 RS256 避免 jwx 解析 SM2 JWK 失败
-- [x] `pkg/crypto/hash.go` — 添加 `SGD_SM3_SM9` 算法标识符
-- [x] `pkg/crypto/jwk.go` — 添加 `SM9SignJWK`、`NewSM9SignJWK`、`ParseSM9SignMasterPublicKey`、`VerifySM9JWSSignature`、`IsSM9Algorithm`
-- [x] `pkg/op/keys.go` — JWKS 支持 SM9 签名主公钥导出
-- [x] `pkg/op/op.go` — OP 端 SM9 签名验证（`verifySM9Signature`，从 JWS header 读取 `uid` 参数）
-- [x] `example/server/storage/storage.go` — SM9 签名密钥加入 `signingKey` switch（生成 master key + user key）
-- [x] `pkg/crypto/jwk.go` — 添加 `ParseJWKSBytes` 专用 JWKS 解析、`FindJWKSKey` 查找、`SM2PublicKeyFromJWK` 解析（绕过 jwx 不支持 SM2/SM9 的限制）
-- [x] `pkg/client/rp/jwks.go` — RP 端 SM2/SM9 签名验证（`verifyGMSignature`，自定义 JWKS 解析替代 jwx）
-- [x] `pkg/crypto/test/jwk_test.go` — JWK 相关测试覆盖（SM2/SM9 JWK 构建、公钥解析、JWKS 解析、签名验证等 14 个测试用例）
-- [x] 依赖安全审计 — `go mod tidy` + `govulncheck ./...`
-- [x] `pkg/op/crypto.go` — AES256GCM JWE 加密增加 SM4-GCM 选项（`sm4GCMCrypto`，dir 模式 + SGD_SM4_GCM）
-- [x] `pkg/crypto/hash.go` — 注册 GM/T 算法到 jwx（`RegisterSignatureAlgorithm`/`RegisterKeyEncryptionAlgorithm`/`RegisterContentEncryptionAlgorithm`），使 `jws.Parse`/`jwe.Parse` 可识别 `SGD_SM3_SM2`/`SGD_SM3_SM9`/`SGD_SM9_3`/`SGD_SM4_GCM` 等算法
-- [x] 国密算法端到端集成测试 — `pkg/op/gm_e2e_test.go`（SM2/SM9 签名令牌 → 验证器检查，错误密钥、错误发行人、过期令牌、错误 UID 等场景，共 6 个测试用例）
+## 维护约定
 
-### 待完成
-- [ ] SM2/SM9 JWK 的 x5c / x5t 证书链支持
-- [x] JWE 加密集成到 OIDC token 流程（id_token / userinfo 响应加密）
-  - [x] `dir` 模式对称加密（`SGD_SM4_GCM` / `A256GCM` / `A128GCM`）— 通过 `EncryptToken` / `EncryptTokenA256GCM` / `EncryptTokenA128GCM`
-  - [x] OP 端 `encryptIDToken()` 根据客户端声明的 `enc` 自动选择加密算法
-  - [x] RP 端 `DecryptToken` / `DecryptTokenWithKey` 解密 JWE 加密的 ID Token
-  - [x] `TokenEncryptionKeyProvider` 接口 — Crypto 实现类暴露对称密钥
-  - [x] `IDTokenEncryptionClient` 接口 — 客户端声明加密偏好（alg + enc）
-  - [x] JWE 常量定义（`JWEAlgDir`/`JWEAlgA256GCMKW`/`JWEEncSM4GCM`/`JWEEncA256GCM`/`JWEEncA128GCM`）
-  - [x] 修复 `decryptDirMode` 密钥长度推断 BUG — 改为基于 JWE header `enc` 字段分发
-  - [x] SM2 JWE（`SGD_SM2_3` + `SGD_SM4_GCM`）作为 id_token 加密方式
-    - `EncryptTokenSM2(signedToken, publicKey)` — OP 端使用 RP 的 SM2 公钥加密
-    - `SM2TokenEncryptionPublicKeyProvider` 接口 — Crypto 实现类暴露 SM2 公钥
-    - `encryptIDToken()` 自动根据 `alg=SGD_SM2_3` 分发到 `EncryptTokenSM2`
-    - RP 端解密通过 `crypto.SM2DecryptJWE(privateKey, compact)`（`pkg/crypto/jwe.go`）
-  - [x] SM9 JWE（`SGD_SM9_3` + `SGD_SM4_GCM/CCM`）作为 id_token 加密方式
-    - `EncryptTokenSM9(signedToken, masterPubKey, uid)` — OP 端使用 RP 的 SM9 主公钥加密
-    - `SM9TokenEncryptionPublicKeyProvider` 接口 — Crypto 实现类暴露 SM9 主公钥和 UID
-    - `encryptIDToken()` 自动根据 `alg=SGD_SM9_3` 分发到 `EncryptTokenSM9`
-    - RP 端解密通过 `crypto.SM9DecryptJWE(userKey, uid, compact)`（`pkg/crypto/jwe.go`）
-  - [x] 重构：AES-GCM/SM4-GCM 加解密函数从 `oidc/verifier.go` 抽取到 `pkg/crypto/jwe.go`
-    - `crypto.AESGCMEncrypt` / `crypto.AESGCMDecrypt` — AES-GCM 通用加解密
-    - `crypto.ParseJWECompact` — JWE compact 解析（原 `parseJWECompact` 导出）
-    - `verifier.go` 移除本地 `aesGCMEncrypt`/`aesGCMDecrypt`/`sm4GCMEncrypt`/`sm4GCMDecrypt`/`sm4NewCipher`，改用 `crypto` 包函数
-  - [x] Discovery 文档声明 `id_token_encryption_alg_values_supported` 和 `id_token_encryption_enc_values_supported`
+- V3 已移除 v2 的 `pkg/op`、`pkg/client/rp`、`example/server`；原 TODO 里指向这些路径的条目已全部归档，不要再按旧路径找代码。
+- 当前结构：`pkg/protocol`（协议层）、`pkg/storm`（OP 引擎）、`pkg/client`（RP）、`pkg/crypto`（国密与 JWE）、`example/storm-server`（示例 OP）、`example/testsuite`（conformance）。
+- 勾掉一项时请同步更新 `README.md` 的对应状态，避免两处口径不一致。
 
-### ⚠️ 已知限制（TODO 待解决）
-- [x] **SM9 签名在 OIDC JWS flow 中集成**
-  - `crypto.Signer` 已扩展支持 SM9（`sm9Priv` 字段 + `signSM9` 方法），JWS header 中携带 `uid` 参数
-  - `op.SM9SigningKey` 接口 + `op.SignerFromKey` 自动通过类型断言设置 `uid`
-  - `example/server/storage` 的 `signingKey` 已实现 `SM9SigningKey` 接口
-  - `op.SM9JWTProfileKeyStorage` 接口 + `verifier_jwt_profile.go` 中 SM9 验证路径已实现
-  - `example/server/storage` 已实现 `SM9JWTProfileKeyStorage` 接口（`GetSM9MasterPublicKeyByIDAndClientID`）
-- [x] **JWE 加密（SGD_SM2_3 / SGD_SM9_3）在 OIDC token flow 中已集成**
-  - `pkg/op/token.go` 的 `EncryptToken` 已支持 SM2/SM9 加密（通过 `TokenEncryptionKeyProvider` / `SM2TokenEncryptionPublicKeyProvider` / `SM9TokenEncryptionPublicKeyProvider` 接口）
-  - example server 的 `myCrypto` 已实现 `SM2TokenEncryptionPublicKeyProvider` 和 `SM9TokenEncryptionPublicKeyProvider` 接口
-  - `Client` 已实现 `IDTokenEncryptionClient` 接口（`IDTokenEncryptionAlg` / `IDTokenEncryptionEnc`）
-  - 已注册 3 个 JWE 加密演示客户端：`web-dir-sm4`（dir+SM4）、`web-sm2`（SGD_SM2_3+SM4）、`web-sm9`（SGD_SM9_3+SM4）
+## P1 协议与密钥
 
----
+- [ ] **SM2/SM9 JWK 的 `x5c` / `x5t` 证书链支持**
+      `pkg/crypto/jwk.go` 目前只构建公钥字段，没有 `x5c` / `x5t` / `x5u`。
+      注意 `pkg/storm/shared/context.go` 里的 `cnf.x5t#S256` 是 mTLS token 绑定指纹（RFC 8705 §3.1），不是 JWK 证书链，两者不要混为一谈。
 
-## 🔙 Back-Channel Logout（OpenID Connect Back-Channel Logout 1.0）
+- [ ] **云 KMS provider 实现与使用文档**
+      `pkg/crypto/registry.go` 已有 `SignProvider` / `VerifyProvider` / `JWEEncryptProvider` 等接口和 `DefaultRegistry` / `Override*` 覆盖点，`README.md` 也已声明 HSM/KMS support；但仓库内没有 AWS KMS、Azure Key Vault 等具体 provider 实现和接入示例。
 
-### 已完成
-- [x] `pkg/op/client.go` — `BackChannelLogoutClient` 接口（`BackChannelLogoutURI()`）
-- [x] `pkg/op/op.go` — `Endpoints.BackChannelLogout` 端点定义
-- [x] `pkg/op/backchannel_logout.go` — OP 端 BCL 端点处理器（请求解析、会话终止、Logout Token 生成与推送）
-- [x] `pkg/op/backchannel_logout.go` — `BackChannelLogoutStorage` 接口（`ClientsForSession` 查询会话关联客户端）
-- [x] `pkg/op/server_http.go` — 条件注册 `/backchannel_logout` 端点（仅当 server 实现 `BackChannelLogoutHandler`）
-- [x] `pkg/oidc/token.go` — `LogoutTokenClaims` 结构体（实现 `Claims` 接口，含 `GetIssuer`/`GetSubject`/`GetAudience` 等方法）
-- [x] `pkg/oidc/token.go` — `BackChannelLogoutEventKey` 常量
-- [x] `pkg/client/rp/backchannel_logout.go` — RP 端 `BackChannelLogoutHandler`、`LogoutTokenVerifier`、`VerifyLogoutToken`
-- [x] `pkg/op/test/backchannel_logout_test.go` — 11 个测试用例（JWE 加解密、Logout Token 生成、BCL 推送、Crypto 密钥暴露）
+- [ ] **签名密钥轮换的 SDK 层钩子**
+      现状是三层拼起来的：`pkg/storm/storage.go` 的 `KeySet` 契约（旧密钥必须保留到签发令牌全部过期）、`pkg/storm/validate.go` 的轮换安全检查、以及仅存在于示例层的 `example/storm-server/storage/storage.go` 的 `RotateSigningKey()` + `POST /admin/rotate-keys`。SDK 本身没有统一的轮换接口，接入方需要各自实现。
 
-### 待完成
-- [x] Logout Token `typ` header 设为 `logout+jwt`（OIDC 规范 RECOMMENDED，当前 Signer 不支持自定义 JWT header）
-- [x] 并行推送 Logout Token 到多个 RP（OIDC 规范 encouraged，当前串行）
-- [x] Logout Token 加密支持（OIDC 规范 MAY，当前仅签名）
-- [x] **Example server 集成 Back-Channel Logout 演示**
-  - `example/server/storage` 实现 `op.BackChannelLogoutStorage` 接口（`ClientsForSession` 方法）
-  - `example/server/exampleop/op.go` 在 `Config` 中启用 `BackChannelLogoutSupported: true`
-  - `example/server/main.go` 注册支持 `backchannel_logout_uri` 的客户端
-  - 确认 `/backchannel_logout` 端点默认启用逻辑：仅当 server 实现 `BackChannelLogoutHandler` 时注册（当前 `server_http.go` 已支持），但 Discovery 字段 `backchannel_logout_supported` 默认 `false`，需显式开启
+## P2 测试与示例
 
----
+- [ ] **端到端并发 / 压力测试**
+      原 TODO 要求的"并发认证请求测试""token 刷新高并发测试""记录基准结果"仍未做。目前 `pkg` 下只有局部 benchmark（`plugins/pairwise/pairwise_test.go`、`plugins/dpop/evict_bench_test.go`），没有覆盖认证与 token 刷新链路的并发用例，也没有基准数据记录。
 
-## 📤 Pushed Authorization Requests (PAR, RFC 9126)
+- [ ] **示例服务器去掉硬编码的 TLS 跳过校验**
+      `example/storm-server/config/config.go` 把 `EnableSkipTLSCertVerify`、`EnableSelfSignSSL` 写成常量 `"true"`；`example/storm-server/storage/ciba.go` 的 CIBA notification HTTP client 硬编码 `InsecureSkipVerify: true`。应改为可配置且生产默认关闭。
 
-### 已完成
-- [x] `pkg/oidc/authorization.go` — `PushedAuthRequest`、`PushedAuthResponse` 数据结构定义，`AuthRequest` 增加 `RequestURI` 字段
-- [x] `pkg/op/par.go` — `PushedAuthRequestStorage` 接口定义（`StorePushedAuthRequest`、`PushedAuthRequestByURI`）
-- [x] `pkg/op/par.go` — PAR 端点处理器（`PushedAuthRequestHandler`、`PushedAuthRequest`、`parseAndValidatePushedAuthRequest`、`authenticatePARClient`）
-- [x] `pkg/op/par.go` — RFC 9126 合规性：公共客户端使用 `code` 响应类型时强制要求 PKCE（`code_challenge`）
-- [x] `pkg/op/config.go` — `Configuration` 接口增加 `PushedAuthRequestSupported()`、`PushedAuthRequestEndpoint()`
-- [x] `pkg/op/op.go` — `Config` 增加 `PushedAuthRequestSupported` 字段，`Endpoints` 增加 `PushedAuthorizationRequest` 端点，`CreateRouter` 条件注册路由（仅 POST 方法）
-- [x] `pkg/op/auth_request.go` — `Authorize` 函数支持 `request_uri` 参数解析（`resolvePushedAuthRequest`），`request` 和 `request_uri` 互斥检查
-- [x] `pkg/op/discovery.go` — Discovery 文档声明 `pushed_authorization_request_endpoint` 和 `request_uri_parameter_supported`
-- [x] `pkg/oidc/discovery.go` — `DiscoveryConfiguration` 增加 `PushedAuthorizationRequestEndpoint` 和 `RequestURIParameterSupported` 字段
-- [x] `pkg/op/mock/configuration.mock.go` — 手动添加 `PushedAuthRequestSupported` 和 `PushedAuthRequestEndpoint` 的 mock 方法
-- [x] `example/server/exampleop/op.go` — Config 启用 `PushedAuthRequestSupported: true`
-- [x] `example/server/storage/storage.go` — 实现 `PushedAuthRequestStorage` 接口（`StorePushedAuthRequest`、`PushedAuthRequestByURI`），使用 `urn:ietf:params:oauth:request_uri:` 前缀
-- [x] `pkg/op/test/par_test.go` — 10 个测试用例（端点、Discovery、PAR 请求验证、`request_uri` 解析、公共客户端 PKCE 强制等）
+- [ ] **示例服务器对称加密密钥支持环境变量注入**
+      `config/config.go` 已支持 `SIGNING_ALGORITHMS`、`CRYPTO_METHOD`、`TLS_CERT_FILE`、`TLS_KEY_FILE`，但没有 `CRYPTO_KEY`（token 对称加密密钥）。
 
----
+## P3 开源门面与文档
 
-## 🔴 协议功能（SDK 应提供）
+- [ ] **清理 README 中无意义的上游残留**
+      例如示例用户邮箱 `@zitadel.ch`、`<!--zitadel/oidc issue reference-->` 注释、仅指向上游文档的资源链接等。
+      对 `zitadel/oidc` 的 attribution（版权头、`Based on zitadel/oidc`、License/NOTICE）属于合规要求，**必须保留**。
 
-### 1. Dynamic Client Registration (DCR)
-- [x] 实现 `ClientRegistration` Storage 接口方法
-- [x] 添加 `/register` 端点处理
-- [x] 在 Discovery 文档中声明 `registration_endpoint`
-- [x] 编写 DCR 测试用例
+- [ ] **补一份从 `zitadel/oidc` 迁移的指南**
+      目前只有 `README.md` 的 semver 段落指向 release notes，以及 "Why another library" 里一句差异说明；没有独立的迁移文档（RP 侧兼容边界、OP 侧从 `pkg/op` 到 `pkg/storm` 的映射）。
 
-### 2. mTLS 支持（RFC 8705）
-- [ ] 实现客户端证书认证
-- [ ] 添加 `tls_client_auth` 授权方法
-- [ ] 在 Discovery 文档中声明 `mtls_endpoint_aliases`
+## 已归档（不再作为待办）
 
-### 3. SM9 JWT Profile 验证（`verifier_jwt_profile.go`）
-- [x] **`SM9JWTProfileKeyStorage` 接口已新增，SM9 JWT Profile 验证路径已实现**
-  - 新增 `SM9JWTProfileKeyStorage` 接口（`GetSM9MasterPublicKeyByIDAndClientID`），通过接口断言与原 `JWTProfileKeyStorage` 兼容
-  - `verifier_jwt_profile.go` 中 SM9 签名验证：从 header 提取 `uid`，调用 `crypto.VerifySM9JWSSignature`
-  - `example/server/storage` 已实现 `SM9JWTProfileKeyStorage` 接口
+以下条目在旧版 TODO 中逐条列出，现均已落地或随 V3 移除，状态以 `README.md` 为准：
 
-### 4. 密钥管理
-- [ ] 提供密钥轮换回调接口
-- [ ] 支持 KMS 密钥加载抽象（如 AWS KMS、Azure Key Vault）
-
----
-
-## 🛠 测试与示例
-
-### 4. 压力测试
-- [ ] 编写并发认证请求测试
-- [ ] 编写 token 刷新高并发测试
-- [ ] 记录基准测试结果
-
-### 5. 示例 server 完善
-- [ ] 移除硬编码 crypto key，支持从环境变量 `CRYPTO_KEY` 读取
-- [ ] 支持 `TLS_CERT` / `TLS_KEY` 环境变量读取证书
-- [ ] 生产环境默认禁用 `--insecure`
-
----
-
-## 🟢 低优先级
-
-### 6. 文档与仓库
-- [ ] 清理 README 上游引用（badge、contributors 图、license 链接）
-- [ ] 列出与上游 zitadel/oidc 的差异
-- [ ] 添加迁移指南（从上游迁移到本分支）
-
----
-
-## 备注
-
-- 当前状态：已通过 OIDF Basic Profile + Config Profile 认证
-- 全量测试通过：`go test ./...` ✅
-- 核心覆盖率：`pkg/op` 72.1%, `pkg/oidc` 69.2%
-- 已删除的弃用接口：`ValidateAuthRequest`, `SetUserinfoFromScopes`, `UserFormURL`
-- 与上游 zitadel/oidc 的兼容性：已破坏，作为独立分支维护
-- 国密算法底层实现完成（SM2/SM3/SM4/SM9/JWE），OIDC 协议层集成完成（OP 签发/验证 SM2+SM9，RP 验证 SM2+SM9，JWKS 导出 SM2+SM9 公钥）
+- 国密 SM2/SM3/SM4/SM9、JWE 全链路、OP 签发与验证、RP 验证、JWKS 公钥导出 → `README.md` GM/T 章节与 Features 表
+- Back-Channel Logout、PAR、DCR、mTLS、JARM、DPoP、CIBA、WebFinger、FAPI 2.0 相关能力 → `README.md` Features 表
+- JWE 加密 ID Token / UserInfo 响应、`TokenEncryptionKeyProvider` 等接口 → `pkg/storm/storage.go`
+- OIDF 认证：RP 已过 `oidf-basic` / `oidf-config`，OP 已过 `oidf-backchannel` → `README.md:23-24`
+- 原 TODO 中 `pkg/op` / `pkg/client/rp` / `example/server` 的实现清单 → 随 V3 移除，仅保留在 git 历史中
