@@ -1,57 +1,85 @@
-name: Bug Report
-description: "Create a bug report to help us improve ZITADEL. Click [here](https://github.com/zitadel/zitadel/blob/main/CONTRIBUTING.md#product-management) to see how we process your issue."
+name: 🐛 Bug Report
+description: Report a reproducible defect in the KexCore OIDC SDK.
 title: "[Bug]: "
 labels: ["bug"]
-type: Bug
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this bug report!
+        Thanks for taking the time to file a bug report. A minimal reproduction
+        (engine options + request + expected/actual) is the fastest path to a fix.
   - type: checkboxes
     id: preflight
     attributes:
-      label: Preflight Checklist
+      label: Preflight checklist
       options:
-      - label:
-          I could not find a solution in the documentation, the existing issues or discussions
-        required: true
-      - label:
-          I have joined the [ZITADEL chat](https://zitadel.com/chat)
+        - label: I have searched the existing issues and documentation.
+          required: true
+        - label: I can reproduce this on the latest release.
+          required: true
   - type: input
     id: version
     attributes:
-      label: Version
-      description: Which version of the OIDC library are you using.
+      label: SDK version
+      description: Output of `go list -m github.com/roidmc/kexcore-oidc/v3`, or the version of the app embedding it.
+      placeholder: v3.4.0
+    validations:
+      required: true
+  - type: input
+    id: go-version
+    attributes:
+      label: Go version
+      description: Output of `go version`.
+      placeholder: go1.27.3 windows/amd64
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Plugin assembly / categories
+        - Built-in plugin (authorization, token, keys, userinfo, ...)
+        - Discovery / metadata
+        - Storage adapter
+        - Example server
+        - Documentation
+        - Other
+    validations:
+      required: true
   - type: textarea
     id: impact
     attributes:
-      label: Describe the problem caused by this bug
-      description: A clear and concise description of the problem you have and what the bug is.
+      label: What happened?
+      description: Describe the observed behaviour and why it is a problem.
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
-      label: To reproduce
-      description: Steps to reproduce the behaviour
+      label: Steps to reproduce
+      description: Minimal code, engine options and the HTTP request(s) involved.
       placeholder: |
-        Steps to reproduce the behavior:
+        1. Build an engine with ...
+        2. Send ...
+        3. Observe ...
     validations:
       required: true
   - type: textarea
-    id: screenshots
-    attributes:
-      label: Screenshots
-      description: If applicable, add screenshots to help explain your problem.
-  - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
-      description: A clear and concise description of what you expected to happen.
-      placeholder: As a [type of user], I want [some goal] so that [some reason].
+      label: Expected behaviour
+      placeholder: As a [type of user], I expected [some result] so that [some reason].
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or stack trace
+      description: Redact secrets, tokens and internal issuer URLs if needed.
+      render: shell
   - type: textarea
     id: additional
     attributes:
-      label: Additional Context
-      description: Please add any other infos that could be useful.
+      label: Additional context
+      description: Related issues, workarounds or anything else that might help.

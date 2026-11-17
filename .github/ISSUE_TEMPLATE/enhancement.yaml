@@ -1,55 +1,57 @@
 name: 🛠️ Improvement
-description: "Create a new issue for an improvement in ZITADEL"
+description: Propose a feature or improvement for the KexCore OIDC SDK.
 labels: ["enhancement"]
-type: enhancement
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this proposal / feature request
+        Thanks for taking the time to propose an improvement.
   - type: checkboxes
     id: preflight
     attributes:
-      label: Preflight Checklist
+      label: Preflight checklist
       options:
-      - label:
-          I could not find a solution in the existing issues, docs, nor discussions
-        required: true
-      - label:
-          I have joined the [ZITADEL chat](https://zitadel.com/chat)
+        - label: I have searched the existing issues and documentation.
+          required: true
+        - label: This is not a security issue (see SECURITY.md instead).
+          required: true
   - type: textarea
     id: problem
     attributes:
-      label: Describe your problem
-      description: Please describe your problem this improvement is supposed to solve.
-      placeholder: Describe the problem you have
+      label: Problem
+      description: What are you trying to do, and what is missing or painful today?
+      placeholder: As a [type of user], I want [some goal] so that [some reason].
     validations:
       required: true
   - type: textarea
     id: solution
     attributes:
-      label: Describe your ideal solution
-      description: Which solution do you propose?
-      placeholder: As a [type of user], I want [some goal] so that [some reason].
+      label: Proposed solution
+      description: Describe the expected behaviour, configuration and public API.
     validations:
       required: true
-  - type: input
-    id: version
-    attributes:
-      label: Version
-      description: Which version of the OIDC Library are you using.
   - type: dropdown
-    id: environment
+    id: category
     attributes:
-      label: Environment
-      description: How do you use ZITADEL?
+      label: Proposed plugin category
+      description: Only relevant when this adds an OIDC endpoint or protocol behaviour.
       options:
-      - ZITADEL Cloud
-      - Self-hosted
-    validations:
-      required: true
+        - Not a plugin / not applicable
+        - Core (always on, cannot be disabled)
+        - Standard (registered by default, can be disabled)
+        - Optional (opt-in via Enable)
+  - type: input
+    id: spec
+    attributes:
+      label: Related specification
+      description: RFC or OIDC specification section this implements, if any.
+      placeholder: RFC 9126 (Pushed Authorization Requests)
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other designs you have evaluated.
   - type: textarea
     id: additional
     attributes:
-      label: Additional Context
-      description: Please add any other infos that could be useful.
+      label: Additional context

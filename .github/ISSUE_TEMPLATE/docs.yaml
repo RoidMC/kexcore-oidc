@@ -1,31 +1,40 @@
 name: 📄 Documentation
-description: Create an issue for missing or wrong documentation.
+description: Report missing, outdated or incorrect documentation.
 labels: ["docs"]
-type: task
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this issue.
+        Thanks for helping improve the docs.
   - type: checkboxes
     id: preflight
     attributes:
-      label: Preflight Checklist
+      label: Preflight checklist
       options:
-      - label:
-          I could not find a solution in the existing issues, docs, nor discussions
-        required: true
-      - label:
-          I have joined the [ZITADEL chat](https://zitadel.com/chat)
-  - type: textarea
-    id: docs
+        - label: I have searched the existing issues and documentation.
+          required: true
+  - type: input
+    id: location
     attributes:
-      label: Describe the docs your are missing or that are wrong
-      placeholder: As a [type of user], I want [some goal] so that [some reason].
+      label: Page or file
+      description: Link or repository path of the affected document.
+      placeholder: docs/plugins.md §3.2
     validations:
       required: true
   - type: textarea
+    id: problem
+    attributes:
+      label: What is missing or wrong?
+      description: Quote the current text and explain what is incorrect or absent.
+      placeholder: The current text says ..., but ...
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording
+      description: Optional. Concrete replacement text is much appreciated.
+  - type: textarea
     id: additional
     attributes:
-      label: Additional Context
-      description: Please add any other infos that could be useful.
+      label: Additional context
