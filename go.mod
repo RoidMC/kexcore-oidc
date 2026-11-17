@@ -4,9 +4,9 @@ go 1.27.3
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.4
-	github.com/emmansun/gmsm v0.45.2
+	github.com/emmansun/gmsm v0.45.3
 	github.com/go-chi/chi/v5 v5.5.0
-	github.com/go-openapi/testify/v2 v2.8.0
+	github.com/go-openapi/testify/v2 v2.8.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/securecookie v1.1.2
 	github.com/jeremija/gosubmit v0.2.8
@@ -14,8 +14,8 @@ require (
 	github.com/rs/cors v1.11.1
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
-	golang.org/x/oauth2 v0.37.0
-	golang.org/x/text v0.43.0
+	golang.org/x/oauth2 v0.38.0
+	golang.org/x/text v0.44.0
 )
 
 require (
@@ -27,6 +27,6 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 )
