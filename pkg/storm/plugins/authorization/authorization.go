@@ -201,7 +201,11 @@ func NewWithConfig(cfg Config) *Plugin {
 
 // init self-registers the authorization plugin in the global registry.
 func init() {
-	storm.RegisterPlugin("authorization", storm.PriorityAuthorization, func(ctx *storm.PluginContext) storm.Plugin {
+	storm.RegisterPluginWith(storm.PluginDescriptor{
+		Name:     "authorization",
+		Priority: storm.PriorityAuthorization,
+		Category: storm.CategoryCore,
+	}, func(ctx *storm.PluginContext) storm.Plugin {
 		return New(ctx)
 	})
 }

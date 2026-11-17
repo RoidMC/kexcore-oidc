@@ -97,7 +97,11 @@ func NewWithConfig(cfg Config) *Plugin {
 
 // init self-registers the token plugin in the global registry.
 func init() {
-	storm.RegisterPlugin("token", storm.PriorityToken, func(ctx *storm.PluginContext) storm.Plugin {
+	storm.RegisterPluginWith(storm.PluginDescriptor{
+		Name:     "token",
+		Priority: storm.PriorityToken,
+		Category: storm.CategoryCore,
+	}, func(ctx *storm.PluginContext) storm.Plugin {
 		return New(ctx)
 	})
 }

@@ -38,7 +38,11 @@ func NewWithStore(store storm.KeyStore) *Plugin {
 
 // init self-registers the keys plugin in the global registry.
 func init() {
-	storm.RegisterPlugin("keys", storm.PriorityKeys, func(ctx *storm.PluginContext) storm.Plugin {
+	storm.RegisterPluginWith(storm.PluginDescriptor{
+		Name:     "keys",
+		Priority: storm.PriorityKeys,
+		Category: storm.CategoryCore,
+	}, func(ctx *storm.PluginContext) storm.Plugin {
 		return New(ctx)
 	})
 }
@@ -47,7 +51,9 @@ func init() {
 func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryCore }
 
 // Requires returns the storage dependencies.
-func (p *Plugin) Requires() []storm.StorageCapability { return []storm.StorageCapability{storm.CapKeyStore} }
+func (p *Plugin) Requires() []storm.StorageCapability {
+	return []storm.StorageCapability{storm.CapKeyStore}
+}
 
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "keys" }

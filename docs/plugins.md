@@ -42,8 +42,8 @@ type Plugin interface {
 }
 ```
 
-`Name()` 必须全局唯一：重名不会在注册阶段报错，但会在 `Build()` 的 discovery
-冲突检测阶段 panic。
+`Name()` 必须全局唯一：重名会在 `storm.New` 装配阶段直接 panic，并指出两个冲突
+来源，不会拖到 `Build()` 才以 chi 路由冲突的形式暴露。
 
 ## 2. 把插件装进服务器
 
@@ -69,6 +69,10 @@ handler := engine.Build()
 
 - `WithPlugins` 接收 `NamedPluginFactory`，按 `Priority` 从小到大的顺序注册。
 - `WithPlugin` 接收匿名工厂，固定最后注册（priority 9999）。
+- `NamedPluginFactory` 可以额外声明 `Category`（`CategoryCore` / `CategoryStandard` /
+  `CategoryOptional`）。不填时回落到插件的 `CategorizablePlugin.Category()`，再回落到
+  `CategoryStandard`。
+- 分类决定装配行为：Core 不可禁用、Standard 默认注册、Optional 必须显式 `Enable`（详见 §3.2）。
 - 内置优先级常量见 [`engine.go`](../pkg/storm/engine.go) 的 `Priority*`。
 
 ### 2.2 使用示例服务器的 SetupTenant（不 fork）
@@ -84,8 +88,8 @@ handler := stormsetup.SetupTenant(stormsetup.TenantConfig{
 })
 ```
 
-`TenantConfig.Plugins` 会追加到 `builtin.All()` 之后。同名插件不会被替换，
-而是两个都注册——自定义插件不要复用内置名字。
+`TenantConfig.Plugins` 会追加到 `builtin.All()` 之后。**同名插件会让 `storm.New`
+直接 panic**，自定义插件不要复用内置名字。
 
 ### 2.3 init() 自注册（全局注册表）
 
@@ -104,11 +108,27 @@ engine := storm.New(storage, issuerFn,
 )
 ```
 
+如果需要在实例化**之前**就确定分类（Core 插件禁用即报错，所以这一点很重要），
+用 `RegisterPluginWith` 携带描述符：
+
+```go
+func init() {
+	storm.RegisterPluginWith(storm.PluginDescriptor{
+		Name:     "whoami",
+		Priority: 1200,
+		Category: storm.CategoryStandard,
+	}, storm.FactoryOf(whoami.New))
+}
+```
+
+`PluginDescriptor.Category` 留空（`CategoryUnspecified`）时仍会回落到插件自身的
+`CategorizablePlugin` 声明。全局注册表对重名同样直接 panic。
+
 ## 3. 可选扩展接口
 
 | 接口 | 用途 |
 |---|---|
-| `CategorizablePlugin` | 声明 `Category()`（Core/Standard/Optional）和 `Requires()` 存储能力 |
+| `CategorizablePlugin` | 声明 `Category()`（Core/Standard/Optional）和 `Requires()` 存储能力；注册描述符未声明分类时作为回落来源，`WithPlugin` 匿名工厂只能走这条路径 |
 | `DiscoveryContributor` | 向 `/.well-known/openid-configuration` 贡献字段 |
 | `MiddlewareProvider` | 注册作用于全局请求链的中间件 |
 
@@ -123,7 +143,7 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 `ctx` 里的 issuer 来自 `shared.IssuerMiddleware`（见 §5 坑 2）。只写自己拥有的字段，
 扩展字段放 `cfg.Extra`。
 
-### 3.2 声明存储能力
+### 3.2 声明分类与存储能力
 
 ```go
 func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryStandard }
@@ -132,6 +152,18 @@ func (p *Plugin) Requires() []storm.StorageCapability {
 	return []storm.StorageCapability{storm.CapTokenStore}
 }
 ```
+
+分类的装配语义：
+
+| 分类 | 默认行为 | `Enable(name)` | `Disable(name)` |
+|---|---|---|---|
+| `CategoryCore` | 注册 | 无效果（已注册） | **panic**（启动失败） |
+| `CategoryStandard` | 注册 | 无效果（已注册） | 跳过 |
+| `CategoryOptional` | 不注册 | 注册 | 无效果（本来就没注册） |
+
+`Enable` / `Disable` 的 `name` 是插件 `Name()` 的返回值，`WithPlugin` 匿名工厂也按
+真实名字匹配（不再使用内部占位名）。写了未注册的名字只会 warn 并忽略，用于兼容
+build tag 裁剪掉的插件。
 
 `Requires()` 在 `Build()` 的 `Validate()` 阶段检查，缺失时返回可读错误并 panic。
 它**不会**在工厂执行前预检查；需要软降级的插件应在工厂里自行判断并返回 nil。
@@ -143,17 +175,22 @@ func (p *Plugin) Requires() []storm.StorageCapability {
 
 ## 4. 生命周期与错误语义
 
-1. `storm.New` → 调用工厂、过滤 disabled、按 priority 注册路由。
-2. 工厂返回 `nil` → 记录 warn 并跳过（Optional 插件常用）。
-3. `engine.Build()` → 聚合 discovery、校验 `Requires()`、安装中间件。
-4. 校验失败或 discovery 字段冲突 → **panic**（配置错误，启动即失败）。
-5. Core 插件（authorization/token/keys/discovery）对必需存储接口做无检查断言，
+1. `storm.New` 收集候选（`WithPlugins` / `WithPlugin` / `RegisteredPlugins`），按 `Priority` 排序。
+2. 解析分类：注册描述符优先，其次 `CategorizablePlugin.Category()`，最后 `CategoryStandard`。
+3. 装配过滤：Core 被 `Disable` → **panic**；Standard 被 `Disable` → 跳过；
+   Optional 未被 `Enable` → 跳过。
+4. 执行工厂；返回 `nil` → 记录 warn 并跳过（Optional 插件常用）。
+5. 注册前校验：名字非空、与描述符一致、全局唯一。重名 → **panic**。
+6. `engine.Build()` → 聚合 discovery、校验 `Requires()`、安装中间件。
+7. 校验失败或 discovery 字段冲突 → **panic**（配置错误，启动即失败）。
+8. Core 插件（authorization/token/keys/discovery）对必需存储接口做无检查断言，
    缺失时在工厂内直接 panic。
 
 ## 5. 实测踩过的坑
 
 1. **`init(){RegisterPlugin}` 不等于注册。** 只做这一步，端点返回 404。
-   必须 `WithPlugins(RegisteredPlugins())` 或直接传 `NamedPluginFactory`。
+   必须 `WithPlugins(RegisteredPlugins())` 或直接传 `NamedPluginFactory`；
+   `RegisterPlugin` 重名会在 init 阶段 panic。
 2. **issuer 不会自动进请求上下文。** `New` 只把 `issuerFn` 放进
    `PluginContext.IssuerFn` 和 discovery；要在 handler 里
    `shared.IssuerFromContext(ctx)` 取到值，必须显式
@@ -163,6 +200,10 @@ func (p *Plugin) Requires() []storm.StorageCapability {
 4. **README 之外没有插件文档。** 本文件就是补充；另外 quickstart 需要用
    `github.com/roidmc/kexcore-oidc/v3/...`，示例服务器默认自签 TLS，地址是
    `https://localhost:9998/`。
+5. **`Disable` 写的是插件 `Name()`，不是工厂注册名。** `WithPlugin` 匿名工厂尤其容易踩；
+   写错名字只会 warn，不会报错。
+6. **Core 插件不能靠 `Disable` 裁剪。** 禁用即启动失败；要少装端点，应该不注册该插件，
+   而不是运行时禁用。
 
 ## 6. 外部模块依赖
 

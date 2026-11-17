@@ -62,6 +62,11 @@ func NewWithConfig(keyStore storm.KeyStore, cfg Config) *Plugin {
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "discovery" }
 
+// Category declares discovery as a core plugin: the metadata document is part
+// of the minimum viable OIDC server and cannot be disabled. This also covers
+// the builtin.All() wiring path, where no registration descriptor is used.
+func (p *Plugin) Category() storm.PluginCategory { return storm.CategoryCore }
+
 // Register is a no-op for the Discovery plugin.
 func (p *Plugin) Register(r chi.Router) {}
 
@@ -132,7 +137,11 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 }
 
 func init() {
-	storm.RegisterPlugin("discovery", storm.PriorityDiscovery, func(ctx *storm.PluginContext) storm.Plugin {
+	storm.RegisterPluginWith(storm.PluginDescriptor{
+		Name:     "discovery",
+		Priority: storm.PriorityDiscovery,
+		Category: storm.CategoryCore,
+	}, func(ctx *storm.PluginContext) storm.Plugin {
 		return New(ctx)
 	})
 }

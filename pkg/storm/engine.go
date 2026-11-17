@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -41,20 +42,20 @@ type Engine struct {
 	discoveryCfg    DiscoveryConfig
 	endpointConfigs shared.EndpointConfigMap // endpoint configurations (optional)
 
-	disabled          map[string]bool   // plugins disabled via Disable()
-	explicitlyEnabled map[string]bool   // plugins explicitly enabled via Enable()
+	disabled          map[string]bool      // plugins disabled via Disable()
+	explicitlyEnabled map[string]bool      // plugins explicitly enabled via Enable()
 	namedFactories    []NamedPluginFactory // plugins registered via WithPlugins()
-	factories         []PluginFactory   // plugins registered via WithPlugin()
-	crypto            UniCrypto         // optional, for token encryption/signing
-	decoder           *protocol.Decoder // optional, for form parsing
-	enableImplicit    bool              // enable implicit/hybrid flows
-	allowPlainPKCE    bool              // allow plain code_challenge_method
-	allowPrivateIPs   bool              // allow private/link-local IPs in jwks_uri etc.
-	skipTLSCertVerify bool              // skip TLS cert verification on outbound HTTP
-	requireDPoP       bool              // FAPI 2.0: require DPoP for token requests
-	requireMtls       bool              // FAPI 2.0: require mTLS for token requests
-	parLifetime       time.Duration     // PAR request_uri lifetime (default: 90s)
-	rateLimiter       *RateLimiter      // optional, for token endpoint rate limiting
+	factories         []PluginFactory      // plugins registered via WithPlugin()
+	crypto            UniCrypto            // optional, for token encryption/signing
+	decoder           *protocol.Decoder    // optional, for form parsing
+	enableImplicit    bool                 // enable implicit/hybrid flows
+	allowPlainPKCE    bool                 // allow plain code_challenge_method
+	allowPrivateIPs   bool                 // allow private/link-local IPs in jwks_uri etc.
+	skipTLSCertVerify bool                 // skip TLS cert verification on outbound HTTP
+	requireDPoP       bool                 // FAPI 2.0: require DPoP for token requests
+	requireMtls       bool                 // FAPI 2.0: require mTLS for token requests
+	parLifetime       time.Duration        // PAR request_uri lifetime (default: 90s)
+	rateLimiter       *RateLimiter         // optional, for token endpoint rate limiting
 }
 
 // DiscoveryConfig holds extra fields injected into the discovery document.
@@ -93,6 +94,10 @@ type PluginFactory func(ctx *PluginContext) Plugin
 type NamedPluginFactory struct {
 	Name     string
 	Priority int // lower = registered earlier
+	// Category optionally declares the registration category at wiring time.
+	// Zero (CategoryUnspecified) defers to the instantiated plugin's
+	// CategorizablePlugin implementation.
+	Category PluginCategory
 	Factory  PluginFactory
 }
 
@@ -116,11 +121,15 @@ func FactoryOf[T Plugin](f func(*PluginContext) T) PluginFactory {
 // This is an optional convenience for third-party plugins: New() does NOT
 // load the global registry automatically. Pass RegisteredPlugins() to
 // WithPlugins to opt in.
-var globalRegistry = []struct {
-	name     string
-	factory  PluginFactory
-	priority int // lower = registered earlier
-}{}
+var (
+	globalMu       sync.RWMutex
+	globalRegistry []registeredPlugin
+)
+
+type registeredPlugin struct {
+	desc    PluginDescriptor
+	factory PluginFactory
+}
 
 // PluginPriority defines registration ordering.
 // Core plugins use lower numbers; optional plugins use higher numbers.
@@ -154,20 +163,48 @@ const (
 //
 // to opt in, or pass an explicit set via WithPlugins.
 func RegisterPlugin(name string, priority int, factory PluginFactory) {
-	globalRegistry = append(globalRegistry, struct {
-		name     string
-		factory  PluginFactory
-		priority int
-	}{name, factory, priority})
+	RegisterPluginWith(PluginDescriptor{Name: name, Priority: priority}, factory)
+}
+
+// RegisterPluginWith registers a plugin factory together with its descriptor.
+//
+// Use this instead of RegisterPlugin when the plugin's category should be known
+// before instantiation (e.g. core plugins, which can never be disabled). A
+// duplicate name panics: silently overwriting a plugin makes route collisions
+// surface later as an unrelated chi panic.
+func RegisterPluginWith(desc PluginDescriptor, factory PluginFactory) {
+	if desc.Name == "" {
+		panic("storm: plugin descriptor requires a name")
+	}
+	if factory == nil {
+		panic(fmt.Sprintf("storm: plugin %q has a nil factory", desc.Name))
+	}
+
+	globalMu.Lock()
+	defer globalMu.Unlock()
+	for _, reg := range globalRegistry {
+		if reg.desc.Name == desc.Name {
+			panic(fmt.Sprintf("storm: duplicate plugin %q registered", desc.Name))
+		}
+	}
+	globalRegistry = append(globalRegistry, registeredPlugin{desc: desc, factory: factory})
 }
 
 // RegisteredPlugins returns a snapshot of the global registry populated
 // via RegisterPlugin. Combine with WithPlugins to make init()-side-effect
 // registration explicit at the Engine construction site.
 func RegisteredPlugins() []NamedPluginFactory {
+	globalMu.RLock()
+	defer globalMu.RUnlock()
+
 	out := make([]NamedPluginFactory, 0, len(globalRegistry))
 	for _, reg := range globalRegistry {
-		out = append(out, NamedPluginFactory{Name: reg.name, Priority: reg.priority, Factory: reg.factory})
+		out = append(out, NamedPluginFactory{
+			Name:     reg.desc.Name,
+			Priority: reg.desc.Priority,
+			Category: reg.desc.Category,
+			Factory:  reg.factory,
+		})
 	}
 	return out
 }
@@ -424,43 +461,64 @@ func (e *Engine) autoRegisterPlugins() {
 		pctx.Decoder = protocol.NewDecoder()
 	}
 
-	// Collect all candidate plugins (named + explicit factories)
+	// Collect all candidate plugins (named + explicit factories).
 	type candidate struct {
 		name     string
 		factory  PluginFactory
 		priority int
+		category PluginCategory
 	}
 	var candidates []candidate
 
-	// Named factories (WithPlugins — the explicit default plugin set)
 	for _, nf := range e.namedFactories {
 		candidates = append(candidates, candidate{
 			name:     nf.Name,
 			factory:  nf.Factory,
 			priority: nf.Priority,
+			category: nf.Category,
 		})
 	}
 
-	// Unnamed factories (WithPlugin — use max priority so they register last)
+	// Unnamed factories (WithPlugin) cannot declare a category up front; their
+	// name and category are only known after the factory runs.
 	for _, f := range e.factories {
 		candidates = append(candidates, candidate{
-			name:     "custom",
+			name:     unnamedCandidate,
 			factory:  f,
 			priority: 9999,
+			category: CategoryUnspecified,
 		})
 	}
 
-	// Sort by priority
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].priority < candidates[j].priority
 	})
 
-	// Register each plugin
+	// seen tracks every name referenced by the wiring options so unknown
+	// Enable()/Disable() names are reported instead of silently ignored.
+	seen := make(map[string]bool, len(candidates)*2)
+	// registered maps the resolved plugin name to the candidate that produced
+	// it, so duplicate names fail with a useful message instead of a chi route
+	// collision later.
+	registered := make(map[string]string, len(candidates))
+
 	for _, c := range candidates {
-		// Check if disabled
-		if e.disabled[c.name] {
-			e.logger.Info("plugin disabled", "name", c.name)
-			continue
+		seen[c.name] = true
+
+		// A declared category lets the engine decide before instantiating the
+		// plugin. This is what makes "core cannot be disabled" enforceable.
+		if c.category != CategoryUnspecified {
+			if e.disabled[c.name] {
+				if c.category == CategoryCore {
+					panic(fmt.Sprintf("storm: cannot disable core plugin %q; remove it from Disable()", c.name))
+				}
+				e.logger.Info("plugin disabled", "name", c.name, "category", c.category)
+				continue
+			}
+			if c.category == CategoryOptional && !e.explicitlyEnabled[c.name] {
+				e.logger.Debug("optional plugin not explicitly enabled, skipping", "name", c.name)
+				continue
+			}
 		}
 
 		p := c.factory(pctx)
@@ -469,40 +527,92 @@ func (e *Engine) autoRegisterPlugins() {
 			continue
 		}
 
-		// Check CategorizablePlugin for category-based disable
-		if cp, ok := p.(CategorizablePlugin); ok {
-			cat := cp.Category()
-			if cat == CategoryOptional && !e.hasExplicitFactory(c.name) {
-				e.logger.Debug("optional plugin not explicitly enabled, skipping", "name", c.name)
+		// The plugin's own name is the only reliable key for Enable()/Disable()
+		// and for duplicate detection: WithPlugin factories share the "custom"
+		// placeholder until they are instantiated.
+		name := p.Name()
+		if name == "" {
+			panic(fmt.Sprintf("storm: plugin from %q returned an empty name", c.name))
+		}
+		if c.category != CategoryUnspecified && name != c.name {
+			panic(fmt.Sprintf("storm: plugin descriptor %q reports name %q", c.name, name))
+		}
+		if source, dup := registered[name]; dup {
+			panic(fmt.Sprintf("storm: duplicate plugin name %q (from %q and %q)", name, source, c.name))
+		}
+		seen[name] = true
+
+		category := c.category
+		if category == CategoryUnspecified {
+			category = pluginCategory(p)
+			if e.disabled[name] {
+				if category == CategoryCore {
+					panic(fmt.Sprintf("storm: cannot disable core plugin %q; remove it from Disable()", name))
+				}
+				e.logger.Info("plugin disabled", "name", name, "category", category)
 				continue
 			}
-			// Core plugins cannot be disabled
-			if cat == CategoryCore && e.disabled[c.name] {
-				e.logger.Warn("cannot disable core plugin", "name", c.name)
+			if category == CategoryOptional && !e.explicitlyEnabled[name] {
+				e.logger.Debug("optional plugin not explicitly enabled, skipping", "name", name)
+				continue
 			}
 		}
 
+		registered[name] = c.name
 		e.plugins = append(e.plugins, p)
 		p.Register(e.router)
-		e.logger.Info("plugin registered", "name", p.Name())
+		e.logger.Info("plugin registered", "name", name, "category", category)
+	}
+
+	for name := range e.disabled {
+		if !seen[name] {
+			e.logger.Warn("Disable() names an unknown plugin; ignored", "name", name)
+		}
+	}
+	for name := range e.explicitlyEnabled {
+		if !seen[name] {
+			e.logger.Warn("Enable() names an unknown plugin; ignored", "name", name)
+		}
 	}
 }
 
-// hasExplicitFactory checks if a plugin was explicitly enabled via Enable().
-// This is used to determine if Optional plugins should be registered.
-func (e *Engine) hasExplicitFactory(name string) bool {
-	return e.explicitlyEnabled[name]
+// unnamedCandidate is the placeholder name for WithPlugin factories, whose real
+// name is only available after instantiation.
+const unnamedCandidate = "custom"
+
+// pluginCategory resolves the category of an instantiated plugin, preferring
+// its CategorizablePlugin declaration and defaulting to CategoryStandard.
+func pluginCategory(p Plugin) PluginCategory {
+	if cp, ok := p.(CategorizablePlugin); ok {
+		if cat := cp.Category(); cat != CategoryUnspecified {
+			return cat
+		}
+	}
+	return CategoryStandard
 }
 
 // Register adds a plugin to the engine.
 // The plugin's routes are immediately installed on the internal router.
-//
-// Name collisions are not checked here; they are detected at Build time
-// via discovery document collision detection.
+// Registering a plugin whose name is already present panics: duplicate names
+// make Enable()/Disable() ambiguous and would otherwise surface later as an
+// unrelated chi route collision.
 func (e *Engine) Register(p Plugin) {
+	if p == nil {
+		panic("storm: Register called with a nil plugin")
+	}
+	name := p.Name()
+	if name == "" {
+		panic("storm: Register called with a plugin that has an empty name")
+	}
+	for _, existing := range e.plugins {
+		if existing.Name() == name {
+			panic(fmt.Sprintf("storm: duplicate plugin name %q", name))
+		}
+	}
+
 	e.plugins = append(e.plugins, p)
 	p.Register(e.router)
-	e.logger.Info("plugin registered", "name", p.Name())
+	e.logger.Info("plugin registered", "name", name)
 }
 
 // Build finalizes the engine by:

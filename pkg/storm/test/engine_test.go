@@ -55,6 +55,29 @@ func (p *helloPlugin) Register(r chi.Router) {
 	})
 }
 
+// categorizedPlugin declares its category only via CategorizablePlugin, which
+// exercises the fallback path used by WithPlugin factories.
+type categorizedPlugin struct {
+	name     string
+	category storm.PluginCategory
+}
+
+func (p *categorizedPlugin) Name() string { return p.name }
+
+func (p *categorizedPlugin) Register(r chi.Router) {
+	r.Get("/"+p.name, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(p.name))
+	})
+}
+
+func (p *categorizedPlugin) Category() storm.PluginCategory {
+	return p.category
+}
+
+func (p *categorizedPlugin) Requires() []storm.StorageCapability {
+	return nil
+}
+
 // --- discovery contributor ---
 
 type contribPlugin struct {
@@ -286,5 +309,129 @@ func TestEngineEnableOptionalPlugin(t *testing.T) {
 		if rec.Body.String() != "test_optional" {
 			t.Errorf("body = %q, want %q", rec.Body.String(), "test_optional")
 		}
+	})
+}
+
+func TestEngine_DisableCorePluginPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic when disabling a core plugin")
+		}
+	}()
+
+	storm.New(&stubStorage{}, shared.StaticIssuer("https://example.com"),
+		storm.WithPlugins(storm.NamedPluginFactory{
+			Name:     "core_test",
+			Priority: 1,
+			Category: storm.CategoryCore,
+			Factory: func(*storm.PluginContext) storm.Plugin {
+				return &categorizedPlugin{name: "core_test", category: storm.CategoryCore}
+			},
+		}),
+		storm.Disable("core_test"),
+	)
+}
+
+func TestEngine_DisableCorePluginDeclaredByPluginPanics(t *testing.T) {
+	// No descriptor category: the engine must resolve it from the plugin.
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic when disabling a core plugin that only declares it via CategorizablePlugin")
+		}
+	}()
+
+	storm.New(&stubStorage{}, shared.StaticIssuer("https://example.com"),
+		storm.WithPlugin(func(*storm.PluginContext) storm.Plugin {
+			return &categorizedPlugin{name: "core_anon", category: storm.CategoryCore}
+		}),
+		storm.Disable("core_anon"),
+	)
+}
+
+func TestEngine_DisableUsesResolvedPluginName(t *testing.T) {
+	// WithPlugin factories share the "custom" placeholder, so Disable must match
+	// the instantiated plugin's own name rather than the placeholder.
+	engine := storm.New(&stubStorage{}, shared.StaticIssuer("https://example.com"),
+		storm.WithPlugin(func(*storm.PluginContext) storm.Plugin {
+			return &categorizedPlugin{name: "anon_disabled", category: storm.CategoryStandard}
+		}),
+		storm.Disable("anon_disabled"),
+	)
+
+	if got := len(engine.Plugins()); got != 0 {
+		t.Fatalf("disabled anonymous plugin was registered (plugins=%d)", got)
+	}
+}
+
+func TestEngine_OptionalAnonymousPluginEnabledByPluginName(t *testing.T) {
+	factory := func(*storm.PluginContext) storm.Plugin {
+		return &optionalPlugin{name: "anon_optional"}
+	}
+
+	t.Run("skipped by default", func(t *testing.T) {
+		engine := storm.New(&stubStorage{}, shared.StaticIssuer("https://example.com"),
+			storm.WithPlugin(factory))
+		if got := len(engine.Plugins()); got != 0 {
+			t.Fatalf("optional plugin registered without Enable() (plugins=%d)", got)
+		}
+	})
+
+	t.Run("enabled by plugin name", func(t *testing.T) {
+		engine := storm.New(&stubStorage{}, shared.StaticIssuer("https://example.com"),
+			storm.WithPlugin(factory),
+			storm.Enable("anon_optional"))
+		if got := len(engine.Plugins()); got != 1 {
+			t.Fatalf("Enable(plugin name) did not register the plugin (plugins=%d)", got)
+		}
+	})
+}
+
+func TestEngine_DuplicatePluginNamePanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic on duplicate plugin names")
+		}
+	}()
+
+	storm.New(&stubStorage{}, shared.StaticIssuer("https://example.com"),
+		storm.WithPlugin(func(*storm.PluginContext) storm.Plugin {
+			return &categorizedPlugin{name: "dup", category: storm.CategoryStandard}
+		}),
+		storm.WithPlugin(func(*storm.PluginContext) storm.Plugin {
+			return &categorizedPlugin{name: "dup", category: storm.CategoryStandard}
+		}),
+	)
+}
+
+func TestEngine_UnknownDisableNameIsIgnored(t *testing.T) {
+	// A name that is compiled out (e.g. an EE build tag) is not an error.
+	engine := storm.New(&stubStorage{}, shared.StaticIssuer("https://example.com"),
+		storm.WithPlugins(storm.NamedPluginFactory{
+			Name:     "present",
+			Priority: 1,
+			Factory: func(*storm.PluginContext) storm.Plugin {
+				return &categorizedPlugin{name: "present", category: storm.CategoryStandard}
+			},
+		}),
+		storm.Disable("compiled_out"),
+	)
+
+	if got := len(engine.Plugins()); got != 1 {
+		t.Fatalf("unexpected plugin count after unknown Disable name: %d", got)
+	}
+}
+
+func TestRegisterPlugin_DuplicateNamePanics(t *testing.T) {
+	storm.RegisterPlugin("dup_register_test", 1, func(*storm.PluginContext) storm.Plugin {
+		return &helloPlugin{}
+	})
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic on duplicate RegisterPlugin")
+		}
+	}()
+	storm.RegisterPlugin("dup_register_test", 1, func(*storm.PluginContext) storm.Plugin {
+		return &helloPlugin{}
 	})
 }

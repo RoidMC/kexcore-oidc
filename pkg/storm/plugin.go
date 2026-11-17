@@ -19,9 +19,14 @@ import (
 type PluginCategory int
 
 const (
+	// CategoryUnspecified is the zero value. It means the registration entry
+	// does not declare a category; the Engine asks the instantiated plugin via
+	// CategorizablePlugin and falls back to CategoryStandard.
+	CategoryUnspecified PluginCategory = iota
+
 	// CategoryCore plugins are always registered and cannot be disabled.
 	// They form the minimum viable OIDC server (authorization, token, keys, discovery).
-	CategoryCore PluginCategory = iota
+	CategoryCore
 
 	// CategoryStandard plugins are registered by default when their Storage
 	// dependencies are satisfied. Users can disable them via Disable().
@@ -31,6 +36,38 @@ const (
 	// by the user via WithPlugin() or specific option functions.
 	CategoryOptional
 )
+
+// String returns the category name for logs and error messages.
+func (c PluginCategory) String() string {
+	switch c {
+	case CategoryCore:
+		return "core"
+	case CategoryStandard:
+		return "standard"
+	case CategoryOptional:
+		return "optional"
+	default:
+		return "unspecified"
+	}
+}
+
+// PluginDescriptor declares a plugin at registration time.
+//
+// Declaring the category here lets the Engine decide whether a plugin is
+// disabled or opt-in before instantiating it. Category is optional: the zero
+// value (CategoryUnspecified) defers to the plugin's CategorizablePlugin
+// implementation, which is the only option for plugins registered directly
+// with WithPlugin.
+type PluginDescriptor struct {
+	// Name is the plugin identifier. Must match Plugin.Name().
+	Name string
+
+	// Priority controls registration order; lower registers first.
+	Priority int
+
+	// Category is the registration category. Optional.
+	Category PluginCategory
+}
 
 // Plugin is the fundamental unit of a StormEngine server.
 // Each plugin owns its routes, request parsing, business logic,
