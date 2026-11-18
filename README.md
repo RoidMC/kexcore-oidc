@@ -161,7 +161,7 @@ Plugin-based OIDC server framework.
 | Pairwise Subject | `pairwise` | OpenID Connect Core 1.0, [Section 8.1][26] | ✅ |
 | ID Token 签名 (RSA/ECDSA/EdDSA/HMAC) | `token` | [RFC 7515][27] + [RFC 7518][34] | ✅ RS256/384/512, PS256/384/512, ES256/384/512, EdDSA, HS256/384/512 |
 | ID Token 签名 (SM2/SM9 国密) | `token` | [GM/T 0125.1-2022] | ✅ `SGD_SM3_SM2` (SM2+SM3), `SGD_SM3_SM9` (SM9 identity-based) |
-| JWE ID Token Encryption | `token` | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022][GM/T 0125.3-2022] | ✅ Key wrapping: `dir`, `A128KW`/`A192KW`/`A256KW`, `A128GCMKW`/`A192GCMKW`/`A256GCMKW`, `ECDH-ES`/`ECDH-ES+A128KW`/`+A192KW`/`+A256KW`, `SGD_SM2_3` (SM2), `SGD_SM9_3` (SM9). Content encryption: `A128GCM`/`A192GCM`/`A256GCM`, `A128CBC-HS256`/`A192CBC-HS384`/`A256CBC-HS512`, `SGD_SM4_GCM`, `SGD_SM4_CCM` |
+| JWE ID Token Encryption | `token` | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022][GM/T 0125.3-2022] | ✅ Key wrapping: `dir`, `A128KW`/`A192KW`/`A256KW`, `A128GCMKW`/`A192GCMKW`/`A256GCMKW`, `ECDH-ES`/`ECDH-ES+A128KW`/`+A192KW`/`+A256KW`, `SGD_SM2_3` (SM2), `SGD_SM9_3` (SM9). Content encryption: `A128GCM`/`A192GCM`/`A256GCM`, `A128CBC-HS256`/`A192CBC-HS384`/`A256CBC-HS512`, `SGD_SM4_GCM`/`SGD_SM4_CCM` (SM4 content encryption only with `dir`/`SGD_SM2_3`/`SGD_SM9_3`) |
 | OAuth 2.1 合规 Discovery | `discovery` | OAuth 2.1 | ✅ |
 | Front-Channel Logout | — | OIDC Front-Channel | ❌ 不实现（纯后端 API 不需要） |
 | Session Management (iframe) | — | OIDC Session Management §3 | ❌ 不实现（纯后端 API 不需要） |
@@ -219,6 +219,8 @@ StormEngine 实现 [FAPI 1.0 Advanced][35] 与 [FAPI 2.0 Security Profile][36] �
 | JARM (JWT Secured Authorization Response) | [RFC 9101][28] | ✅ FAPI 1.0 推荐的响应模式 |
 | `iss` in Authorization Response | [RFC 9207][29] | ✅ Mix-up defense |
 | Private Key JWT Client Auth | [RFC 7523 §2.2][7] | ✅ FAPI 推荐的 client 认证方式 |
+| Client Secret JWT Client Auth | [RFC 7523 §2.2][7] | ✅ HS256/384/512，客户端需实现 `shared.ClientSecretProvider` |
+| Claims Parameter | [OIDC Core §5.5][7] | ✅ 执行 `id_token` / `userinfo` 的 `essential` / `value` / `values`；存储需实现 `storm.ClaimsRequestStore` |
 | Authorization Code + PKCE | [RFC 7636][8] + [FAPI 2.0][36] | ✅ S256 强制 |
 
 > **Known Conformance Suite Issues:** StormEngine implements mTLS client certificate reading per [RFC 8705 §2][11] (from `tls.PeerCertificates`). The OIDF Conformance Suite has a bug where `env.mapKey("mutual_tls_authentication")` does not prevent the HTTP client from sending certificates in the TLS handshake, causing `ensure-holder-of-key-required` and `refresh-token` tests to fail for `client_auth_type=mtls + sender_constrain=dpop` variants. This affects any implementation that reads certificates directly from the TLS layer. See [example/testsuite/docs/issues.md](example/testsuite/docs/issues.md) for details and proposed fix.
@@ -246,12 +248,12 @@ StormEngine 实现 [FAPI 1.0 Advanced][35] 与 [FAPI 2.0 Security Profile][36] �
 | PKCE | [RFC 7636][8] | ✅ |
 | Token Exchange | [RFC 8693][9] | ✅ |
 | Device Authorization | [RFC 8628][10] | ✅ |
-| JWE ID Token Encryption | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022] | ✅ `dir` mode (SM4-GCM/SM4-CCM/AES-GCM/AES-CBC) |
+| JWE ID Token Encryption | [JWE (RFC 7516)][13] + [GM/T 0125.3-2022] | ✅ `dir` / `SGD_SM2_3` / `SGD_SM9_3` with SM4-GCM/SM4-CCM, plus `dir` with AES-GCM/AES-CBC |
 | Back-Channel Logout | OpenID Connect [Back-Channel Logout][12] 1.0 | ✅ |
 | DPoP | [RFC 9449][14] | planned |
 | Auto-refresh | Token lifecycle management | planned |
 
-> **Note on Chinese Commercial Cryptography (国密):** This library supports SM2, SM3, SM4, and SM9 algorithms via the `SGD_SM3_SM2` (SM2+SM3 signature), `SGD_SM3_SM9` (SM9 identity-based signature), `SGD_SM2_3` (SM2 key wrapping), `SGD_SM9_3` (SM9 key wrapping), and `SGD_SM4_GCM`/`SGD_SM4_CCM` (SM4 content encryption) identifiers per [GM/T 0125.1-2022][GM/T 0125.1-2022] and [GM/T 0125.3-2022]. These are **not defined in RFC 7518** and therefore are **not recognized by the OpenID Foundation (OIDF) Conformance Test Suite**. When running OIDF certification tests, disable national-crypto algorithms by setting the environment variable `SIGNING_ALGORITHMS=RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512,EdDSA` so that the JWKS endpoint only returns standard JWKs.
+> **Note on Chinese Commercial Cryptography (国密):** This library supports SM2, SM3, SM4, and SM9 algorithms via the `SGD_SM3_SM2` (SM2+SM3 signature), `SGD_SM3_SM9` (SM9 identity-based signature), `SGD_SM2_3` (SM2 key wrapping), `SGD_SM9_3` (SM9 key wrapping), and `SGD_SM4_GCM`/`SGD_SM4_CCM` (SM4 content encryption, valid with `dir`/SM2/SM9 only) identifiers per [GM/T 0125.1-2022][GM/T 0125.1-2022] and [GM/T 0125.3-2022]. These are **not defined in RFC 7518** and therefore are **not recognized by the OpenID Foundation (OIDF) Conformance Test Suite**. When running OIDF certification tests, disable national-crypto algorithms by setting the environment variable `SIGNING_ALGORITHMS=RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512,EdDSA` so that the JWKS endpoint only returns standard JWKs.
 
 [1]: https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth "3.1. Authentication using the Authorization Code Flow"
 [2]: https://openid.net/specs/openid-connect-core-1_0.html#ImplicitFlowAuth "3.2. Authentication using the Implicit Flow"

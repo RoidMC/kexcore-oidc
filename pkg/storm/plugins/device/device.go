@@ -212,6 +212,18 @@ func (p *Plugin) handleDeviceApproval(w http.ResponseWriter, r *http.Request) {
 	userCode := strings.ToUpper(strings.TrimSpace(r.Form.Get("user_code")))
 	action := r.Form.Get("action")
 	subject := strings.TrimSpace(r.Form.Get("subject"))
+	// Prefer the authenticated-session resolver: the form field alone is
+	// client-supplied and must not be trusted when a resolver is configured.
+	if p.subjectResolver != nil {
+		resolved, err := p.subjectResolver.DeviceApprovalSubject(r)
+		if err != nil {
+			shared.WriteError(w, r, protocol.DefaultToServerError(err, "cannot resolve authenticated subject"), nil)
+			return
+		}
+		if resolved != "" {
+			subject = resolved
+		}
+	}
 
 	if userCode == "" {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("user_code is required"), nil)

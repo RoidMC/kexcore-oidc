@@ -237,8 +237,72 @@ func TestSM2EncryptDecryptJWE_UnicodePayload(t *testing.T) {
 	}
 }
 
-// --- SM9 JWE tests ---
+// --- SM2 JWE content encryption selection (registry path) ---
 
+func TestEncryptJWE_SM2_CCM(t *testing.T) {
+	privateKey, _ := gm.SM2GenerateKey()
+	plaintext := []byte("SM2 JWE with SM4-CCM content encryption")
+
+	compact, err := crypto.EncryptJWE(plaintext, &privateKey.PublicKey, crypto.SGD_SM2_3, crypto.SGD_SM4_CCM)
+	if err != nil {
+		t.Fatalf("EncryptJWE SM2+CCM failed: %v", err)
+	}
+
+	_, header, err := crypto.ParseJWECompact(compact)
+	if err != nil {
+		t.Fatalf("ParseJWECompact failed: %v", err)
+	}
+	if header.Encryption != crypto.SGD_SM4_CCM {
+		t.Errorf("expected enc=%s, got %s", crypto.SGD_SM4_CCM, header.Encryption)
+	}
+
+	decrypted, err := crypto.DecryptJWE(compact, privateKey)
+	if err != nil {
+		t.Fatalf("DecryptJWE SM2+CCM failed: %v", err)
+	}
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Error("SM2+CCM round-trip mismatch")
+	}
+}
+
+func TestEncryptJWE_SM9_CCM(t *testing.T) {
+	masterKey, err := gm.SM9GenerateEncryptMasterKey()
+	if err != nil {
+		t.Fatalf("SM9GenerateEncryptMasterKey failed: %v", err)
+	}
+	uid := []byte("ccm-user@example.com")
+	userKey, err := gm.SM9GenerateEncryptUserKey(masterKey, uid)
+	if err != nil {
+		t.Fatalf("SM9GenerateEncryptUserKey failed: %v", err)
+	}
+	plaintext := []byte("SM9 JWE with SM4-CCM content encryption")
+
+	encKey := &crypto.SM9MasterPublicKey{PublicKey: masterKey.PublicKey(), UID: uid}
+	compact, err := crypto.EncryptJWE(plaintext, encKey, crypto.SGD_SM9_3, crypto.SGD_SM4_CCM)
+	if err != nil {
+		t.Fatalf("EncryptJWE SM9+CCM failed: %v", err)
+	}
+
+	decrypted, err := crypto.DecryptJWE(compact, &crypto.SM9DecryptKey{PrivateKey: userKey, UID: uid})
+	if err != nil {
+		t.Fatalf("DecryptJWE SM9+CCM failed: %v", err)
+	}
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Error("SM9+CCM round-trip mismatch")
+	}
+}
+
+func TestEncryptJWE_AESKW_SM4Rejected(t *testing.T) {
+	key := make([]byte, 16)
+	if _, err := crypto.EncryptJWE([]byte("payload"), key, "A128KW", crypto.SGD_SM4_CCM); err == nil {
+		t.Error("A128KW + SGD_SM4_CCM should be rejected")
+	}
+	if _, err := crypto.EncryptJWE([]byte("payload"), key, "A128KW", crypto.SGD_SM4_GCM); err == nil {
+		t.Error("A128KW + SGD_SM4_GCM should be rejected")
+	}
+}
+
+// --- SM9 JWE tests ---
 func TestSM9EncryptDecryptJWE_GCM(t *testing.T) {
 	masterKey, err := gm.SM9GenerateEncryptMasterKey()
 	if err != nil {

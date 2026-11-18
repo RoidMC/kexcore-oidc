@@ -20,6 +20,21 @@ import (
 // storm.DCRStore (Dynamic Client Registration)
 // =================================================================
 
+// isFAPIRegistration infers FAPI 2.0 profile usage from signed request objects
+// (signed_non_repudiation). JARM-only clients keep normal OIDC behaviour even
+// when they register authorization_signed_response_alg.
+func isFAPIRegistration(req *storm.RegistrationRequest) bool {
+	switch req.RequestObjectSigningAlg {
+	case "PS256", "ES256", "EdDSA", "Ed25519":
+		return true
+	}
+	return false
+}
+
+// DynamicRegistrationOpen keeps the demo server's registration endpoint open.
+// Real deployments should implement InitialAccessTokenValidator instead.
+func (s *Storage) DynamicRegistrationOpen() bool { return true }
+
 func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest, clientID, clientSecret, accessToken, uri string) (*storm.ClientRegistration, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -85,29 +100,34 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 	}
 
 	client := &Client{
-		id:                        clientID,
-		secret:                    clientSecret,
-		redirectURIs:              req.RedirectURIs,
-		authMethod:                authMethod,
-		loginURLFn:                defaultLoginURL,
-		responseTypes:             responseTypes,
-		grantTypes:                grantTypes,
-		postLogoutRedirectURIs:    req.PostLogoutRedirectURIs,
-		backChannelLogoutURI:      req.BackChannelLogoutURI,
-		logoURI:                   req.LogoURI,
-		policyURI:                 req.PolicyURI,
-		tosURI:                    req.TOSURI,
-		sectorIdentifierURI:       req.SectorIdentifierURI,
-		idTokenEncryptionAlg:      req.IDTokenEncryptedResponseAlg,
-		idTokenEncryptionEnc:      req.IDTokenEncryptedResponseEnc,
-		clientEncryptionKey:       encKey,
-		clientJWKS:                sigKeys,
-		jwksURI:                   req.JWKSURI,
-		userInfoSignedResponseAlg: req.UserInfoSignedResponseAlg,
-		idTokenSignedResponseAlg:  req.IDTokenSignedResponseAlg,
-		requestObjectSigningAlg:   req.RequestObjectSigningAlg,
-		requireDPoP:               req.RequireDPoP,
-		requireMtls:               req.RequireMtls,
+		id:                             clientID,
+		secret:                         clientSecret,
+		redirectURIs:                   req.RedirectURIs,
+		authMethod:                     authMethod,
+		loginURLFn:                     defaultLoginURL,
+		responseTypes:                  responseTypes,
+		grantTypes:                     grantTypes,
+		postLogoutRedirectURIs:         req.PostLogoutRedirectURIs,
+		backChannelLogoutURI:           req.BackChannelLogoutURI,
+		logoURI:                        req.LogoURI,
+		policyURI:                      req.PolicyURI,
+		tosURI:                         req.TOSURI,
+		sectorIdentifierURI:            req.SectorIdentifierURI,
+		idTokenEncryptionAlg:           req.IDTokenEncryptedResponseAlg,
+		idTokenEncryptionEnc:           req.IDTokenEncryptedResponseEnc,
+		clientEncryptionKey:            encKey,
+		clientJWKS:                     sigKeys,
+		jwksURI:                        req.JWKSURI,
+		userInfoSignedResponseAlg:      req.UserInfoSignedResponseAlg,
+		idTokenSignedResponseAlg:       req.IDTokenSignedResponseAlg,
+		authorizationSignedResponseAlg: req.AuthorizationSignedResponseAlg,
+		requestObjectSigningAlg:        req.RequestObjectSigningAlg,
+		requireDPoP:                    req.RequireDPoP,
+		requireMtls:                    req.RequireMtls,
+		// FAPI 2.0 clients request PS256/ES256/EdDSA signed request objects;
+		// enable profile restrictions so JARM defaults to an alg the profile
+		// permits instead of RS256.
+		fapiProfile: isFAPIRegistration(req),
 	}
 	s.clients[clientID] = client
 
@@ -118,37 +138,38 @@ func (s *Storage) CreateClient(_ context.Context, req *storm.RegistrationRequest
 	}
 
 	reg := &storm.ClientRegistration{
-		ClientID:                     clientID,
-		ClientSecret:                 clientSecret,
-		RegistrationAccessToken:      accessToken,
-		RegistrationClientURI:        uri,
-		ClientIDIssuedAt:             time.Now().Unix(),
-		ClientSecretExpiresAt:        0,
-		ApplicationType:              req.ApplicationType,
-		ClientName:                   req.ClientName,
-		RedirectURIs:                 req.RedirectURIs,
-		ResponseTypes:                req.ResponseTypes,
-		GrantTypes:                   grantTypesStr,
-		TokenEndpointAuthMethod:      req.TokenEndpointAuthMethod,
-		Scope:                        req.Scope,
-		JWKSURI:                      req.JWKSURI,
-		JWKS:                         req.JWKS,
-		PostLogoutRedirectURIs:       req.PostLogoutRedirectURIs,
-		BackChannelLogoutURI:         req.BackChannelLogoutURI,
-		LogoURI:                      req.LogoURI,
-		PolicyURI:                    req.PolicyURI,
-		TOSURI:                       req.TOSURI,
-		SectorIdentifierURI:          req.SectorIdentifierURI,
-		InitiateLoginURI:             req.InitiateLoginURI,
-		IDTokenEncryptedResponseAlg:  req.IDTokenEncryptedResponseAlg,
-		IDTokenEncryptedResponseEnc:  req.IDTokenEncryptedResponseEnc,
-		IDTokenSignedResponseAlg:     req.IDTokenSignedResponseAlg,
-		UserInfoSignedResponseAlg:    req.UserInfoSignedResponseAlg,
-		UserInfoEncryptedResponseAlg: req.UserInfoEncryptedResponseAlg,
-		UserInfoEncryptedResponseEnc: req.UserInfoEncryptedResponseEnc,
-		RequestObjectSigningAlg:      req.RequestObjectSigningAlg,
-		RequireDPoP:                  req.RequireDPoP,
-		RequireMtls:                  req.RequireMtls,
+		ClientID:                       clientID,
+		ClientSecret:                   clientSecret,
+		RegistrationAccessToken:        accessToken,
+		RegistrationClientURI:          uri,
+		ClientIDIssuedAt:               time.Now().Unix(),
+		ClientSecretExpiresAt:          0,
+		ApplicationType:                req.ApplicationType,
+		ClientName:                     req.ClientName,
+		RedirectURIs:                   req.RedirectURIs,
+		ResponseTypes:                  req.ResponseTypes,
+		GrantTypes:                     grantTypesStr,
+		TokenEndpointAuthMethod:        req.TokenEndpointAuthMethod,
+		Scope:                          req.Scope,
+		JWKSURI:                        req.JWKSURI,
+		JWKS:                           req.JWKS,
+		PostLogoutRedirectURIs:         req.PostLogoutRedirectURIs,
+		BackChannelLogoutURI:           req.BackChannelLogoutURI,
+		LogoURI:                        req.LogoURI,
+		PolicyURI:                      req.PolicyURI,
+		TOSURI:                         req.TOSURI,
+		SectorIdentifierURI:            req.SectorIdentifierURI,
+		InitiateLoginURI:               req.InitiateLoginURI,
+		IDTokenEncryptedResponseAlg:    req.IDTokenEncryptedResponseAlg,
+		IDTokenEncryptedResponseEnc:    req.IDTokenEncryptedResponseEnc,
+		IDTokenSignedResponseAlg:       req.IDTokenSignedResponseAlg,
+		UserInfoSignedResponseAlg:      req.UserInfoSignedResponseAlg,
+		AuthorizationSignedResponseAlg: req.AuthorizationSignedResponseAlg,
+		UserInfoEncryptedResponseAlg:   req.UserInfoEncryptedResponseAlg,
+		UserInfoEncryptedResponseEnc:   req.UserInfoEncryptedResponseEnc,
+		RequestObjectSigningAlg:        req.RequestObjectSigningAlg,
+		RequireDPoP:                    req.RequireDPoP,
+		RequireMtls:                    req.RequireMtls,
 	}
 
 	// Store registration data for later lookup

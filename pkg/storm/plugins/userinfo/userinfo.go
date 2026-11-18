@@ -7,6 +7,7 @@ package userinfo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -240,34 +241,48 @@ func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// OIDC Core §5.5: enforce claims.userinfo when the storage can associate the
+	// access token with its authorization request. Essential claims that are
+	// unavailable or do not match abort the response instead of returning a
+	// UserInfo document that does not satisfy the client's request.
+	if crStore, ok := p.store.(storm.ClaimsRequestStore); ok {
+		if cr, err := crStore.GetClaimsRequestByToken(r.Context(), tokenID); err == nil && cr != nil && len(cr.UserInfo) > 0 {
+			if err := applyUserinfoClaimsRequest(userInfo, cr.UserInfo); err != nil {
+				shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("%s", err.Error()), nil)
+				return
+			}
+		}
+	}
+
 	// Note: Scope-based claim filtering is the responsibility of the storage
 	// implementation in SetUserinfoFromToken. The plugin does not enforce
 	// filtering here — it serializes whatever the storage populates.
 
-	// OIDC Core §5.3.2: return signed JWT when:
-	// 1. Client registered userinfo_signed_response_alg (MUST), OR
-	// 2. Accept header requests application/jwt (MAY)
-	// AND signing keys + client lookup are available.
-	shouldReturnJWT := false
-	if p.clientLookup != nil && p.keyStore != nil {
-		clientID, _ := p.clientLookup.TokenClientID(r.Context(), tokenID)
-		// Check client's registered algorithm
-		if clientID != "" && p.responseAlgLookup != nil {
+	// OIDC Core §5.3.2: a client that registered userinfo_signed_response_alg
+	// MUST receive a signed JWT. Failing to sign is then an error — falling
+	// back to plain JSON would hand the client an unsigned document it
+	// explicitly configured against. A signed response requested only through
+	// the Accept header stays best-effort.
+	requireJWT := false
+	if p.clientLookup != nil && p.responseAlgLookup != nil {
+		if clientID, _ := p.clientLookup.TokenClientID(r.Context(), tokenID); clientID != "" {
 			if alg, err := p.responseAlgLookup.UserInfoResponseAlg(r.Context(), clientID); err == nil && alg != "" {
-				shouldReturnJWT = true
+				requireJWT = true
 			}
 		}
-		// Check Accept header
-		if !shouldReturnJWT && strings.Contains(r.Header.Get("Accept"), "application/jwt") {
-			shouldReturnJWT = true
-		}
 	}
-	if shouldReturnJWT {
-		if err := p.writeJWTResponse(w, r, userInfo, tokenID); err != nil {
-			slog.Default().Warn("userinfo JWT response failed, falling back to JSON", "error", err)
-		} else {
+	acceptJWT := strings.Contains(r.Header.Get("Accept"), "application/jwt")
+	if requireJWT || (acceptJWT && p.keyStore != nil) {
+		err := p.writeJWTResponse(w, r, userInfo, tokenID)
+		if err == nil {
 			return
 		}
+		if requireJWT {
+			slog.Default().Error("userinfo: client requires a signed response but signing failed", "error", err)
+			shared.WriteError(w, r, protocol.ErrServerError().WithDescription("failed to sign userinfo response"), nil)
+			return
+		}
+		slog.Default().Warn("userinfo JWT response failed, falling back to JSON", "error", err)
 	}
 
 	shared.SetUserInfoHeaders(w)
@@ -303,6 +318,12 @@ func extractAccessToken(r *http.Request) string {
 //   - exp, iat: standard time claims
 //   - All UserInfo claims
 func (p *Plugin) writeJWTResponse(w http.ResponseWriter, r *http.Request, userInfo *protocol.UserInfo, tokenID string) error {
+	if p.keyStore == nil {
+		return ErrNoKeyStore
+	}
+	if p.clientLookup == nil {
+		return ErrNoClientID
+	}
 	issuer := shared.IssuerFromContext(r.Context())
 	if issuer == "" {
 		return ErrNoIssuer
@@ -318,15 +339,21 @@ func (p *Plugin) writeJWTResponse(w http.ResponseWriter, r *http.Request, userIn
 		return err
 	}
 
-	// If the client specifies a preferred userinfo signing algorithm, try to
-	// use a matching signing key (OIDC Core §5.3.2: userinfo_signed_response_alg).
+	// If the client specifies a preferred userinfo signing algorithm, the
+	// response MUST be signed with it (OIDC Core §5.3.2). Silently using a
+	// different key would violate the registration, so a missing key is an
+	// error.
 	if p.responseAlgLookup != nil {
 		if alg, err := p.responseAlgLookup.UserInfoResponseAlg(r.Context(), clientID); err == nil && alg != "" {
-			if algStore, ok := p.keyStore.(storm.SigningKeyByAlgProvider); ok {
-				if algKey, err := algStore.SigningKeyByAlg(r.Context(), alg); err == nil {
-					signingKey = algKey
-				}
+			algStore, ok := p.keyStore.(storm.SigningKeyByAlgProvider)
+			if !ok {
+				return fmt.Errorf("userinfo: keystore cannot select a signing key for %q", alg)
 			}
+			algKey, err := algStore.SigningKeyByAlg(r.Context(), alg)
+			if err != nil {
+				return fmt.Errorf("userinfo: no signing key for %q: %w", alg, err)
+			}
+			signingKey = algKey
 		}
 	}
 
@@ -423,10 +450,11 @@ func determineAlg(alg string) jwa.SignatureAlgorithm {
 	return jwa.RS256()
 }
 
-// sentinel errors for JWT response fallback.
+// sentinel errors for JWT response failures.
 var (
 	ErrNoIssuer   = &userInfoJWTError{"issuer not found in context"}
 	ErrNoClientID = &userInfoJWTError{"client_id not found for token"}
+	ErrNoKeyStore = &userInfoJWTError{"signing key store not configured"}
 )
 
 type userInfoJWTError struct {
@@ -434,3 +462,54 @@ type userInfoJWTError struct {
 }
 
 func (e *userInfoJWTError) Error() string { return e.msg }
+
+// standardUserinfoClaims lists the claims represented as typed fields on
+// protocol.UserInfo. Any other key is carried in UserInfo.Claims.
+var standardUserinfoClaims = map[string]struct{}{
+	"sub": {}, "name": {}, "given_name": {}, "family_name": {},
+	"middle_name": {}, "nickname": {}, "preferred_username": {},
+	"profile": {}, "picture": {}, "website": {}, "email": {},
+	"email_verified": {}, "gender": {}, "birthdate": {}, "zoneinfo": {},
+	"locale": {}, "phone_number": {}, "phone_number_verified": {},
+	"address": {}, "updated_at": {},
+}
+
+// applyUserinfoClaimsRequest enforces claims.userinfo on an assembled UserInfo
+// document. Non-essential claims whose value does not match are removed;
+// essential claims that are missing or do not match return an error.
+func applyUserinfoClaimsRequest(userInfo *protocol.UserInfo, requested map[string]*protocol.ClaimRequest) error {
+	claims := make(map[string]any)
+	if data, err := json.Marshal(userInfo); err == nil {
+		_ = json.Unmarshal(data, &claims)
+	}
+	for k, v := range userInfo.Claims {
+		claims[k] = v
+	}
+
+	if err := protocol.ApplyClaimsRequest(claims, requested); err != nil {
+		return err
+	}
+	// "sub" is mandatory in every UserInfo response (OIDC Core §5.3.2); a
+	// voluntary value mismatch must not remove it.
+	claims["sub"] = userInfo.Subject
+
+	data, err := json.Marshal(claims)
+	if err != nil {
+		return err
+	}
+	var rebuilt protocol.UserInfo
+	if err := json.Unmarshal(data, &rebuilt); err != nil {
+		return err
+	}
+	for k, v := range claims {
+		if _, standard := standardUserinfoClaims[k]; !standard {
+			if rebuilt.Claims == nil {
+				rebuilt.Claims = make(map[string]any)
+			}
+			rebuilt.Claims[k] = v
+		}
+	}
+
+	*userInfo = rebuilt
+	return nil
+}

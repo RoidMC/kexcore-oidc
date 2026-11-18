@@ -26,6 +26,7 @@ type Plugin struct {
 	deviceTmpl         *template.Template
 	maxUserCodeRetries int
 	csrfHandler        *httputil.CookieHandler
+	subjectResolver    DeviceSubjectResolver
 	endpointConfigs    shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
@@ -49,6 +50,18 @@ type Config struct {
 	// If nil, CSRF protection is disabled (not recommended for production).
 	// Uses pkg/util/http CookieHandler for secure cookie handling.
 	CSRFKey []byte
+	// SubjectResolver resolves the authenticated user approving the device.
+	// When set it takes precedence over the "subject" form field, so the
+	// approval is bound to a real session instead of client-supplied input.
+	SubjectResolver DeviceSubjectResolver
+}
+
+// DeviceSubjectResolver resolves the authenticated subject for a device
+// approval. Deployments SHOULD implement it (or place the verification page
+// behind their own authentication middleware) so approvals cannot be forged by
+// an anonymous visitor.
+type DeviceSubjectResolver interface {
+	DeviceApprovalSubject(r *http.Request) (string, error)
 }
 
 const defaultMaxUserCodeRetries = 100
@@ -72,6 +85,7 @@ func NewWithConfig(cfg Config) *Plugin {
 		interval:           cfg.Interval,
 		deviceTmpl:         deviceTmpl,
 		maxUserCodeRetries: cfg.MaxUserCodeRetries,
+		subjectResolver:    cfg.SubjectResolver,
 	}
 	if cfg.DeviceTemplate != nil {
 		p.deviceTmpl = cfg.DeviceTemplate

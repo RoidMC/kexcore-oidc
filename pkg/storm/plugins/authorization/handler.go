@@ -118,6 +118,23 @@ func (p *Plugin) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if err := p.applyPARRequest(r.Context(), authReq); err != nil {
+				if errors.Is(err, storm.ErrPushedAuthRequestUsed) && authReq.RedirectURI != "" {
+					// request_uri reuse: redirect the error to the client's
+					// registered redirect_uri (validated at PAR time). JARM
+					// responses still need the client ID as audience and the
+					// client's preferred signing algorithm.
+					if authReq.ClientID != "" {
+						r = r.WithContext(contextWithJARMClientID(r.Context(), authReq.ClientID))
+						if client, cerr := p.clientStore.GetClientByClientID(r.Context(), authReq.ClientID); cerr == nil {
+							if alg := shared.ResolvePreferredSigningAlg(client); alg != "" {
+								r = r.WithContext(shared.ContextWithJARMPreferredAlg(r.Context(), alg))
+							}
+						}
+					}
+					writeAuthError(w, r, authReq.RedirectURI, authReq.State,
+						resolveResponseMode(authReq.ResponseMode, authReq.ResponseType), err)
+					return
+				}
 				shared.WriteError(w, r, err, nil)
 				return
 			}
@@ -488,6 +505,17 @@ func (p *Plugin) handleCallback(w http.ResponseWriter, r *http.Request) {
 func (p *Plugin) handleAccept(w http.ResponseWriter, r *http.Request) {
 	ctx, span := shared.TracerSpan(r.Context(), p.tracer, "authorization.accept")
 	defer span.End()
+
+	// The completion endpoint trusts its caller: whoever can reach it can
+	// finish any pending authorization request with any subject. Deployments
+	// must either keep it behind authenticated internal routing or provide a
+	// CompletionAuthorizer.
+	if p.completionAuthorizer != nil {
+		if err := p.completionAuthorizer.AuthorizeAuthRequestCompletion(r); err != nil {
+			shared.WriteError(w, r, protocol.ErrAccessDenied().WithDescription("completion request is not authorized"), nil)
+			return
+		}
+	}
 
 	var req struct {
 		AuthRequestID string `json:"auth_request_id"`

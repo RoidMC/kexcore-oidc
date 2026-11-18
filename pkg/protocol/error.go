@@ -209,6 +209,12 @@ const (
 	// RFC 9101 §6.3 / OIDC Core §6.1
 	InvalidRequestObject errorType = "invalid_request_object"
 
+	// ---- RFC 9126 Pushed Authorization Requests / FAPI 2.0 ----
+
+	// InvalidRequestURI: The request_uri is unknown, expired or has already
+	// been used. FAPI 2.0 Security Profile §5.3.2 / RFC 9126 §2.2
+	InvalidRequestURI errorType = "invalid_request_uri"
+
 	// ---- RFC 8628 Device Authorization Grant (§3.5) ----
 
 	// AuthorizationPending: The authorization request is still pending as the
@@ -327,6 +333,11 @@ var (
 
 	ErrInvalidRequestObject = func() *Error {
 		return &Error{ErrorType: InvalidRequestObject}
+	}
+
+	// ErrInvalidRequestURI reports an unknown, expired or reused request_uri.
+	ErrInvalidRequestURI = func() *Error {
+		return &Error{ErrorType: InvalidRequestURI}
 	}
 
 	// ---- RFC 8628 Device Authorization Grant (§3.5) ----

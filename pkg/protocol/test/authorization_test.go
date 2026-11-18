@@ -5,10 +5,66 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 	"github.com/go-openapi/testify/v2/assert"
 	"github.com/go-openapi/testify/v2/require"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 )
+
+func TestApplyClaimsRequest(t *testing.T) {
+	t.Run("essential claim missing", func(t *testing.T) {
+		claims := map[string]any{"sub": "user"}
+		err := protocol.ApplyClaimsRequest(claims, map[string]*protocol.ClaimRequest{
+			"email": {Essential: true},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "essential claim")
+	})
+
+	t.Run("essential value mismatch", func(t *testing.T) {
+		claims := map[string]any{"acr": "1"}
+		err := protocol.ApplyClaimsRequest(claims, map[string]*protocol.ClaimRequest{
+			"acr": {Essential: true, Value: "2"},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("voluntary mismatch removes claim", func(t *testing.T) {
+		claims := map[string]any{"acr": "1", "sub": "user"}
+		err := protocol.ApplyClaimsRequest(claims, map[string]*protocol.ClaimRequest{
+			"acr": {Value: "2"},
+		})
+		require.NoError(t, err)
+		_, ok := claims["acr"]
+		assert.False(t, ok)
+		assert.Equal(t, "user", claims["sub"])
+	})
+
+	t.Run("value matches after JSON normalization", func(t *testing.T) {
+		claims := map[string]any{"updated_at": int64(42)}
+		err := protocol.ApplyClaimsRequest(claims, map[string]*protocol.ClaimRequest{
+			"updated_at": {Essential: true, Value: float64(42)},
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("values list any match", func(t *testing.T) {
+		claims := map[string]any{"acr": "2"}
+		err := protocol.ApplyClaimsRequest(claims, map[string]*protocol.ClaimRequest{
+			"acr": {Essential: true, Values: []any{"1", "2"}},
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("unrequested claims untouched", func(t *testing.T) {
+		claims := map[string]any{"sub": "user", "email": "user@example.com"}
+		err := protocol.ApplyClaimsRequest(claims, map[string]*protocol.ClaimRequest{
+			"name": {Essential: false},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "user", claims["sub"])
+		assert.Equal(t, "user@example.com", claims["email"])
+	})
+}
 
 // ============================================================================
 // AuthRequest.LogValue() tests

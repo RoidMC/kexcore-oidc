@@ -237,3 +237,31 @@ func TestValidateBoundToken_MissingCNF(t *testing.T) {
 		t.Error("expected error for missing cnf.jkt")
 	}
 }
+
+// RFC 9449 §4.3: htu comparison ignores only query and fragment; the port is
+// part of the authority and must match.
+func TestHTUMatch_PortIsSignificant(t *testing.T) {
+	if htuMatch("https://example.com:8443/token", "https://example.com/token") {
+		t.Fatal("htu with a different port must not match")
+	}
+	if !htuMatch("https://example.com/token?x=1#frag", "https://example.com/token") {
+		t.Fatal("query and fragment must be ignored")
+	}
+}
+
+// Server-provided nonces are single-use (RFC 9449 §8).
+func TestNonceConsumedOnce(t *testing.T) {
+	p := NewWithConfig()
+	defer p.Stop()
+
+	nonce := p.GenerateNonce()
+	if nonce == "" {
+		t.Fatal("GenerateNonce returned an empty nonce")
+	}
+	if !p.ValidateNonce(nonce) {
+		t.Fatal("fresh nonce should be valid")
+	}
+	if p.ValidateNonce(nonce) {
+		t.Fatal("nonce must not be accepted twice")
+	}
+}

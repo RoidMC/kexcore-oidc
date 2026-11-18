@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 	httputil "github.com/roidmc/kexcore-oidc/v3/pkg/util/http"
@@ -23,6 +24,7 @@ var cibaTmpl = template.Must(template.New("ciba").Parse(cibaHtmlTemplate))
 type Plugin struct {
 	store             storm.CIBAStore
 	clientStore       storm.ClientStore
+	keyStore          protocol.KeyStore // optional, verifies id_token_hint signatures
 	notifier          storm.CIBANotificationCallback // optional, for ping delivery mode
 	lifetime          time.Duration
 	interval          time.Duration

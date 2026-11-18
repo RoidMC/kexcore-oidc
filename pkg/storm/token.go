@@ -19,11 +19,23 @@ type GMDecryptor interface {
 	SM2DecryptJWE(ctx context.Context, compact string) ([]byte, error)
 }
 
+// ResolveTokenOption customizes JWT access token verification inside
+// ResolveToken.
+type ResolveTokenOption func(*protocol.AccessTokenVerifier)
+
+// WithResolveTokenAudience requires the JWT access token's aud claim to contain
+// at least one of the given values (RFC 9068 §4).
+func WithResolveTokenAudience(auds ...string) ResolveTokenOption {
+	return func(v *protocol.AccessTokenVerifier) {
+		v.ExpectedAudience = auds
+	}
+}
+
 // ResolveToken resolves an opaque token to its tokenID and subject.
 // Supports standard decrypted tokens, GM/T JWE tokens, and JWT access tokens.
 //
 // This is the shared implementation used by both introspection and userinfo plugins.
-func ResolveToken(ctx context.Context, crypto UniCrypto, keyStore protocol.KeyStore, issuer, token string) (tokenID, subject string, ok bool) {
+func ResolveToken(ctx context.Context, crypto UniCrypto, keyStore protocol.KeyStore, issuer, token string, opts ...ResolveTokenOption) (tokenID, subject string, ok bool) {
 	var plaintext []byte
 	var err error
 
@@ -55,6 +67,9 @@ func ResolveToken(ctx context.Context, crypto UniCrypto, keyStore protocol.KeySt
 		v := &protocol.AccessTokenVerifier{
 			Issuer:   issuer,
 			KeyStore: keyStore,
+		}
+		for _, opt := range opts {
+			opt(v)
 		}
 		return protocol.VerifyAccessToken(ctx, token, v)
 	}

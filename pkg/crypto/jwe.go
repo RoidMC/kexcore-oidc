@@ -87,7 +87,15 @@ func DispatchContentDecrypt(enc string, key, iv, sealed, aad []byte) ([]byte, er
 // then falls back to the built-in software implementation via crypto/provider/std.
 func EncryptJWE(plaintext []byte, key interface{}, alg, enc string) (string, error) {
 	if provider, ok := DefaultRegistry.GetJWEEncryptor(alg); ok {
-		if provider.ContentEncryption() == enc {
+		// Providers that support multiple content encryption algorithms
+		// (SM2/SM9 with SM4-GCM or SM4-CCM) get the caller's enc.
+		if p, ok := provider.(JWEEncryptProviderWithContent); ok {
+			if enc == "" {
+				enc = provider.ContentEncryption()
+			}
+			return p.EncryptWithContent(context.Background(), plaintext, key, enc)
+		}
+		if enc == "" || provider.ContentEncryption() == enc {
 			return provider.Encrypt(context.Background(), plaintext, key)
 		}
 	}
@@ -98,18 +106,34 @@ func EncryptJWE(plaintext []byte, key interface{}, alg, enc string) (string, err
 	case "dir":
 		return encryptJWEDir(plaintext, key, enc)
 	case "A128KW", "A192KW", "A256KW", "A128GCMKW", "A192GCMKW", "A256GCMKW":
+		if isSM4ContentEnc(enc) {
+			return "", fmt.Errorf("%s cannot be combined with %s content encryption", alg, enc)
+		}
 		symKey, ok := key.([]byte)
 		if !ok {
 			return "", fmt.Errorf("%s mode requires []byte key, got %T", alg, key)
 		}
 		return std.EncryptJWEKW(string(plaintext), symKey, alg, enc)
 	case "RSA-OAEP", "RSA-OAEP-256", "RSA-OAEP-384", "RSA-OAEP-512":
+		if isSM4ContentEnc(enc) {
+			return "", fmt.Errorf("%s cannot be combined with %s content encryption", alg, enc)
+		}
 		return std.EncryptJWERSAOAEP(string(plaintext), key, alg, enc)
 	case "ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A192KW", "ECDH-ES+A256KW":
+		if isSM4ContentEnc(enc) {
+			return "", fmt.Errorf("%s cannot be combined with %s content encryption", alg, enc)
+		}
 		return std.EncryptJWEECDHES(string(plaintext), key, alg, enc)
 	default:
 		return "", fmt.Errorf("unsupported JWE key wrapping algorithm: %s", alg)
 	}
+}
+
+// isSM4ContentEnc reports whether enc is an SM4 content encryption algorithm.
+// SM4 content encryption is only available with key management algorithms that
+// natively support GM/T 0125.3: dir, SGD_SM2_3 and SGD_SM9_3.
+func isSM4ContentEnc(enc string) bool {
+	return enc == SGD_SM4_GCM || enc == SGD_SM4_CCM
 }
 
 // DecryptJWE decrypts a JWE compact serialization.

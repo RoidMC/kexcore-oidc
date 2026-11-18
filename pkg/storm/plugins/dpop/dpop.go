@@ -43,14 +43,38 @@ type Plugin struct {
 	usedNonces map[string]time.Time // jti replay detection
 	nonces     map[string]time.Time // server-provided nonces
 	stopCh     chan struct{}        // signals cleanup goroutine to stop
+
+	requireNonce bool
+	nonceStore   NonceStore
+	replayStore  ReplayStore
+}
+
+// Config configures optional DPoP behaviour.
+type Config struct {
+	// RequireNonce makes every DPoP proof carry a server-provided nonce
+	// (RFC 9449 §8). Enable once clients handle the DPoP-Nonce header.
+	RequireNonce bool
+	// NonceStore persists nonces across instances. Defaults to in-memory.
+	NonceStore NonceStore
+	// ReplayStore records proof jti values across instances. Defaults to
+	// in-memory.
+	ReplayStore ReplayStore
 }
 
 // NewWithConfig creates a new DPoP plugin.
 func NewWithConfig() *Plugin {
+	return NewWithConfigOptions(Config{})
+}
+
+// NewWithConfigOptions creates a DPoP plugin with explicit options.
+func NewWithConfigOptions(cfg Config) *Plugin {
 	p := &Plugin{
-		usedNonces: make(map[string]time.Time, maxNonceCacheSize),
-		nonces:     make(map[string]time.Time, maxNonceCacheSize),
-		stopCh:     make(chan struct{}),
+		usedNonces:   make(map[string]time.Time, maxNonceCacheSize),
+		nonces:       make(map[string]time.Time, maxNonceCacheSize),
+		stopCh:       make(chan struct{}),
+		requireNonce: cfg.RequireNonce,
+		nonceStore:   cfg.NonceStore,
+		replayStore:  cfg.ReplayStore,
 	}
 	go p.cleanupLoop()
 	return p
@@ -58,7 +82,17 @@ func NewWithConfig() *Plugin {
 
 // New creates a new DPoP plugin from a PluginContext.
 func New(ctx *storm.PluginContext) *Plugin {
-	return NewWithConfig()
+	p := NewWithConfig()
+	if ns, ok := ctx.Storage.(NonceStore); ok {
+		p.nonceStore = ns
+	}
+	if rs, ok := ctx.Storage.(ReplayStore); ok {
+		p.replayStore = rs
+	}
+	if policy, ok := ctx.Storage.(NoncePolicy); ok {
+		p.requireNonce = policy.RequireDPoPNonce()
+	}
+	return p
 }
 
 // init self-registers the DPoP plugin in the global registry.
@@ -141,26 +175,82 @@ func (p *Plugin) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Nonce replay detection
-		p.mu.Lock()
-		if _, exists := p.usedNonces[proof.UniqueID]; exists {
+		// Nonce requirement (RFC 9449 §8). Nonces are an AS-side mechanism for
+		// the token endpoint; resource endpoints (userinfo) accept proofs
+		// without one because they never issue a nonce themselves.
+		if isTokenEndpointPath(r.URL.Path) && (p.requireNonce || proof.Nonce != "") {
+			if proof.Nonce == "" {
+				p.writeNonceError(w, "missing nonce")
+				return
+			}
+			valid, err := p.consumeNonce(r.Context(), proof.Nonce)
+			if err != nil || !valid {
+				p.writeNonceError(w, "invalid or expired nonce")
+				return
+			}
+		}
+
+		// jti replay detection (shared store or in-process cache)
+		if p.replayStore != nil {
+			seen, err := p.replayStore.SeenJTI(r.Context(), proof.UniqueID, time.Now().Add(MaxProofAge))
+			if err != nil || seen {
+				p.writeDPoPError(w, "DPoP proof jti replay detected", false)
+				return
+			}
+		} else {
+			p.mu.Lock()
+			if _, exists := p.usedNonces[proof.UniqueID]; exists {
+				p.mu.Unlock()
+				p.writeDPoPError(w, "DPoP proof jti replay detected", false)
+				return
+			}
+			// Evict oldest entries if cache is at capacity
+			if len(p.usedNonces) >= maxNonceCacheSize {
+				p.evictOldestLocked()
+			}
+			p.usedNonces[proof.UniqueID] = time.Now()
 			p.mu.Unlock()
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Cache-Control", "no-store")
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`{"error":"invalid_dpop_proof","error_description":"DPoP proof jti replay detected"}`))
-			return
 		}
-		// Evict oldest entries if cache is at capacity
-		if len(p.usedNonces) >= maxNonceCacheSize {
-			p.evictOldestLocked()
-		}
-		p.usedNonces[proof.UniqueID] = time.Now()
-		p.mu.Unlock()
 
 		ctx := ContextWithDPoP(r.Context(), proof)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// isTokenEndpointPath reports whether the request targets a token endpoint
+// (including mTLS aliases such as /mtls/token).
+func isTokenEndpointPath(path string) bool {
+	return path == "/token" || strings.HasSuffix(path, "/token")
+}
+
+// writeNonceError reports a missing or invalid nonce (RFC 9449 §8.2) and
+// attaches a fresh DPoP-Nonce so the client can retry.
+func (p *Plugin) writeNonceError(w http.ResponseWriter, description string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set(NonceHeader, p.GenerateNonce())
+	w.WriteHeader(http.StatusBadRequest)
+	_, _ = w.Write([]byte(`{"error":"use_dpop_nonce","error_description":"` + escapeJSON(description) + `"}`))
+}
+
+// writeDPoPError writes an RFC 9449 error response. When newNonce is true a
+// fresh DPoP-Nonce header is attached so the client can retry.
+func (p *Plugin) writeDPoPError(w http.ResponseWriter, description string, newNonce bool) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if newNonce {
+		w.Header().Set(NonceHeader, p.GenerateNonce())
+	}
+	w.WriteHeader(http.StatusBadRequest)
+	_, _ = w.Write([]byte(`{"error":"invalid_dpop_proof","error_description":"` + escapeJSON(description) + `"}`))
+}
+
+// consumeNonce validates and consumes a server-provided nonce.
+func (p *Plugin) consumeNonce(ctx context.Context, nonce string) (bool, error) {
+	if p.nonceStore != nil {
+		return p.nonceStore.ConsumeNonce(ctx, nonce)
+	}
+	return p.ValidateNonce(nonce), nil
 }
 
 // evictOldestLocked removes the oldest ~25% of entries.
@@ -226,6 +316,11 @@ func (p *Plugin) GenerateNonce() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	nonce := base64.RawURLEncoding.EncodeToString(b)
+
+	if p.nonceStore != nil {
+		_ = p.nonceStore.StoreNonce(context.Background(), nonce, time.Now().Add(NonceLifetime))
+		return nonce
+	}
 
 	p.mu.Lock()
 	// Evict oldest if at capacity

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
@@ -49,9 +50,29 @@ func (p *Plugin) applyRequestURI(ctx context.Context, authReq *protocol.AuthRequ
 
 // applyPARRequest resolves a Pushed Authorization Request (RFC 9101 §5.2).
 func (p *Plugin) applyPARRequest(ctx context.Context, authReq *protocol.AuthRequest) error {
-	parReq, err := p.parStore.GetPushedAuthRequest(ctx, authReq.RequestURI)
-	if err != nil {
-		return protocol.ErrInvalidRequest().WithDescription("invalid request_uri").WithParent(err)
+	var parReq *protocol.AuthRequest
+	if consumer, ok := p.parStore.(storm.PushedAuthRequestConsumer); ok {
+		req, err := consumer.ConsumePushedAuthRequest(ctx, authReq.RequestURI)
+		parReq = req
+		if err != nil {
+			if errors.Is(err, storm.ErrPushedAuthRequestUsed) && parReq != nil {
+				// Populate the validated redirect target so the caller can
+				// return an error redirect to the client instead of a JSON
+				// page (the redirect_uri was validated at PAR time).
+				authReq.ClientID = parReq.ClientID
+				authReq.RedirectURI = parReq.RedirectURI
+				authReq.State = parReq.State
+				authReq.ResponseType = parReq.ResponseType
+				authReq.ResponseMode = parReq.ResponseMode
+			}
+			return protocol.ErrInvalidRequestURI().WithDescription("request_uri has already been used").WithParent(err)
+		}
+	} else {
+		var err error
+		parReq, err = p.parStore.GetPushedAuthRequest(ctx, authReq.RequestURI)
+		if err != nil {
+			return protocol.ErrInvalidRequestURI().WithDescription("invalid request_uri").WithParent(err)
+		}
 	}
 
 	// DEBUG: trace PAR data before merging

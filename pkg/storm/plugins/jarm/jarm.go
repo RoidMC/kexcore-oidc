@@ -14,13 +14,14 @@ package jarm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
@@ -151,21 +152,22 @@ func (p *Plugin) SignAuthResponse(ctx context.Context, params map[string]string,
 		_ = token.Set(k, v)
 	}
 
-	alg := determineAlg(signingKey.Algorithm())
-	signed, err := jwt.Sign(token, jwt.WithKey(alg, signingKey.Key()))
+	payload, err := json.Marshal(token)
+	if err != nil {
+		return "", fmt.Errorf("jarm: marshal claims: %w", err)
+	}
+
+	// Sign through the crypto provider registry so HSM/KMS overrides apply.
+	signer, err := crypto.NewSigner(signingKey.Algorithm(), signingKey.Key(), signingKey.ID())
+	if err != nil {
+		return "", fmt.Errorf("jarm: create signer: %w", err)
+	}
+	signed, err := signer.Sign(payload)
 	if err != nil {
 		return "", err
 	}
 
-	return string(signed), nil
-}
-
-// determineAlg maps the key algorithm string to jwa.SignatureAlgorithm.
-func determineAlg(alg string) jwa.SignatureAlgorithm {
-	if jwaAlg, ok := jwa.LookupSignatureAlgorithm(alg); ok {
-		return jwaAlg
-	}
-	return jwa.RS256()
+	return signed, nil
 }
 
 // signingKeyForAlg returns a signing key matching the requested algorithm,

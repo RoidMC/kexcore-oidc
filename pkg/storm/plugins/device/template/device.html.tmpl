@@ -10,6 +10,7 @@
 <form method="POST" action="/device">
 <input type="hidden" name="user_code" value="{{.UserCode}}">
 {{if .CSRFToken}}<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">{{end}}
+<p><label>User ID: <input type="text" name="subject" required autocomplete="username"></label></p>
 <button type="submit" name="action" value="approve">Approve</button>
 <button type="submit" name="action" value="deny">Deny</button>
 </form>

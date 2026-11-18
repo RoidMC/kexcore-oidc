@@ -52,6 +52,18 @@ type JWEEncryptProvider interface {
 	Encrypt(ctx context.Context, plaintext []byte, key interface{}) (string, error)
 }
 
+// JWEEncryptProviderWithContent is an optional extension of JWEEncryptProvider
+// for key-wrapping algorithms that can be combined with more than one content
+// encryption algorithm (e.g. SGD_SM2_3/SGD_SM9_3 with SGD_SM4_GCM or
+// SGD_SM4_CCM). When a provider implements it, the caller's enc is honoured
+// instead of the fixed value returned by ContentEncryption().
+type JWEEncryptProviderWithContent interface {
+	JWEEncryptProvider
+	// EncryptWithContent encrypts plaintext using the requested content
+	// encryption algorithm and returns JWE compact serialization.
+	EncryptWithContent(ctx context.Context, plaintext []byte, key interface{}, enc string) (string, error)
+}
+
 // JWEDecryptProvider is the interface for external JWE decryption implementations.
 type JWEDecryptProvider interface {
 	// KeyAlgorithm returns the JWE key wrapping algorithm.
@@ -343,6 +355,10 @@ func (sm2JWEProvider) Encrypt(ctx context.Context, plaintext []byte, key interfa
 	return std.EncryptSM2JWE(plaintext, key)
 }
 
+func (sm2JWEProvider) EncryptWithContent(ctx context.Context, plaintext []byte, key interface{}, enc string) (string, error) {
+	return std.EncryptSM2JWEWith(plaintext, key, enc)
+}
+
 func (sm2JWEProvider) Decrypt(ctx context.Context, compact string, key interface{}) ([]byte, error) {
 	return std.DecryptSM2JWE(compact, key)
 }
@@ -353,6 +369,10 @@ func (sm9JWEProvider) KeyAlgorithm() string      { return SGD_SM9_3 }
 func (sm9JWEProvider) ContentEncryption() string { return SGD_SM4_GCM }
 
 func (sm9JWEProvider) Encrypt(ctx context.Context, plaintext []byte, key interface{}) (string, error) {
+	return sm9JWEProvider{}.EncryptWithContent(ctx, plaintext, key, SGD_SM4_GCM)
+}
+
+func (sm9JWEProvider) EncryptWithContent(ctx context.Context, plaintext []byte, key interface{}, enc string) (string, error) {
 	sm9Key, ok := key.(SM9EncryptKey)
 	if !ok {
 		return "", fmt.Errorf("sm9JWEProvider: expected SM9EncryptKey, got %T", key)
@@ -361,7 +381,7 @@ func (sm9JWEProvider) Encrypt(ctx context.Context, plaintext []byte, key interfa
 	if err != nil {
 		return "", fmt.Errorf("sm9JWEProvider: failed to resolve SM9 key: %w", err)
 	}
-	return std.EncryptSM9JWE(plaintext, masterPubKey, uid, SGD_SM4_GCM)
+	return std.EncryptSM9JWE(plaintext, masterPubKey, uid, enc)
 }
 
 func (sm9JWEProvider) Decrypt(ctx context.Context, compact string, key interface{}) ([]byte, error) {
@@ -423,6 +443,18 @@ func (sm4GCMContentProvider) Decrypt(ctx context.Context, key, iv, sealed, aad [
 	return std.SM4GCMDecrypt(key, iv, sealed, aad)
 }
 
+type sm4CCMContentProvider struct{}
+
+func (sm4CCMContentProvider) Algorithm() string { return SGD_SM4_CCM }
+
+func (sm4CCMContentProvider) Encrypt(ctx context.Context, key, iv, plaintext, aad []byte) ([]byte, error) {
+	return std.SM4CCMEncrypt(key, iv, plaintext, aad)
+}
+
+func (sm4CCMContentProvider) Decrypt(ctx context.Context, key, iv, sealed, aad []byte) ([]byte, error) {
+	return std.SM4CCMDecrypt(key, iv, sealed, aad)
+}
+
 type aesGCMContentProvider struct {
 	alg string
 }
@@ -462,6 +494,8 @@ func init() {
 	DefaultRegistry.RegisterJWEDecryptor(SGD_SM9_3, sm9JWEProvider{})
 	DefaultRegistry.RegisterContentEncryptor(SGD_SM4_GCM, sm4GCMContentProvider{})
 	DefaultRegistry.RegisterContentDecryptor(SGD_SM4_GCM, sm4GCMContentProvider{})
+	DefaultRegistry.RegisterContentEncryptor(SGD_SM4_CCM, sm4CCMContentProvider{})
+	DefaultRegistry.RegisterContentDecryptor(SGD_SM4_CCM, sm4CCMContentProvider{})
 	DefaultRegistry.RegisterContentEncryptor("A128GCM", aesGCMContentProvider{alg: "A128GCM"})
 	DefaultRegistry.RegisterContentDecryptor("A128GCM", aesGCMContentProvider{alg: "A128GCM"})
 	DefaultRegistry.RegisterContentEncryptor("A192GCM", aesGCMContentProvider{alg: "A192GCM"})

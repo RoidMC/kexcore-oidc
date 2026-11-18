@@ -81,7 +81,7 @@ var _ storm.DCRStore = (*fakeDCRStore)(nil)
 // --- helpers ---
 
 func newTestPlugin(store storm.DCRStore) *Plugin {
-	return NewWithConfig(Config{Store: store})
+	return NewWithConfig(Config{Store: store, OpenRegistration: true})
 }
 
 func newJSONRequest(method, path string, body interface{}) *http.Request {
@@ -382,4 +382,30 @@ func TestDCR_ClientIDMismatch(t *testing.T) {
 	p.handleGet(w, r)
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+// RFC 7591 §3: registration is rejected without an initial access token.
+func TestDCR_InitialAccessTokenRequired(t *testing.T) {
+	p := NewWithConfig(Config{Store: &fakeDCRStore{}})
+	r := newJSONRequest(http.MethodPost, "/register", map[string]any{
+		"redirect_uris": []string{"https://app.example.com/callback"},
+	})
+
+	w := serveRequest(p, r)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "invalid_token")
+}
+
+// A matching static initial access token lets registration proceed.
+func TestDCR_InitialAccessTokenAccepted(t *testing.T) {
+	p := NewWithConfig(Config{Store: &fakeDCRStore{}, InitialAccessToken: "initial-token"})
+	r := newJSONRequest(http.MethodPost, "/register", map[string]any{
+		"redirect_uris": []string{"https://app.example.com/callback"},
+	})
+	r.Header.Set("Authorization", "Bearer initial-token")
+
+	w := serveRequest(p, r)
+
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body.String())
 }

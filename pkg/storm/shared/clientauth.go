@@ -10,9 +10,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 )
@@ -31,6 +33,16 @@ type ClientStore interface {
 type Client interface {
 	GetID() string
 	AuthMethod() protocol.AuthMethod
+}
+
+// ClientSecretProvider is optionally implemented by Client when
+// client_secret_jwt is allowed. The returned secret is used as the
+// HS256/HS384/HS512 MAC key for client assertions.
+//
+// The SDK never logs or returns this value; implementations should treat it
+// with the same care as the secret used for client_secret_basic/post.
+type ClientSecretProvider interface {
+	ClientSecret() string
 }
 
 // JWKSProvider is optionally implemented by Client to provide
@@ -114,7 +126,7 @@ func (h *ClientAuthHelper) AuthenticateClient(r *http.Request) (Client, error) {
 		return nil, protocol.ErrInvalidRequest().WithDescription("error parsing form").WithParent(err)
 	}
 
-	// --- Method 1: client_assertion (private_key_jwt) ---
+	// --- Method 1: client_assertion (private_key_jwt / client_secret_jwt) ---
 	if assertionType := r.Form.Get("client_assertion_type"); assertionType == protocol.ClientAssertionTypeJWTAssertion {
 		assertion := r.Form.Get("client_assertion")
 		if assertion == "" {
@@ -123,7 +135,24 @@ func (h *ClientAuthHelper) AuthenticateClient(r *http.Request) (Client, error) {
 		getClient := func(ctx context.Context, cid string) (Client, error) {
 			return h.store.GetClientByClientID(ctx, cid)
 		}
-		client, err := AuthenticatePrivateKeyJWT(r, getClient, assertion, nil, h.skipTLSCertVerify, h.allowPrivateIPs)
+		// RFC 7523 §3: the assertion audience is the issuer (or token endpoint).
+		// The issuer middleware is the only reliable source here because this
+		// helper is shared by token, introspection, revocation and device.
+		getAudiences := func(client Client) []string {
+			if issuer := IssuerFromContext(r.Context()); issuer != "" {
+				return []string{issuer}
+			}
+			return nil
+		}
+		alg := assertionAlgorithm(assertion)
+		if strings.HasPrefix(alg, "HS") {
+			client, err := AuthenticateClientSecretJWT(r, getClient, assertion, alg, getAudiences)
+			if err != nil {
+				return nil, protocol.ErrInvalidClient().WithParent(err)
+			}
+			return client, nil
+		}
+		client, err := AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences, h.skipTLSCertVerify, h.allowPrivateIPs)
 		if err != nil {
 			return nil, protocol.ErrInvalidClient().WithParent(err)
 		}
@@ -154,13 +183,13 @@ func (h *ClientAuthHelper) AuthenticateClient(r *http.Request) (Client, error) {
 		return nil, protocol.ErrInvalidClient().WithParent(err)
 	}
 
-	// RFC 7523 §2.2 / FAPI 2.0: a client registered for private_key_jwt MUST
+	// RFC 7523 §2.2 / FAPI 2.0: a client registered for a JWT-based method MUST
 	// authenticate via client_assertion. Reaching this point means the request
 	// carries no assertion, so falling back to client_secret authentication
 	// would accept requests that omit client authentication entirely at the
 	// introspection, revocation, and device endpoints.
-	if client.AuthMethod() == protocol.AuthMethodPrivateKeyJWT {
-		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion required for private_key_jwt client")
+	if method := client.AuthMethod(); method == protocol.AuthMethodPrivateKeyJWT || method == protocol.AuthMethodClientSecretJWT {
+		return nil, protocol.ErrInvalidClient().WithDescription("%s", "client_assertion required for "+string(method)+" client")
 	}
 
 	// --- Method 2: tls_client_auth (mTLS certificate) ---
@@ -383,6 +412,73 @@ func AuthenticatePrivateKeyJWT(r *http.Request, getClientByClientID func(ctx con
 	}
 
 	return client, nil
+}
+
+// AuthenticateClientSecretJWT verifies an RFC 7523 client assertion signed with
+// the client secret (HS256/HS384/HS512). The client must be registered for
+// client_secret_jwt and implement ClientSecretProvider.
+func AuthenticateClientSecretJWT(r *http.Request, getClientByClientID func(ctx context.Context, clientID string) (Client, error), assertion, alg string, getAudiences func(client Client) []string) (Client, error) {
+	switch alg {
+	case "HS256", "HS384", "HS512":
+	default:
+		return nil, protocol.ErrInvalidClient().WithDescription("client_secret_jwt requires HS256, HS384 or HS512")
+	}
+
+	request := new(protocol.JWTTokenRequest)
+	if _, err := protocol.ParseToken(assertion, request); err != nil {
+		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
+	}
+	if request.Issuer == "" {
+		return nil, protocol.ErrInvalidClient().WithDescription("client_assertion missing iss claim")
+	}
+
+	client, err := getClientByClientID(r.Context(), request.Issuer)
+	if err != nil {
+		return nil, protocol.ErrInvalidClient().WithParent(err)
+	}
+	if client.AuthMethod() != protocol.AuthMethodClientSecretJWT {
+		return nil, protocol.ErrInvalidClient().WithDescription("client not configured for client_secret_jwt")
+	}
+
+	secretProvider, ok := client.(ClientSecretProvider)
+	if !ok || secretProvider.ClientSecret() == "" {
+		return nil, protocol.ErrInvalidClient().WithDescription("client does not support client_secret_jwt")
+	}
+
+	key, err := jwk.Import[jwk.Key]([]byte(secretProvider.ClientSecret()))
+	if err != nil {
+		return nil, protocol.ErrInvalidClient().WithDescription("invalid client secret").WithParent(err)
+	}
+
+	var allowedAudiences []string
+	if getAudiences != nil {
+		allowedAudiences = getAudiences(client)
+	}
+	if err := protocol.VerifyJWTAssertion(r.Context(), assertion, allowedAudiences, []jwk.Key{key}, 10*time.Second); err != nil {
+		return nil, protocol.ErrInvalidClient().WithDescription("invalid client_assertion").WithParent(err)
+	}
+
+	return client, nil
+}
+
+// AssertionAlgorithm returns the "alg" header of an unverified JWS. It is only
+// used to route between HS (client_secret_jwt) and asymmetric
+// (private_key_jwt) assertions; no claim of the assertion has been verified at
+// this point.
+func AssertionAlgorithm(assertion string) string {
+	return assertionAlgorithm(assertion)
+}
+
+// assertionAlgorithm returns the "alg" header of an unverified JWS. It is only
+// used to route between HS (client_secret_jwt) and asymmetric
+// (private_key_jwt) verification; the signature is always verified afterwards.
+func assertionAlgorithm(assertion string) string {
+	msg, err := jws.Parse([]byte(assertion))
+	if err != nil {
+		return ""
+	}
+	_, alg := protocol.GetKeyIDAndAlg(msg)
+	return alg
 }
 
 // FetchJWKSFromURI fetches and parses a JWKS from a remote URI.

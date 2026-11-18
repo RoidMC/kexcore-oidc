@@ -1,7 +1,6 @@
-// Package backchannel implements the OIDC Back-Channel Logout plugin.
-//
-// It handles POST /backchannel_logout (OIDC Back-Channel Logout §4),
-// allowing the OP to send logout tokens to RPs via back-channel.
+// Package backchannel implements outgoing OIDC Back-Channel Logout
+// notifications (OIDC Back-Channel Logout §2). The OP pushes logout tokens to
+// RPs; receiving them is an RP concern (see pkg/client/rp).
 package backchannel
 
 import (
@@ -16,7 +15,7 @@ import (
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm/shared"
 )
 
-// Plugin implements the OIDC Back-Channel Logout endpoint.
+// Plugin implements outgoing back-channel logout notifications.
 type Plugin struct {
 	store             storm.BackChannelStore
 	keyStore          storm.KeyStore
@@ -24,7 +23,6 @@ type Plugin struct {
 	logger            *slog.Logger
 	allowPrivateIPs   bool
 	skipTLSCertVerify bool
-	endpointConfigs   shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
 // New creates a new BackChannel plugin from a PluginContext.
@@ -35,7 +33,6 @@ func New(ctx *storm.PluginContext) *Plugin {
 		logger:            slog.Default(),
 		allowPrivateIPs:   ctx.AllowPrivateIPs,
 		skipTLSCertVerify: ctx.SkipTLSCertVerify,
-		endpointConfigs:   ctx.EndpointConfigs,
 	}
 }
 
@@ -95,48 +92,17 @@ func (p *Plugin) Requires() []storm.StorageCapability {
 // Name returns the plugin name.
 func (p *Plugin) Name() string { return "backchannel" }
 
-// Register installs the POST /backchannel_logout route.
-//
-// OIDC standard endpoint: POST /backchannel_logout (OIDC Back-Channel Logout §4)
-func (p *Plugin) Register(r chi.Router) {
-	backchannelPath := p.getRoutePath("backchannel", "/backchannel_logout")
-	r.Post(backchannelPath, p.handle)
-}
+// Register registers no inbound route. The OP is the issuer of logout tokens
+// (OIDC Back-Channel Logout §2); receiving them is an RP concern, implemented
+// in pkg/client/rp. Logout notifications are pushed to RPs by PostLogout.
+func (p *Plugin) Register(r chi.Router) {}
 
-// Contribute returns the discovery fields for the backchannel logout endpoint.
+// Contribute returns the discovery fields for back-channel logout support.
+// backchannel_logout_endpoint is intentionally not advertised: it is not an OP
+// metadata field and the OP does not receive logout tokens.
 func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfiguration) {
-	cfg.BackChannelLogoutEndpoint = p.resolveEndpoint(ctx, "backchannel", "/backchannel_logout")
 	cfg.BackChannelLogoutSupported = true
 	cfg.BackChannelLogoutSessionSupported = true
-}
-
-// resolveEndpoint resolves the absolute URL for the given endpoint.
-// If EndpointConfigs is configured, it uses that; otherwise it falls back
-// to the default behavior of building the URL from the issuer in context.
-func (p *Plugin) resolveEndpoint(ctx context.Context, endpointName, defaultPath string) string {
-	// Check if there's a custom discovery URL configured
-	if p.endpointConfigs != nil {
-		defaultURL := shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
-		return p.endpointConfigs.GetDiscoveryURL(endpointName, defaultURL)
-	}
-	return shared.EndpointURL(ctx, protocol.NewEndpoint(defaultPath))
-}
-
-// getRoutePath returns the route path for the given endpoint.
-// If EndpointConfigs is configured, it uses that; otherwise it returns defaultPath.
-func (p *Plugin) getRoutePath(endpointName, defaultPath string) string {
-	if p.endpointConfigs != nil {
-		return p.endpointConfigs.GetRoutePath(endpointName, defaultPath)
-	}
-	return defaultPath
-}
-
-func (p *Plugin) handle(w http.ResponseWriter, r *http.Request) {
-	// Per OIDC Back-Channel Logout §2.8, the endpoint responds with 200 OK.
-	// The actual back-channel logout is OP-initiated (push model).
-	// This endpoint is for receiving logout tokens from other OPs or internal triggers.
-
-	shared.JSONResponse(w, nil, http.StatusOK)
 }
 
 // PushLogoutTokens sends logout tokens to all RPs that have sessions

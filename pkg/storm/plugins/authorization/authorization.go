@@ -76,6 +76,7 @@ type Plugin struct {
 	createAuthCode            func(ctx context.Context, authReq storm.AuthRequest, store storm.AuthStore, enc storm.UniCrypto) (string, error)
 	authorizationDetailsTypes []string                    // RFC 9396 supported types
 	sessionRecorder           storm.ClientSessionRecorder // optional, for back-channel logout tracking
+	completionAuthorizer      CompletionAuthorizer        // optional, authenticates /authorize/complete
 }
 
 // SessionProvider is an optional interface for checking whether an
@@ -225,6 +226,18 @@ func (p *Plugin) Name() string { return "authorization" }
 // Called by the Engine during Build when both authorization and jarm plugins are present.
 func (p *Plugin) SetJARMSigner(signer JARMSigner) {
 	p.jarmSigner = signer
+}
+
+// CompletionAuthorizer authenticates callers of POST /authorize/complete.
+// Returning an error rejects the completion. When unset, the endpoint relies
+// on deployment-level middleware.
+type CompletionAuthorizer interface {
+	AuthorizeAuthRequestCompletion(r *http.Request) error
+}
+
+// SetCompletionAuthorizer installs an authorizer for /authorize/complete.
+func (p *Plugin) SetCompletionAuthorizer(a CompletionAuthorizer) {
+	p.completionAuthorizer = a
 }
 
 // recordSession records the client session for back-channel logout tracking.

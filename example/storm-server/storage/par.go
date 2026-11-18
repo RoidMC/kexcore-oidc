@@ -12,8 +12,11 @@ import (
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 )
 
-// Compile-time interface check.
-var _ storm.PARStore = (*PARStore)(nil)
+// Compile-time interface checks.
+var (
+	_ storm.PARStore                 = (*PARStore)(nil)
+	_ storm.PushedAuthRequestConsumer = (*PARStore)(nil)
+)
 
 // PARStore implements storm.PARStore for in-memory pushed authorization requests.
 type PARStore struct {
@@ -27,6 +30,7 @@ type parEntry struct {
 	requestURI string
 	authReq    *protocol.AuthRequest
 	expires    time.Time
+	consumed   bool
 }
 
 func NewPARStore() *PARStore {
@@ -64,6 +68,31 @@ func (s *PARStore) GetPushedAuthRequest(_ context.Context, requestURI string) (*
 		delete(s.reqs, requestURI)
 		return nil, fmt.Errorf("pushed auth request expired: %s", requestURI)
 	}
+	if entry.consumed {
+		return entry.authReq, storm.ErrPushedAuthRequestUsed
+	}
+	return entry.authReq, nil
+}
+
+// ConsumePushedAuthRequest enforces single-use request_uri (RFC 9126 §2.2).
+// The entry is kept as a tombstone until it expires so a reuse attempt can be
+// rejected with an error redirect to the client's registered redirect_uri.
+func (s *PARStore) ConsumePushedAuthRequest(_ context.Context, requestURI string) (*protocol.AuthRequest, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	entry, ok := s.reqs[requestURI]
+	if !ok {
+		return nil, fmt.Errorf("pushed auth request not found: %s", requestURI)
+	}
+	if time.Now().After(entry.expires) {
+		delete(s.reqs, requestURI)
+		return nil, fmt.Errorf("pushed auth request expired: %s", requestURI)
+	}
+	if entry.consumed {
+		return entry.authReq, storm.ErrPushedAuthRequestUsed
+	}
+	entry.consumed = true
 	return entry.authReq, nil
 }
 

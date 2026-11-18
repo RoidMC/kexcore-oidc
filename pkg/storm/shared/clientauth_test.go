@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,9 @@ import (
 
 	"github.com/go-openapi/testify/v2/assert"
 	"github.com/go-openapi/testify/v2/require"
+	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 )
@@ -27,11 +30,13 @@ type authFakeClient struct {
 	id     string
 	method protocol.AuthMethod
 	jwks   []jwk.Key
+	secret string
 }
 
 func (c *authFakeClient) GetID() string                   { return c.id }
 func (c *authFakeClient) AuthMethod() protocol.AuthMethod { return c.method }
 func (c *authFakeClient) ClientJWKS() []jwk.Key           { return c.jwks }
+func (c *authFakeClient) ClientSecret() string            { return c.secret }
 
 type authFakeStore struct {
 	client *authFakeClient
@@ -57,6 +62,11 @@ func authRequest(form url.Values) *http.Request {
 	return r
 }
 
+func authRequestWithIssuer(form url.Values, issuer string) *http.Request {
+	r := authRequest(form)
+	return r.WithContext(ContextWithIssuer(r.Context(), issuer))
+}
+
 // RFC 7523 §2.2 / FAPI 2.0: a client registered for private_key_jwt that omits
 // the client_assertion must be rejected instead of silently falling back to
 // client_id + client_secret authentication. This protects every endpoint that
@@ -71,6 +81,85 @@ func TestClientAuthHelper_PrivateKeyJWTRequiresAssertion(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, protocol.ErrInvalidClient())
+	assert.Contains(t, err.Error(), "client_assertion required")
+}
+
+const hsTestSecret = "a-very-long-shared-secret-for-hs256-tests"
+
+func hsClientAssertion(t *testing.T, secret, clientID string) string {
+	t.Helper()
+	now := time.Now()
+	payload := []byte(fmt.Sprintf(
+		`{"iss":%q,"sub":%q,"aud":"https://example.com/introspect","exp":%d,"iat":%d}`,
+		clientID, clientID, now.Add(time.Minute).Unix(), now.Unix(),
+	))
+	signed, err := jws.Sign(payload, jws.WithKey(jwa.HS256(), []byte(secret)))
+	require.NoError(t, err)
+	return string(signed)
+}
+
+func clientAssertionForm(assertion string) url.Values {
+	return url.Values{
+		"client_assertion_type": {protocol.ClientAssertionTypeJWTAssertion},
+		"client_assertion":      {assertion},
+	}
+}
+
+func TestClientAuthHelper_ClientSecretJWT(t *testing.T) {
+	h := NewClientAuthHelper(&authFakeStore{client: &authFakeClient{
+		id:     "hs-client",
+		method: protocol.AuthMethodClientSecretJWT,
+		secret: hsTestSecret,
+	}})
+
+	client, err := h.AuthenticateClient(authRequestWithIssuer(
+		clientAssertionForm(hsClientAssertion(t, hsTestSecret, "hs-client")),
+		"https://example.com/introspect",
+	))
+
+	require.NoError(t, err)
+	assert.Equal(t, "hs-client", client.GetID())
+}
+
+func TestClientAuthHelper_ClientSecretJWTWrongSecret(t *testing.T) {
+	h := NewClientAuthHelper(&authFakeStore{client: &authFakeClient{
+		id:     "hs-client",
+		method: protocol.AuthMethodClientSecretJWT,
+		secret: hsTestSecret,
+	}})
+
+	_, err := h.AuthenticateClient(authRequestWithIssuer(
+		clientAssertionForm(hsClientAssertion(t, "wrong-secret", "hs-client")),
+		"https://example.com/introspect",
+	))
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, protocol.ErrInvalidClient())
+}
+
+func TestClientAuthHelper_ClientSecretJWTMethodMismatch(t *testing.T) {
+	h := NewClientAuthHelper(&authFakeStore{client: &authFakeClient{
+		id:     "hs-client",
+		method: protocol.AuthMethodBasic,
+		secret: hsTestSecret,
+	}})
+
+	_, err := h.AuthenticateClient(authRequest(clientAssertionForm(hsClientAssertion(t, hsTestSecret, "hs-client"))))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not configured for client_secret_jwt")
+}
+
+func TestClientAuthHelper_ClientSecretJWTRequiresAssertion(t *testing.T) {
+	h := NewClientAuthHelper(&authFakeStore{client: &authFakeClient{
+		id:     "hs-client",
+		method: protocol.AuthMethodClientSecretJWT,
+		secret: hsTestSecret,
+	}})
+
+	_, err := h.AuthenticateClient(authRequest(url.Values{"client_id": {"hs-client"}}))
+
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "client_assertion required")
 }
 

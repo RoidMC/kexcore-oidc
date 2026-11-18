@@ -97,6 +97,15 @@ func TestContribute_SigningAlgorithms_FallbackRS256(t *testing.T) {
 	})
 }
 
+func TestContribute_ClaimsParameterEnabledByConfig(t *testing.T) {
+	p := NewWithConfig(&fakeKeyStore{}, Config{ClaimsParameterSupported: true})
+	cfg := newDiscoveryCfg()
+
+	p.Contribute(context.Background(), cfg)
+
+	assert.True(t, cfg.ClaimsParameterSupported)
+}
+
 func TestContribute_AuthSigningAlgorithms_IncludeHS(t *testing.T) {
 	ks := &fakeKeyStore{algs: []string{"ES256"}}
 	p := NewWithConfig(ks, Config{})
@@ -104,7 +113,7 @@ func TestContribute_AuthSigningAlgorithms_IncludeHS(t *testing.T) {
 
 	p.Contribute(context.Background(), cfg)
 
-	// Auth signing algs should include HS variants
+	// client_secret_jwt is supported, so HS variants are advertised
 	authAlgs := cfg.TokenEndpointAuthSigningAlgValuesSupported
 	assert.Contains(t, authAlgs, "ES256")
 	assert.Contains(t, authAlgs, "HS256")
@@ -134,6 +143,15 @@ func TestContribute_SubjectTypes_Default(t *testing.T) {
 
 	p.Contribute(context.Background(), cfg)
 
+	assert.Equal(t, []string{"public"}, cfg.SubjectTypesSupported)
+}
+
+func TestContribute_SubjectTypes_PairwiseCapableStorage(t *testing.T) {
+	p := NewWithConfig(nil, Config{PairwiseSubjectSupported: true})
+	cfg := newDiscoveryCfg()
+
+	p.Contribute(context.Background(), cfg)
+
 	assert.Equal(t, []string{"public", "pairwise"}, cfg.SubjectTypesSupported)
 }
 
@@ -153,7 +171,8 @@ func TestContribute_StaticFields(t *testing.T) {
 	p.Contribute(context.Background(), cfg)
 
 	assert.Equal(t, []string{"normal"}, cfg.ClaimTypesSupported)
-	assert.True(t, cfg.ClaimsParameterSupported)
+	assert.False(t, cfg.ClaimsParameterSupported)
+	assert.Contains(t, cfg.TokenEndpointAuthSigningAlgValuesSupported, "HS256")
 	assert.True(t, cfg.RequestParameterSupported)
 	assert.True(t, cfg.RequestURIParameterSupported)
 	assert.False(t, cfg.RequireRequestURIRegistration)

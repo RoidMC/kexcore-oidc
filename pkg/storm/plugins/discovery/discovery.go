@@ -33,8 +33,19 @@ type Plugin struct {
 // Config holds optional overrides for the discovery document.
 type Config struct {
 	// SubjectTypes overrides subject_types_supported.
-	// Default: ["public", "pairwise"]
+	// Default: ["public"], plus "pairwise" when the storage implements
+	// storm.PairwiseTransformer (or PairwiseSubjectSupported is set).
 	SubjectTypes []string
+
+	// PairwiseSubjectSupported advertises pairwise subject type support.
+	// New sets it automatically when the storage implements
+	// storm.PairwiseTransformer.
+	PairwiseSubjectSupported bool
+
+	// ClaimsParameterSupported is set by New when the storage implements
+	// storm.ClaimsRequestStore; it can also be enabled explicitly by callers
+	// that provide their own claims enforcement.
+	ClaimsParameterSupported bool
 
 	// ExtraFields are additional key-value pairs merged into cfg.Extra.
 	ExtraFields map[string]any
@@ -48,7 +59,14 @@ func New(ctx *storm.PluginContext) *Plugin {
 	if !ok {
 		return nil
 	}
-	return &Plugin{keyStore: keyStore}
+	cfg := Config{}
+	if _, ok := ctx.Storage.(storm.ClaimsRequestStore); ok {
+		cfg.ClaimsParameterSupported = true
+	}
+	if _, ok := ctx.Storage.(storm.PairwiseTransformer); ok {
+		cfg.PairwiseSubjectSupported = true
+	}
+	return &Plugin{keyStore: keyStore, config: cfg}
 }
 
 // NewWithConfig creates a new Discovery plugin with an explicit key store
@@ -84,26 +102,23 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 		}
 	}
 
-	// Auth signing algorithms = KeyStore algorithms + HS variants (for client_secret_jwt)
-	authSigningAlgs := make([]string, 0, len(signingAlgs)+3)
-	authSigningAlgs = append(authSigningAlgs, signingAlgs...)
+	// Token/response signing: asymmetric algorithms from the KeyStore only.
+	// "none" is intentionally excluded — unsigned objects are a security risk.
+	// HS algorithms are not advertised because client_secret_jwt is not
+	// implemented; only private_key_jwt is supported for JWT client auth.
+	cfg.IDTokenSigningAlgValuesSupported = signingAlgs
+	cfg.UserinfoSigningAlgValuesSupported = signingAlgs
+	cfg.RequestObjectSigningAlgValuesSupported = signingAlgs
+
+	// Client authentication: private_key_jwt uses the asymmetric algorithms above,
+	// client_secret_jwt uses HS256/384/512 with the client secret as MAC key.
+	authSigningAlgs := append([]string(nil), signingAlgs...)
 	for _, hs := range []string{"HS256", "HS384", "HS512"} {
 		if !slices.Contains(authSigningAlgs, hs) {
 			authSigningAlgs = append(authSigningAlgs, hs)
 		}
 	}
 	slices.Sort(authSigningAlgs)
-
-	// Token/response signing: non-asymmetric only (from KeyStore)
-	// Request Object signing: same as OP signing (asymmetric only).
-	// "none" is intentionally excluded — unsigned request objects are a
-	// security risk and not supported. FAPI profiles require signed objects.
-	// HS algorithms are for client_secret_jwt auth, not OP-signed objects.
-	cfg.IDTokenSigningAlgValuesSupported = signingAlgs
-	cfg.UserinfoSigningAlgValuesSupported = signingAlgs
-	cfg.RequestObjectSigningAlgValuesSupported = signingAlgs
-
-	// Client authentication: asymmetric + HS (for client_secret_jwt)
 	cfg.TokenEndpointAuthSigningAlgValuesSupported = authSigningAlgs
 	cfg.IntrospectionEndpointAuthSigningAlgValuesSupported = authSigningAlgs
 	cfg.RevocationEndpointAuthSigningAlgValuesSupported = authSigningAlgs
@@ -111,7 +126,12 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 	// OP-level static fields
 	subjectTypes := p.config.SubjectTypes
 	if len(subjectTypes) == 0 {
-		subjectTypes = []string{"public", "pairwise"}
+		// pairwise is advertised only when the storage can actually transform
+		// subjects (OIDC Core §8.1).
+		subjectTypes = []string{"public"}
+		if p.config.PairwiseSubjectSupported {
+			subjectTypes = append(subjectTypes, "pairwise")
+		}
 	}
 	cfg.SubjectTypesSupported = subjectTypes
 	cfg.ClaimTypesSupported = []string{"normal"}
@@ -123,7 +143,11 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 		"birthdate", "zoneinfo", "locale", "phone_number",
 		"phone_number_verified", "address", "updated_at",
 	}
-	cfg.ClaimsParameterSupported = true
+	// The claims request parameter is parsed and enforced for ID Token and
+	// UserInfo only when the storage can associate a token with its claims
+	// request; New enables this flag for storage implementing
+	// storm.ClaimsRequestStore.
+	cfg.ClaimsParameterSupported = p.config.ClaimsParameterSupported
 	cfg.RequestParameterSupported = true
 	cfg.RequestURIParameterSupported = true
 	cfg.RequireRequestURIRegistration = false

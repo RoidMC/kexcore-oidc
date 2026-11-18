@@ -49,6 +49,7 @@ type Client struct {
 	jwksURI                        string      // client's jwks_uri for fetching fresh keys
 	userInfoSignedResponseAlg      string      // userinfo_signed_response_alg from DCR
 	idTokenSignedResponseAlg       string      // id_token_signed_response_alg from DCR
+	authorizationSignedResponseAlg string      // authorization_signed_response_alg (JARM) from DCR
 	requestObjectSigningAlg        string      // request_object_signing_alg (e.g. "PS256" for FAPI 2.0 signed_non_repudiation)
 	fapiProfile                    bool        // FAPI 2.0 profile restrictions
 	requireDPoP                    bool        // require DPoP proof at token endpoint
@@ -83,6 +84,7 @@ func (c *Client) RequestObjectSigningAlg() string        { return c.requestObjec
 func (c *Client) RequireDPoP() bool                      { return c.requireDPoP }
 func (c *Client) RequireMtls() bool                      { return c.requireMtls }
 func (c *Client) IDTokenSignedResponseAlg() string       { return c.idTokenSignedResponseAlg }
+func (c *Client) AuthorizationSignedResponseAlg() string { return c.authorizationSignedResponseAlg }
 
 // NotificationEndpoint returns the client's CIBA notification endpoint (CIBA Core 1.0 §10).
 // Implements storm.NotificationEndpointProvider for SSRF validation.

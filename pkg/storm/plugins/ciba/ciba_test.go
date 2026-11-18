@@ -3,6 +3,7 @@ package ciba
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -804,4 +805,47 @@ func TestRegister_ApprovalRoutesOptIn(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("/ciba: status = %d, want 200", w.Code)
 	}
+}
+
+// CIBA Core §7.1.2: login_hint_token carries the subject in its sub claim.
+func TestResolveSubject_LoginHintToken(t *testing.T) {
+	payload := base64RawURL(`{"sub":"user-1","exp":9999999999}`)
+	token := "eyJhbGciOiJub25lIn0." + payload + "."
+	p := &Plugin{}
+	r := httptest.NewRequest(http.MethodPost, "/bc-authorize", nil)
+
+	sub, err := p.resolveSubject(r, "", "", token)
+	if err != nil {
+		t.Fatalf("resolveSubject: %v", err)
+	}
+	if sub != "user-1" {
+		t.Fatalf("subject = %q, want %q", sub, "user-1")
+	}
+}
+
+// An expired login_hint_token must be rejected.
+func TestResolveSubject_LoginHintTokenExpired(t *testing.T) {
+	payload := base64RawURL(`{"sub":"user-1","exp":1}`)
+	token := "eyJhbGciOiJub25lIn0." + payload + "."
+	p := &Plugin{}
+	r := httptest.NewRequest(http.MethodPost, "/bc-authorize", nil)
+
+	if _, err := p.resolveSubject(r, "", "", token); err == nil {
+		t.Fatal("expired login_hint_token should be rejected")
+	}
+}
+
+// login_hint keeps its precedence and is returned verbatim.
+func TestResolveSubject_LoginHint(t *testing.T) {
+	p := &Plugin{}
+	r := httptest.NewRequest(http.MethodPost, "/bc-authorize", nil)
+
+	sub, err := p.resolveSubject(r, "user-2", "", "")
+	if err != nil || sub != "user-2" {
+		t.Fatalf("resolveSubject(login_hint) = %q, %v", sub, err)
+	}
+}
+
+func base64RawURL(s string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(s))
 }

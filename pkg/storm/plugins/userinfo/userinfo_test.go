@@ -1121,6 +1121,104 @@ func TestUserInfo_JWTResponse_NoClientLookup_FallbackToJSON(t *testing.T) {
 	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
 }
 
+// fakeResponseAlgProvider registers a userinfo_signed_response_alg for every client.
+type fakeResponseAlgProvider struct {
+	alg string
+}
+
+func (f *fakeResponseAlgProvider) UserInfoResponseAlg(_ context.Context, _ string) (string, error) {
+	return f.alg, nil
+}
+
+// fakeKeyStoreWithByAlg extends fakeKeyStoreWithSigning with algorithm lookup.
+type fakeKeyStoreWithByAlg struct {
+	*fakeKeyStoreWithSigning
+	byAlg map[string]storm.SigningKey
+}
+
+func (s *fakeKeyStoreWithByAlg) SigningKeyByAlg(_ context.Context, alg string) (storm.SigningKey, error) {
+	key, ok := s.byAlg[alg]
+	if !ok {
+		return nil, errNotFound
+	}
+	return key, nil
+}
+
+// A client that registered userinfo_signed_response_alg MUST NOT receive an
+// unsigned JSON document when signing fails (OIDC Core §5.3.2).
+func TestUserInfo_JWTResponse_RequiredSigningFails_NoFallback(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(_ context.Context, info *protocol.UserInfo, _, _, _ string) error {
+			info.Subject = "user-signed"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(_ context.Context, _ []byte) ([]byte, error) {
+			return []byte("tokenID:user-signed"), nil
+		},
+	}
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	jwkKey, _ := jwk.Import[jwk.Key](key)
+	_ = jwkKey.Set(jwk.AlgorithmKey, "ES256")
+	_ = jwkKey.Set(jwk.KeyIDKey, "test-key")
+
+	plugin := &Plugin{
+		store:             store,
+		crypto:            crypto,
+		keyStore:          &fakeKeyStoreWithSigning{signingKey: &fakeSigningKey{id: "test-key", alg: "ES256", key: jwkKey}},
+		clientLookup:      &fakeTokenClientProvider{clientID: "test-client"},
+		responseAlgLookup: &fakeResponseAlgProvider{alg: "ES256"},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer test-token")
+	w := serveRequest(plugin, r)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code, "body: %s", w.Body.String())
+	assert.NotEqual(t, "application/json", w.Header().Get("Content-Type"))
+}
+
+// A client that requires signing gets a signed JWT when the matching key exists.
+func TestUserInfo_JWTResponse_RequiredSigning_UsesRegisteredAlg(t *testing.T) {
+	store := &fakeUserinfoStore{
+		userInfoFn: func(_ context.Context, info *protocol.UserInfo, _, _, _ string) error {
+			info.Subject = "user-signed"
+			return nil
+		},
+	}
+	crypto := &fakeCrypto{
+		decryptFn: func(_ context.Context, _ []byte) ([]byte, error) {
+			return []byte("tokenID:user-signed"), nil
+		},
+	}
+	rsaKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	esKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	rsaJWK, _ := jwk.Import[jwk.Key](rsaKey)
+	_ = rsaJWK.Set(jwk.AlgorithmKey, "RS256")
+	esJWK, _ := jwk.Import[jwk.Key](esKey)
+	_ = esJWK.Set(jwk.AlgorithmKey, "ES256")
+	_ = esJWK.Set(jwk.KeyIDKey, "es-key")
+
+	plugin := &Plugin{
+		store:    store,
+		crypto:   crypto,
+		keyStore: &fakeKeyStoreWithByAlg{
+			fakeKeyStoreWithSigning: &fakeKeyStoreWithSigning{signingKey: &fakeSigningKey{id: "rsa-key", alg: "RS256", key: rsaJWK}},
+			byAlg:                   map[string]storm.SigningKey{"ES256": &fakeSigningKey{id: "es-key", alg: "ES256", key: esJWK}},
+		},
+		clientLookup:      &fakeTokenClientProvider{clientID: "test-client"},
+		responseAlgLookup: &fakeResponseAlgProvider{alg: "ES256"},
+	}
+
+	r := newRequest("GET", "/userinfo")
+	r.Header.Set("Authorization", "Bearer test-token")
+	w := serveRequest(plugin, r)
+
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "application/jwt", w.Header().Get("Content-Type"))
+}
+
 func TestUserInfo_Contribute_WithSigningAlgs(t *testing.T) {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	jwkKey, _ := jwk.Import[jwk.Key](key)

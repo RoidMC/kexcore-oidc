@@ -62,6 +62,11 @@ type Storage struct {
 	tokens        map[string]*Token
 	refreshTokens map[string]*RefreshToken
 
+	// consumedRefreshTokens keeps rotated refresh tokens by ID. The ID Token for
+	// a refresh response is created after rotation, so the claims request must
+	// remain reachable by the old refresh token ID.
+	consumedRefreshTokens map[string]*RefreshToken
+
 	// sessions tracks active sessions by session ID.
 	// Key: session ID, Value: session info including subject and auth time.
 	sessions map[string]*sessionInfo
@@ -319,6 +324,15 @@ func NewStorage(userStore UserStore, algorithms []string) *Storage {
 		refreshTTL:         24 * time.Hour,
 	}
 }
+
+// RequireDPoPNonce makes the example enforce server-provided DPoP nonces
+// (RFC 9449 §8), which FAPI 2.0 conformance tests expect.
+func (s *Storage) RequireDPoPNonce() bool { return true }
+
+// DisableRefreshTokenRotation keeps the demo compatible with conformance
+// modules that re-use the original refresh token across test steps. Production
+// deployments should leave rotation enabled.
+func (s *Storage) DisableRefreshTokenRotation() bool { return true }
 
 func (s *Storage) expandIDTokenEncryptionAlg(alg string) string {
 	if alg == "RSA-OAEP" {

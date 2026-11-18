@@ -8,9 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v4/jwa"
-	"github.com/lestrrat-go/jwx/v4/jws"
-
+	"github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 )
@@ -64,22 +62,17 @@ func createLogoutToken(issuer, subject, audience, sid string, signingKey storm.S
 		return "", err
 	}
 
-	alg, err := algorithmToJWA(signingKey.Algorithm())
+	// Sign through the crypto provider registry so HSM/KMS overrides apply.
+	signer, err := crypto.NewSigner(signingKey.Algorithm(), signingKey.Key(), signingKey.ID())
 	if err != nil {
-		return "", fmt.Errorf("unsupported signing algorithm %q: %w", signingKey.Algorithm(), err)
+		return "", fmt.Errorf("create signer: %w", err)
 	}
-	headers := jws.NewHeaders()
-	_ = headers.Set(jws.AlgorithmKey, alg)
-	// RFC recommends explicit typing with typ: logout+jwt
-	_ = headers.Set("typ", "logout+jwt")
-	if signingKey.ID() != "" {
-		_ = headers.Set(jws.KeyIDKey, signingKey.ID())
-	}
-	signed, err := jws.Sign(payload, jws.WithKey(alg, signingKey.Key(), jws.WithProtectedHeaders(headers)))
+	signer.SetTokenType("logout+jwt")
+	signed, err := signer.Sign(payload)
 	if err != nil {
 		return "", fmt.Errorf("JWS signing failed: %w", err)
 	}
-	return string(signed), nil
+	return signed, nil
 }
 
 // sendLogoutToken sends a logout token to a client's backchannel_logout_uri.
@@ -105,13 +98,4 @@ func sendLogoutToken(uri, logoutToken string, logger *slog.Logger, client *http.
 			slog.Int("status_code", resp.StatusCode),
 		)
 	}
-}
-
-// algorithmToJWA converts a string algorithm name to jwa.SignatureAlgorithm.
-func algorithmToJWA(alg string) (jwa.SignatureAlgorithm, error) {
-	if jwaAlg, ok := jwa.LookupSignatureAlgorithm(alg); ok {
-		return jwaAlg, nil
-	}
-	unknown, _ := jwa.LookupSignatureAlgorithm(alg)
-	return unknown, fmt.Errorf("unknown algorithm: %s", alg)
 }

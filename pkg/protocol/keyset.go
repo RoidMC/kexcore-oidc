@@ -139,5 +139,8 @@ func algToKeyType(key jwk.Key, alg string) bool {
 	if alg == "EdDSA" {
 		return kty == jwa.OKP()
 	}
+	if strings.HasPrefix(alg, "HS") {
+		return kty == jwa.OctetSeq()
+	}
 	return false
 }

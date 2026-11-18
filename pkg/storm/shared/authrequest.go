@@ -121,6 +121,12 @@ type IDTokenSignedResponseAlgProvider interface {
 	IDTokenSignedResponseAlg() string
 }
 
+// AuthorizationSignedResponseAlgProvider is an optional interface for clients
+// that register a JARM signing algorithm (authorization_signed_response_alg).
+type AuthorizationSignedResponseAlgProvider interface {
+	AuthorizationSignedResponseAlg() string
+}
+
 // UserInfoSignedResponseAlgProvider is an optional interface for clients that
 // specify a preferred UserInfo signing algorithm (userinfo_signed_response_alg).
 // When implemented and returning a non-empty string, the userinfo endpoint uses
@@ -530,6 +536,13 @@ func validateRedirectURINative(client AuthRequestClient, uri string, responseTyp
 //
 // Returns empty string if the client has no preference (server default will be used).
 func ResolvePreferredSigningAlg(client interface{}) string {
+	// JARM responses use authorization_signed_response_alg when registered
+	// (RFC 9101 §5 / OIDC Dynamic Client Registration §2).
+	if algProvider, ok := client.(AuthorizationSignedResponseAlgProvider); ok {
+		if alg := algProvider.AuthorizationSignedResponseAlg(); alg != "" {
+			return alg
+		}
+	}
 	if algProvider, ok := client.(IDTokenSignedResponseAlgProvider); ok {
 		if alg := algProvider.IDTokenSignedResponseAlg(); alg != "" {
 			return alg

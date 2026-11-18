@@ -306,13 +306,14 @@ const (
 	AuthMethodPost              AuthMethod = "client_secret_post"
 	AuthMethodNone              AuthMethod = "none"
 	AuthMethodPrivateKeyJWT     AuthMethod = "private_key_jwt"
+	AuthMethodClientSecretJWT   AuthMethod = "client_secret_jwt"           // RFC 7523 §2.2 with HS256/384/512
 	AuthMethodTLSClientAuth     AuthMethod = "tls_client_auth"             // RFC 8705 §2
 	AuthMethodSelfSignedTLSAuth AuthMethod = "self_signed_tls_client_auth" // RFC 8705 §2
 )
 
 var AllAuthMethods = []AuthMethod{
 	AuthMethodBasic, AuthMethodPost, AuthMethodNone, AuthMethodPrivateKeyJWT,
-	AuthMethodTLSClientAuth, AuthMethodSelfSignedTLSAuth,
+	AuthMethodClientSecretJWT, AuthMethodTLSClientAuth, AuthMethodSelfSignedTLSAuth,
 }
 
 // ---------------------------------------------------------------------------

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -88,11 +87,12 @@ func ParseProof(dpopHeader, httpMethod, httpURL string) (*Proof, error) {
 
 	// Parse payload claims
 	var claims struct {
-		HTM string `json:"htm"`
-		HTU string `json:"htu"`
-		ATH string `json:"ath"`
-		IAT int64  `json:"iat"`
-		JTI string `json:"jti"`
+		HTM   string `json:"htm"`
+		HTU   string `json:"htu"`
+		ATH   string `json:"ath"`
+		Nonce string `json:"nonce"`
+		IAT   int64  `json:"iat"`
+		JTI   string `json:"jti"`
 	}
 	if err := json.Unmarshal(msg.Payload(), &claims); err != nil {
 		return nil, fmt.Errorf("invalid DPoP proof payload: %w", err)
@@ -109,7 +109,8 @@ func ParseProof(dpopHeader, httpMethod, httpURL string) (*Proof, error) {
 	}
 
 	// 4. Verify htu matches HTTP URI
-	// RFC 9449 §4.3: compare htu ignoring port and query parameters
+	// RFC 9449 §4.3: compare htu ignoring only query and fragment parts.
+	// The port is part of the authority and MUST match.
 	if !htuMatch(claims.HTU, httpURL) {
 		return nil, fmt.Errorf("DPoP proof htu mismatch: got %q, want %q", claims.HTU, httpURL)
 	}
@@ -134,6 +135,7 @@ func ParseProof(dpopHeader, httpMethod, httpURL string) (*Proof, error) {
 		HTM:       claims.HTM,
 		HTU:       claims.HTU,
 		ATH:       claims.ATH,
+		Nonce:     claims.Nonce,
 		IssuedAt:  iat,
 		UniqueID:  claims.JTI,
 		PublicKey: pubKey,
@@ -193,27 +195,19 @@ func VerifyPublicKey(key crypto.PublicKey) error {
 }
 
 // htuMatch compares two URLs for DPoP htu validation per RFC 9449 §4.3.
-// It strips query strings and fragments, and ignores port numbers
-// (since the server may see a different port than the client).
+// Query strings and fragments are ignored; the host (including port) must
+// match exactly.
 func htuMatch(htu, requestURL string) bool {
-	htuNorm := normalizeHTU(htu)
-	reqNorm := normalizeHTU(requestURL)
-	return htuNorm == reqNorm
+	return normalizeHTU(htu) == normalizeHTU(requestURL)
 }
 
-// normalizeHTU strips query, fragment, and port from a URL for htu comparison.
+// normalizeHTU strips query and fragment from a URL for htu comparison.
 func normalizeHTU(raw string) string {
 	// Strip query and fragment
 	if idx := strings.IndexAny(raw, "?#"); idx >= 0 {
 		raw = raw[:idx]
 	}
-	// Parse to strip port
-	u, err := url.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	u.Host = u.Hostname()
-	return u.String()
+	return raw
 }
 
 // isPrivateKey returns true if the JWK contains private key material.

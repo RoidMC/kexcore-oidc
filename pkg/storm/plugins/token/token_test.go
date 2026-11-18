@@ -18,9 +18,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/go-openapi/testify/v2/assert"
 	"github.com/go-openapi/testify/v2/require"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 
 	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
@@ -34,6 +36,7 @@ type fakeClient struct {
 	authMethod   protocol.AuthMethod
 	grantTypes   []protocol.GrantType
 	redirectURIs []string
+	clientSecret string
 }
 
 func (c *fakeClient) GetID() string                    { return c.id }
@@ -41,6 +44,7 @@ func (c *fakeClient) AuthMethod() protocol.AuthMethod  { return c.authMethod }
 func (c *fakeClient) LoginURL(id string) string        { return "/login?id=" + id }
 func (c *fakeClient) RedirectURIs() []string           { return c.redirectURIs }
 func (c *fakeClient) GrantTypes() []protocol.GrantType { return c.grantTypes }
+func (c *fakeClient) ClientSecret() string             { return c.clientSecret }
 
 type fakeAuthRequest struct {
 	id            string
@@ -206,6 +210,12 @@ func newFakeTokenStore() *fakeTokenStore {
 		nextTokenID:   "token-1",
 		nextRefreshID: "refresh-1",
 	}
+}
+
+// ClientCredentialsTokenRequest lets the fake store serve the
+// client_credentials grant used by the client_secret_jwt test.
+func (s *fakeTokenStore) ClientCredentialsTokenRequest(_ context.Context, clientID string, scopes []string) (storm.TokenRequest, error) {
+	return &fakeTokenRequest{clientID: clientID, scopes: scopes}, nil
 }
 
 func (s *fakeTokenStore) CreateAccessToken(_ context.Context, req storm.TokenRequest, cnf map[string]any) (string, time.Time, error) {
@@ -1749,10 +1759,117 @@ func TestPlugin_Contribute(t *testing.T) {
 	assert.Contains(t, cfg.GrantTypesSupported, "refresh_token")
 	assert.Contains(t, cfg.TokenEndpointAuthMethodsSupported, "client_secret_basic")
 	assert.Contains(t, cfg.TokenEndpointAuthMethodsSupported, "client_secret_post")
+	assert.Contains(t, cfg.TokenEndpointAuthMethodsSupported, "client_secret_jwt")
+	assert.Contains(t, cfg.IDTokenEncryptionAlgValuesSupported, "SGD_SM2_3")
+	assert.Contains(t, cfg.IDTokenEncryptionAlgValuesSupported, "SGD_SM9_3")
+	assert.Contains(t, cfg.IDTokenEncryptionEncValuesSupported, "SGD_SM4_GCM")
+	assert.Contains(t, cfg.IDTokenEncryptionEncValuesSupported, "SGD_SM4_CCM")
 }
 
 func sharedIssuerContext(issuer string) context.Context {
 	return protocol.ContextWithIssuer(context.Background(), issuer)
+}
+
+// --- claims parameter propagation tests (OIDC Core §5.5) ---
+
+// fakeClaimsStore adds storm.ClaimsRequestStore to the fake token store.
+type fakeClaimsStore struct {
+	*fakeTokenStore
+	claims map[string]*protocol.ClaimsRequest
+}
+
+func (s *fakeClaimsStore) GetClaimsRequestByToken(_ context.Context, tokenID string) (*protocol.ClaimsRequest, error) {
+	return s.claims[tokenID], nil
+}
+
+func TestClaimsRequestFor_AuthRequest(t *testing.T) {
+	cr := &protocol.ClaimsRequest{IDToken: map[string]*protocol.ClaimRequest{"email": {Essential: true}}}
+	req := &fakeAuthRequest{claims: cr}
+
+	assert.Equal(t, cr, claimsRequestFor(context.Background(), newFakeTokenStore(), req))
+}
+
+func TestClaimsRequestFor_RefreshToken(t *testing.T) {
+	cr := &protocol.ClaimsRequest{IDToken: map[string]*protocol.ClaimRequest{"email": nil}}
+	ts := &fakeClaimsStore{
+		fakeTokenStore: newFakeTokenStore(),
+		claims:         map[string]*protocol.ClaimsRequest{"refresh-1": cr},
+	}
+
+	got := claimsRequestFor(context.Background(), ts, &fakeRefreshReq{id: "refresh-1"})
+	assert.Equal(t, cr, got)
+}
+
+func TestClaimsRequestFor_RefreshTokenWithoutStore(t *testing.T) {
+	// Storage that cannot recall the claims request must not break refresh.
+	assert.Nil(t, claimsRequestFor(context.Background(), newFakeTokenStore(), &fakeRefreshReq{id: "refresh-1"}))
+}
+
+// --- client_secret_jwt at the token endpoint (RFC 7523 §2.2) ---
+
+// hsAssertion builds an HS256 client assertion for the given secret.
+func hsAssertion(t *testing.T, secret, clientID, audience string) string {
+	t.Helper()
+	now := time.Now()
+	payload := []byte(fmt.Sprintf(
+		`{"iss":%q,"sub":%q,"aud":%q,"exp":%d,"iat":%d}`,
+		clientID, clientID, audience, now.Add(time.Minute).Unix(), now.Unix(),
+	))
+	signed, err := jws.Sign(payload, jws.WithKey(jwa.HS256(), []byte(secret)))
+	require.NoError(t, err)
+	return string(signed)
+}
+
+func TestHandleToken_ClientSecretJWT(t *testing.T) {
+	const issuer = "https://example.com/"
+	cs := &fakeClientStore{clients: map[string]*fakeClient{
+		"client-hs": {
+			id:           "client-hs",
+			authMethod:   protocol.AuthMethodClientSecretJWT,
+			grantTypes:   []protocol.GrantType{protocol.GrantTypeClientCredentials},
+			clientSecret: "s3cret",
+		},
+	}}
+	p := newTestPlugin(t, cs, newFakeAuthStore(), newFakeTokenStore())
+
+	form := newTokenForm("client_credentials", url.Values{
+		"client_assertion_type": {protocol.ClientAssertionTypeJWTAssertion},
+		"client_assertion":      {hsAssertion(t, "s3cret", "client-hs", issuer)},
+	})
+	r := postTokenRequest(form)
+	r = r.WithContext(protocol.ContextWithIssuer(r.Context(), issuer))
+	w := httptest.NewRecorder()
+
+	p.handleToken(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+	assert.NotEmpty(t, decodeTokenResponse(t, w).AccessToken)
+}
+
+func TestHandleToken_ClientSecretJWT_WrongSecret(t *testing.T) {
+	const issuer = "https://example.com/"
+	cs := &fakeClientStore{clients: map[string]*fakeClient{
+		"client-hs": {
+			id:           "client-hs",
+			authMethod:   protocol.AuthMethodClientSecretJWT,
+			grantTypes:   []protocol.GrantType{protocol.GrantTypeClientCredentials},
+			clientSecret: "s3cret",
+		},
+	}}
+	p := newTestPlugin(t, cs, newFakeAuthStore(), newFakeTokenStore())
+
+	form := newTokenForm("client_credentials", url.Values{
+		"client_assertion_type": {protocol.ClientAssertionTypeJWTAssertion},
+		"client_assertion":      {hsAssertion(t, "wrong-secret", "client-hs", issuer)},
+	})
+	r := postTokenRequest(form)
+	r = r.WithContext(protocol.ContextWithIssuer(r.Context(), issuer))
+	w := httptest.NewRecorder()
+
+	p.handleToken(w, r)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "invalid_client", decodeError(t, w)["error"])
 }
 
 // --- device_code grant tests (RFC 8628) ---

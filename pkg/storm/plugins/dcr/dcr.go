@@ -7,12 +7,14 @@ package dcr
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jwk"
@@ -30,10 +32,27 @@ func init() {
 
 // Plugin implements the Dynamic Client Registration endpoint.
 type Plugin struct {
-	store             storm.DCRStore
-	allowPrivateIPs   bool
-	skipTLSCertVerify bool
-	endpointConfigs   shared.EndpointConfigMap // endpoint configurations (optional)
+	store              storm.DCRStore
+	allowPrivateIPs    bool
+	skipTLSCertVerify  bool
+	openRegistration   bool
+	initialAccessToken string
+	tokenValidator     InitialAccessTokenValidator
+	endpointConfigs    shared.EndpointConfigMap // endpoint configurations (optional)
+}
+
+// InitialAccessTokenValidator verifies the RFC 7591 §3 initial access token a
+// client presents when registering. Storage implementations can use their own
+// token store by implementing this interface.
+type InitialAccessTokenValidator interface {
+	ValidateInitialAccessToken(ctx context.Context, token string) error
+}
+
+// OpenRegistrationPolicy lets storage explicitly opt in to anonymous dynamic
+// client registration. Without it (and without OpenRegistration in Config),
+// POST /register requires a valid initial access token.
+type OpenRegistrationPolicy interface {
+	DynamicRegistrationOpen() bool
 }
 
 // Config holds the dependencies for the DCR plugin.
@@ -42,6 +61,14 @@ type Config struct {
 	AllowPrivateIPs   bool
 	SkipTLSCertVerify bool
 	EndpointConfigs   shared.EndpointConfigMap
+	// OpenRegistration disables the initial access token requirement
+	// (RFC 7591 §3). Leave false unless anonymous registration is intended.
+	OpenRegistration bool
+	// InitialAccessToken is a static bearer token accepted for registration.
+	InitialAccessToken string
+	// InitialAccessTokenValidator, when set, takes precedence over
+	// InitialAccessToken.
+	InitialAccessTokenValidator InitialAccessTokenValidator
 }
 
 // New creates a new DCR plugin from a PluginContext.
@@ -52,22 +79,32 @@ func New(ctx *storm.PluginContext) *Plugin {
 	if !ok {
 		return nil
 	}
-	return &Plugin{
+	p := &Plugin{
 		store:             store,
 		allowPrivateIPs:   ctx.AllowPrivateIPs,
 		skipTLSCertVerify: ctx.SkipTLSCertVerify,
 		endpointConfigs:   ctx.EndpointConfigs,
 	}
+	if policy, ok := ctx.Storage.(OpenRegistrationPolicy); ok {
+		p.openRegistration = policy.DynamicRegistrationOpen()
+	}
+	if v, ok := ctx.Storage.(InitialAccessTokenValidator); ok {
+		p.tokenValidator = v
+	}
+	return p
 }
 
 // NewWithConfig creates a new DCR plugin with explicit configuration.
 // Use this when constructing the plugin outside the Engine wiring.
 func NewWithConfig(cfg Config) *Plugin {
 	return &Plugin{
-		store:             cfg.Store,
-		allowPrivateIPs:   cfg.AllowPrivateIPs,
-		skipTLSCertVerify: cfg.SkipTLSCertVerify,
-		endpointConfigs:   cfg.EndpointConfigs,
+		store:              cfg.Store,
+		allowPrivateIPs:    cfg.AllowPrivateIPs,
+		skipTLSCertVerify:  cfg.SkipTLSCertVerify,
+		endpointConfigs:    cfg.EndpointConfigs,
+		openRegistration:   cfg.OpenRegistration,
+		initialAccessToken: cfg.InitialAccessToken,
+		tokenValidator:     cfg.InitialAccessTokenValidator,
 	}
 }
 
@@ -111,6 +148,28 @@ func (p *Plugin) getRoutePath(endpointName, defaultPath string) string {
 }
 
 func (p *Plugin) handleCreate(w http.ResponseWriter, r *http.Request) {
+	// RFC 7591 §3: registration requires an initial access token unless the
+	// deployment explicitly opens anonymous registration.
+	if !p.openRegistration {
+		token := initialAccessToken(r)
+		if token == "" {
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+			shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("initial access token required"), nil)
+			return
+		}
+		if p.tokenValidator != nil {
+			if err := p.tokenValidator.ValidateInitialAccessToken(r.Context(), token); err != nil {
+				w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+				shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("invalid initial access token"), nil)
+				return
+			}
+		} else if p.initialAccessToken == "" || subtle.ConstantTimeCompare([]byte(p.initialAccessToken), []byte(token)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+			shared.WriteError(w, r, protocol.ErrInvalidClient().WithDescription("invalid initial access token"), nil)
+			return
+		}
+	}
+
 	var req storm.RegistrationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("error decoding request body").WithParent(err), nil)
@@ -315,4 +374,15 @@ func (p *Plugin) validateSectorIdentifierURI(sectorURI string, redirectURIs []st
 		}
 	}
 	return nil
+}
+
+// initialAccessToken extracts the RFC 7591 §3 initial access token from the
+// Authorization: Bearer header.
+func initialAccessToken(r *http.Request) string {
+	const prefix = "bearer "
+	h := r.Header.Get("Authorization")
+	if len(h) < len(prefix) || !strings.EqualFold(h[:len(prefix)], prefix) {
+		return ""
+	}
+	return strings.TrimSpace(h[len(prefix):])
 }

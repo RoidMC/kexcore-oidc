@@ -51,6 +51,9 @@ func New(ctx *storm.PluginContext) *Plugin {
 		requireDPoP:        ctx.RequireDPoP,
 		requireMtls:        ctx.RequireMtls,
 		endpointConfigs:    ctx.EndpointConfigs,
+		// Rotation is on by default; deployments that need legacy behaviour
+		// can opt out through Config.DisableRefreshRotation.
+		invalidateRefreshOnUse: true,
 	}
 	if das, ok := ctx.Storage.(storm.DeviceAuthStore); ok {
 		p.deviceAuthStore = das
@@ -63,6 +66,9 @@ func New(ctx *storm.PluginContext) *Plugin {
 	}
 	if sr, ok := ctx.Storage.(storm.ClientSessionRecorder); ok {
 		p.sessionRecorder = sr
+	}
+	if policy, ok := ctx.Storage.(RefreshRotationPolicy); ok && policy.DisableRefreshTokenRotation() {
+		p.invalidateRefreshOnUse = false
 	}
 	p.allowPrivateIPs = ctx.AllowPrivateIPs
 	p.skipTLSCertVerify = ctx.SkipTLSCertVerify
@@ -91,7 +97,7 @@ func NewWithConfig(cfg Config) *Plugin {
 		requireDPoP:            cfg.RequireDPoP,
 		requireMtls:            cfg.RequireMtls,
 		sessionRecorder:        cfg.SessionRecorder,
-		invalidateRefreshOnUse: cfg.InvalidateRefreshOnUse,
+		invalidateRefreshOnUse: !cfg.DisableRefreshRotation || cfg.InvalidateRefreshOnUse,
 	}
 }
 
@@ -143,19 +149,25 @@ func (p *Plugin) Contribute(ctx context.Context, cfg *protocol.DiscoveryConfigur
 		string(protocol.AuthMethodBasic),
 		string(protocol.AuthMethodPost),
 		string(protocol.AuthMethodPrivateKeyJWT),
+		string(protocol.AuthMethodClientSecretJWT),
 	)
 
-	// ID Token encryption support
+	// ID Token encryption support. SM2/SM9 key wrapping with SM4-GCM or
+	// SM4-CCM content encryption is implemented by pkg/crypto and wired in
+	// encryptIDToken. SM4 content encryption is only valid with dir/SM2/SM9;
+	// AES key wrapping rejects it.
 	cfg.IDTokenEncryptionAlgValuesSupported = []string{
 		"RSA-OAEP", "RSA-OAEP-256",
 		"A128KW", "A192KW", "A256KW",
 		"A128GCMKW", "A192GCMKW", "A256GCMKW",
 		"ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A192KW", "ECDH-ES+A256KW",
 		"dir",
+		"SGD_SM2_3", "SGD_SM9_3",
 	}
 	cfg.IDTokenEncryptionEncValuesSupported = []string{
 		"A256GCM", "A192GCM", "A128GCM",
 		"A128CBC-HS256", "A192CBC-HS384", "A256CBC-HS512",
+		"SGD_SM4_GCM", "SGD_SM4_CCM",
 	}
 }
 
@@ -1384,8 +1396,10 @@ func (p *Plugin) authenticateClient(r *http.Request, formClientID, formClientSec
 	return client, nil
 }
 
-// authenticatePrivateKeyJWT authenticates the client using a JWT assertion
-// signed with the client's private key (RFC 7523 §2.2, OIDC Core §9).
+// authenticatePrivateKeyJWT authenticates a client_assertion at the token
+// endpoint (RFC 7523 §2.2, OIDC Core §9). The assertion's alg header selects
+// the verification path: RS*/PS*/ES*/EdDSA use the client's registered keys
+// (private_key_jwt), HS256/384/512 use the client secret (client_secret_jwt).
 func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (storm.Client, error) {
 	issuer := shared.IssuerFromContext(r.Context())
 	tokenEndpoint := shared.EndpointURL(r.Context(), protocol.NewEndpoint("/token"))
@@ -1396,6 +1410,13 @@ func (p *Plugin) authenticatePrivateKeyJWT(r *http.Request, assertion string) (s
 	}
 	getAudiences := func(_ shared.Client) []string {
 		return assertionAudiences(issuer, tokenEndpoint, bcAuthorizeEndpoint)
+	}
+	if alg := shared.AssertionAlgorithm(assertion); strings.HasPrefix(alg, "HS") {
+		client, err := shared.AuthenticateClientSecretJWT(r, getClient, assertion, alg, getAudiences)
+		if err != nil {
+			return nil, err
+		}
+		return client.(storm.Client), nil
 	}
 	client, err := shared.AuthenticatePrivateKeyJWT(r, getClient, assertion, getAudiences, p.skipTLSCertVerify, p.allowPrivateIPs)
 	if err != nil {
@@ -1541,6 +1562,29 @@ func (p *Plugin) writeTokenResponse(w http.ResponseWriter, r *http.Request, resp
 	shared.JSONResponse(w, resp, http.StatusOK)
 }
 
+// claimsRequestFor returns the OIDC claims request that applies to the token
+// being issued. Authorization-code flows expose it directly through
+// AuthRequest; refresh flows only carry the refresh token ID, so the storage
+// is asked for the claims captured with the original authorization request.
+func claimsRequestFor(ctx context.Context, store storm.TokenStore, request storm.TokenRequest) *protocol.ClaimsRequest {
+	if authReq, ok := request.(storm.AuthRequest); ok {
+		return authReq.GetClaims()
+	}
+	refreshReq, ok := request.(storm.RefreshTokenRequest)
+	if !ok {
+		return nil
+	}
+	claimsStore, ok := store.(storm.ClaimsRequestStore)
+	if !ok {
+		return nil
+	}
+	claims, err := claimsStore.GetClaimsRequestByToken(ctx, refreshReq.GetID())
+	if err != nil {
+		return nil
+	}
+	return claims
+}
+
 // createIDToken creates and signs an ID token.
 func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, client storm.Client, accessToken string, code string) (string, error) {
 	signingKey, err := p.keyStore.SigningKey(ctx)
@@ -1620,6 +1664,15 @@ func (p *Plugin) createIDToken(ctx context.Context, request storm.TokenRequest, 
 			if _, exists := claims[k]; !exists {
 				claims[k] = v
 			}
+		}
+	}
+	// OIDC Core §5.5: enforce claims.id_token after all claim sources have been
+	// merged. Essential claims that are unavailable or do not match the
+	// requested value abort issuance instead of silently returning a token that
+	// does not satisfy the client's request.
+	if cr := claimsRequestFor(ctx, p.tokenStore, request); cr != nil {
+		if err := protocol.ApplyClaimsRequest(claims, cr.IDToken); err != nil {
+			return "", protocol.ErrInvalidRequest().WithDescription("%s", err.Error())
 		}
 	}
 	if len(request.GetAudience()) > 1 {

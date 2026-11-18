@@ -147,7 +147,7 @@ func encryptIDToken(signedToken string, client storm.Client, cr storm.UniCrypto,
 		if !ok || pk.SM9TokenEncryptionKey() == nil {
 			return "", fmt.Errorf("SM9 encryption requested but Crypto does not implement SM9TokenEncryptionKeyProvider")
 		}
-		return protocol.EncryptTokenSM9(signedToken, pk.SM9TokenEncryptionKey())
+		return protocol.EncryptTokenJWE(signedToken, pk.SM9TokenEncryptionKey(), alg, enc)
 	case protocol.JWEAlgRSAOAEP, protocol.JWEAlgRSAOAEP256, protocol.JWEAlgRSAOAEP384, protocol.JWEAlgRSAOAEP512,
 		protocol.JWEAlgECDHES, protocol.JWEAlgECDHESA128KW, protocol.JWEAlgECDHESA192KW, protocol.JWEAlgECDHESA256KW,
 		protocol.JWEAlgA128KW, protocol.JWEAlgA192KW, protocol.JWEAlgA256KW,

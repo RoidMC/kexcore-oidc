@@ -41,6 +41,12 @@ type Plugin struct {
 	endpointConfigs        shared.EndpointConfigMap // endpoint configurations (optional)
 }
 
+// RefreshRotationPolicy lets storage opt out of refresh token rotation.
+// Rotation is enabled by default (see Config.DisableRefreshRotation).
+type RefreshRotationPolicy interface {
+	DisableRefreshTokenRotation() bool
+}
+
 // Config holds the dependencies for the Token plugin.
 type Config struct {
 	TokenStore  storm.TokenStore
@@ -70,12 +76,15 @@ type Config struct {
 	SkipTLSCertVerify bool
 	// SessionRecorder records client sessions for back-channel logout (optional).
 	SessionRecorder storm.ClientSessionRecorder
-	// InvalidateRefreshOnUse when true passes the old refresh token to
-	// CreateAccessAndRefreshTokens so the storage can atomically invalidate it.
-	// This is required by RFC 6749 §10.4 (refresh token rotation) and prevents
-	// stolen refresh tokens from being reused. Default: false for backward
-	// compatibility with conformance tests. Enable for production deployments.
+	// InvalidateRefreshOnUse is kept for backward compatibility. Refresh token
+	// rotation is now enabled by default; use DisableRefreshRotation to opt out.
+	// Deprecated: rotation is the default, set DisableRefreshRotation instead.
 	InvalidateRefreshOnUse bool
+	// DisableRefreshRotation opts out of RFC 6749 §10.4 refresh token rotation.
+	// Rotation is enabled by default so a stolen refresh token can only be used
+	// once; disable it only for clients that cannot handle rotating refresh
+	// tokens.
+	DisableRefreshRotation bool
 }
 
 // DPoPNonceSender is optionally implemented by a plugin to provide

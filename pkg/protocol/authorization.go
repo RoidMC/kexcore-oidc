@@ -1,7 +1,9 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 )
@@ -155,6 +157,66 @@ func IsClaimRequested(claims map[string]*ClaimRequest, name string) bool {
 	}
 	_, ok := claims[name]
 	return ok
+}
+
+// ApplyClaimsRequest enforces an OIDC Core §5.5 claims request against an
+// already-assembled claim set.
+//
+//   - A requested claim that is absent is ignored unless it is essential, in
+//     which case an error is returned.
+//   - A requested claim whose value does not satisfy "value" or "values" is
+//     removed when it is voluntary, and is an error when it is essential.
+//   - Claims that were not requested are never removed; the claims parameter is
+//     additive, not a filter.
+func ApplyClaimsRequest(claims map[string]any, requested map[string]*ClaimRequest) error {
+	if len(requested) == 0 {
+		return nil
+	}
+	for name, req := range requested {
+		if req == nil {
+			continue
+		}
+		value, ok := claims[name]
+		if !ok {
+			if req.Essential {
+				return fmt.Errorf("essential claim %q is not available", name)
+			}
+			continue
+		}
+		if !claimValueSatisfies(value, req) {
+			if req.Essential {
+				return fmt.Errorf("essential claim %q does not satisfy the requested value", name)
+			}
+			delete(claims, name)
+		}
+	}
+	return nil
+}
+
+func claimValueSatisfies(value any, req *ClaimRequest) bool {
+	if req.Value == nil && len(req.Values) == 0 {
+		return true
+	}
+	if req.Value != nil && claimValueEqual(value, req.Value) {
+		return true
+	}
+	for _, candidate := range req.Values {
+		if claimValueEqual(value, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+// claimValueEqual compares values after JSON normalization so that, for
+// example, an int64 claim matches a float64 decoded from the claims parameter.
+func claimValueEqual(a, b any) bool {
+	ab, errA := json.Marshal(a)
+	bb, errB := json.Marshal(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return bytes.Equal(ab, bb)
 }
 
 // AuthRequest according to:

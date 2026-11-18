@@ -100,6 +100,10 @@ type AccessTokenVerifier struct {
 	Offset            time.Duration
 	SupportedSignAlgs []string
 	MaxAgeIAT         time.Duration
+	// ExpectedAudience, when set, requires the token's aud claim to contain
+	// at least one of these values (RFC 9068 §4). An empty aud claim is always
+	// rejected.
+	ExpectedAudience []string
 }
 
 type AccessTokenVerifierOpt func(*AccessTokenVerifier)
@@ -107,6 +111,14 @@ type AccessTokenVerifierOpt func(*AccessTokenVerifier)
 func WithSupportedAccessTokenSigningAlgorithms(algs ...string) AccessTokenVerifierOpt {
 	return func(v *AccessTokenVerifier) {
 		v.SupportedSignAlgs = algs
+	}
+}
+
+// WithExpectedAccessTokenAudience restricts access token verification to
+// tokens whose aud claim contains at least one of the given values.
+func WithExpectedAccessTokenAudience(auds ...string) AccessTokenVerifierOpt {
+	return func(v *AccessTokenVerifier) {
+		v.ExpectedAudience = auds
 	}
 }
 
@@ -370,6 +382,19 @@ func CheckAudienceAny(claims Claims, allowed []string) error {
 	return fmt.Errorf("%w: Audience must contain one of %v", ErrAudience, allowed)
 }
 
+// CheckAccessTokenAudience enforces RFC 9068 §4: an access token MUST carry a
+// non-empty aud claim, and when expected audiences are configured at least one
+// of them must match.
+func CheckAccessTokenAudience(claims Claims, expected []string) error {
+	if len(claims.GetAudience()) == 0 {
+		return fmt.Errorf("%w: access token has no aud claim", ErrAudience)
+	}
+	if len(expected) == 0 {
+		return nil
+	}
+	return CheckAudienceAny(claims, expected)
+}
+
 // CheckAuthorizedParty checks azp (authorized party) claim requirements.
 //
 // If the ID Token contains multiple audiences, the Client SHOULD verify that an azp Claim is present.
@@ -496,6 +521,21 @@ func CheckAuthTime(claims Claims, maxAge time.Duration) error {
 
 // --- Verify* functions ---
 
+// supportedAlgs resolves the accepted signature algorithms. An empty list is
+// never treated as "anything goes": when neither the caller nor the key store
+// declares algorithms, access token verification fails closed.
+func (v *AccessTokenVerifier) supportedAlgs(ctx context.Context) []string {
+	if len(v.SupportedSignAlgs) > 0 {
+		return v.SupportedSignAlgs
+	}
+	if v.KeyStore != nil {
+		if algs, err := v.KeyStore.SignatureAlgorithms(ctx); err == nil {
+			return algs
+		}
+	}
+	return nil
+}
+
 func VerifyAccessToken(ctx context.Context, token string, v *AccessTokenVerifier) (tokenID, subject string, ok bool) {
 	decrypted, err := DecryptToken(token)
 	if err != nil {
@@ -510,10 +550,17 @@ func VerifyAccessToken(ctx context.Context, token string, v *AccessTokenVerifier
 		return "", "", false
 	}
 	keySet := v.resolveKeySet()
-	if err := CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, keySet); err != nil {
+	supportedAlgs := v.supportedAlgs(ctx)
+	if len(supportedAlgs) == 0 {
+		return "", "", false
+	}
+	if err := CheckSignature(ctx, decrypted, payload, claims, supportedAlgs, keySet); err != nil {
 		return "", "", false
 	}
 	if err := CheckExpiration(claims, v.Offset); err != nil {
+		return "", "", false
+	}
+	if err := CheckAccessTokenAudience(claims, v.ExpectedAudience); err != nil {
 		return "", "", false
 	}
 	return claims.JWTID, claims.GetSubject(), true
@@ -537,11 +584,19 @@ func VerifyAccessTokenGeneric[C Claims](ctx context.Context, token string, v *Ac
 	}
 
 	keySet := v.resolveKeySet()
-	if err = CheckSignature(ctx, decrypted, payload, claims, v.SupportedSignAlgs, keySet); err != nil {
+	supportedAlgs := v.supportedAlgs(ctx)
+	if len(supportedAlgs) == 0 {
+		return nilClaims, ErrSignatureUnsupportedAlg
+	}
+	if err = CheckSignature(ctx, decrypted, payload, claims, supportedAlgs, keySet); err != nil {
 		return nilClaims, err
 	}
 
 	if err = CheckExpiration(claims, v.Offset); err != nil {
+		return nilClaims, err
+	}
+
+	if err = CheckAccessTokenAudience(claims, v.ExpectedAudience); err != nil {
 		return nilClaims, err
 	}
 

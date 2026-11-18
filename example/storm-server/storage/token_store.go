@@ -18,12 +18,35 @@ import (
 	"github.com/google/uuid"
 
 	crypto_pkg "github.com/roidmc/kexcore-oidc/v3/pkg/crypto"
+	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
 )
 
 // =================================================================
 // storm.TokenStore
 // =================================================================
+
+var _ storm.ClaimsRequestStore = (*Storage)(nil)
+
+// GetClaimsRequestByToken returns the OIDC claims request captured when the
+// authorization code was exchanged for this access token.
+func (s *Storage) GetClaimsRequestByToken(_ context.Context, tokenID string) (*protocol.ClaimsRequest, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	token, ok := s.tokens[tokenID]
+	if !ok {
+		// The ID Token for a refresh response is created after the refresh token
+		// has been rotated, so fall back to the retained old refresh token.
+		if rt, ok := s.consumedRefreshTokens[tokenID]; ok {
+			if access, ok := s.tokens[rt.AccessToken]; ok {
+				return access.Claims, nil
+			}
+		}
+		return nil, nil
+	}
+	return token.Claims, nil
+}
 
 func (s *Storage) CreateAccessToken(ctx context.Context, req storm.TokenRequest, cnf map[string]any) (string, time.Time, error) {
 	return s.createAccessToken(ctx, req, cnf)
@@ -35,6 +58,20 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, req storm.To
 		return "", "", time.Time{}, err
 	}
 
+	// OIDC Core §5.5: carry the original claims request across refresh
+	// rotation so UserInfo on the new access token still enforces it.
+	if currentRefreshToken != "" {
+		s.lock.Lock()
+		if old, ok := s.refreshTokens[currentRefreshToken]; ok {
+			if oldAccess, ok := s.tokens[old.AccessToken]; ok {
+				if newAccess, ok := s.tokens[accessTokenID]; ok {
+					newAccess.Claims = oldAccess.Claims
+				}
+			}
+		}
+		s.lock.Unlock()
+	}
+
 	refreshToken, err := s.createRefreshToken(ctx, accessTokenID, req, cnf)
 	if err != nil {
 		return "", "", time.Time{}, err
@@ -44,6 +81,12 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, req storm.To
 	// OAuth 2.1 §6.1: invalidate old refresh token (rotation)
 	if currentRefreshToken != "" {
 		s.lock.Lock()
+		if old, ok := s.refreshTokens[currentRefreshToken]; ok {
+			if s.consumedRefreshTokens == nil {
+				s.consumedRefreshTokens = make(map[string]*RefreshToken)
+			}
+			s.consumedRefreshTokens[old.ID] = old
+		}
 		delete(s.refreshTokens, currentRefreshToken)
 		s.lock.Unlock()
 	}

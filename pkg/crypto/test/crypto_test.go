@@ -610,6 +610,28 @@ func TestDispatchContentEncrypt_SM4GCM(t *testing.T) {
 	}
 }
 
+func TestDispatchContentEncrypt_SM4CCM(t *testing.T) {
+	key, _ := gm.SM4GenerateKey()
+	iv := make([]byte, 12)
+	rand.Read(iv)
+	plaintext := []byte("DispatchContent SM4CCM test")
+	aad := []byte("aad")
+
+	sealed, err := crypto.DispatchContentEncrypt("SGD_SM4_CCM", key, iv, plaintext, aad)
+	if err != nil {
+		t.Fatalf("DispatchContentEncrypt failed: %v", err)
+	}
+
+	decrypted, err := crypto.DispatchContentDecrypt("SGD_SM4_CCM", key, iv, sealed, aad)
+	if err != nil {
+		t.Fatalf("DispatchContentDecrypt failed: %v", err)
+	}
+
+	if !bytes.Equal(decrypted, plaintext) {
+		t.Error("DispatchContent SM4CCM round-trip mismatch")
+	}
+}
+
 func TestDispatchContentEncrypt_A128CBC_HS256(t *testing.T) {
 	key := make([]byte, 32)
 	rand.Read(key)

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/go-openapi/testify/v2/assert"
@@ -101,20 +102,20 @@ func generateTestKey(t *testing.T) (jwk.Key, string) {
 
 // --- Tests ---
 
-// POST /backchannel_logout returns 200 OK.
-func TestBackChannel_HandleReturns200(t *testing.T) {
-	store := &fakeBackChannelStore{}
-	keyStore := &fakeKeyStore{}
-	p := newTestPlugin(store, keyStore)
+// The OP does not expose an inbound logout-token endpoint; it only pushes
+// logout tokens to RPs.
+func TestBackChannel_RegisterExposesNoRoute(t *testing.T) {
+	p := newTestPlugin(&fakeBackChannelStore{}, &fakeKeyStore{})
 
-	r := httptest.NewRequest(http.MethodPost, "/backchannel_logout", nil)
-	ctx := shared.ContextWithIssuer(r.Context(), "https://op.example.com")
-	r = r.WithContext(ctx)
+	r := chi.NewRouter()
+	p.Register(r)
 
+	req := httptest.NewRequest(http.MethodPost, "/backchannel_logout", nil)
+	ctx := shared.ContextWithIssuer(req.Context(), "https://op.example.com")
 	w := httptest.NewRecorder()
-	p.handle(w, r)
+	r.ServeHTTP(w, req.WithContext(ctx))
 
-	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
 // PushLogoutTokens sends logout tokens to clients.
@@ -271,14 +272,13 @@ func TestBackChannel_PostLogout(t *testing.T) {
 	assert.True(t, received || !received) // Just verify no panic
 }
 
-// Discovery contributes backchannel_logout_endpoint.
+// Discovery advertises support without an inbound endpoint.
 func TestBackChannel_Discovery(t *testing.T) {
 	p := newTestPlugin(&fakeBackChannelStore{}, &fakeKeyStore{})
 	cfg := &protocol.DiscoveryConfiguration{}
 	p.Contribute(context.Background(), cfg)
 
-	assert.NotEmpty(t, cfg.BackChannelLogoutEndpoint)
-	assert.Contains(t, cfg.BackChannelLogoutEndpoint, "/backchannel_logout")
+	assert.Empty(t, cfg.BackChannelLogoutEndpoint)
 	assert.True(t, cfg.BackChannelLogoutSupported)
 	assert.True(t, cfg.BackChannelLogoutSessionSupported)
 }

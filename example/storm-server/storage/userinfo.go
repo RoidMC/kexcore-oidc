@@ -39,6 +39,12 @@ func (s *Storage) SetIntrospectionFromToken(_ context.Context, resp *protocol.In
 		}
 	}
 
+	// RFC 7662 §2.1: only the client the token was issued to may introspect it.
+	// A different authenticated client gets an "inactive" response.
+	if clientID != "" && token.ApplicationID != clientID {
+		return nil
+	}
+
 	resp.Active = true
 	resp.ClientID = token.ApplicationID
 	resp.Subject = token.Subject
@@ -47,7 +53,6 @@ func (s *Storage) SetIntrospectionFromToken(_ context.Context, resp *protocol.In
 	resp.TokenType = protocol.BearerToken
 	if !token.Expiration.IsZero() {
 		resp.Expiration = protocol.FromTime(token.Expiration)
-		resp.NotBefore = protocol.FromTime(token.Expiration)
 	}
 	if token.CNF != nil {
 		if resp.Claims == nil {

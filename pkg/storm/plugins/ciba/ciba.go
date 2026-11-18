@@ -52,6 +52,9 @@ func New(ctx *storm.PluginContext) *Plugin {
 		allowPrivateIPs:   ctx.AllowPrivateIPs,
 		endpointConfigs:   ctx.EndpointConfigs,
 	}
+	if ks, ok := ctx.Storage.(storm.KeyStore); ok {
+		p.keyStore = ks
+	}
 	if nc, ok := ctx.Storage.(storm.CIBANotificationCallback); ok {
 		p.notifier = nc
 	}
@@ -298,9 +301,13 @@ func (p *Plugin) handleBackchannelAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subject := loginHint
-	if subject == "" && idTokenHint != "" {
-		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("id_token_hint parsing not yet implemented; use login_hint"), nil)
+	subject, err := p.resolveSubject(r, loginHint, idTokenHint, loginHintToken)
+	if err != nil {
+		shared.WriteError(w, r, err, nil)
+		return
+	}
+	if subject == "" {
+		shared.WriteError(w, r, protocol.ErrInvalidRequest().WithDescription("no subject could be resolved from the provided hint"), nil)
 		return
 	}
 
@@ -370,6 +377,42 @@ func (p *Plugin) handleBackchannelAuth(w http.ResponseWriter, r *http.Request) {
 
 	resp := protocol.NewBackchannelAuthResponse(authReqID, int(lifetime.Seconds()), int(p.interval.Seconds()))
 	shared.JSONResponse(w, resp, http.StatusOK)
+}
+
+// resolveSubject turns the CIBA hint parameters into a subject.
+//
+// login_hint is taken at face value (CIBA Core trusts the client's hint),
+// id_token_hint is verified against this OP's signing keys, and
+// login_hint_token is parsed as a JWT whose sub is used as the subject. An
+// expired login_hint_token is rejected. Deployments accepting hints from
+// external issuers must add their own trust checks in front of the endpoint.
+func (p *Plugin) resolveSubject(r *http.Request, loginHint, idTokenHint, loginHintToken string) (string, error) {
+	switch {
+	case loginHint != "":
+		return loginHint, nil
+	case idTokenHint != "":
+		if p.keyStore == nil {
+			return "", protocol.ErrInvalidRequest().WithDescription("id_token_hint cannot be verified: no key store configured")
+		}
+		claims, err := protocol.VerifyIDTokenHint(r.Context(), idTokenHint, &protocol.IDTokenHintVerifier{
+			Issuer:   shared.IssuerFromContext(r.Context()),
+			KeyStore: p.keyStore,
+		})
+		if err != nil {
+			return "", protocol.ErrInvalidRequest().WithDescription("invalid id_token_hint: %s", err.Error())
+		}
+		return claims.GetSubject(), nil
+	case loginHintToken != "":
+		claims := new(protocol.IDTokenClaims)
+		if _, err := protocol.ParseToken(loginHintToken, claims); err != nil {
+			return "", protocol.ErrInvalidRequest().WithDescription("invalid login_hint_token: %s", err.Error())
+		}
+		if exp := claims.GetExpiration(); !exp.IsZero() && time.Now().After(exp) {
+			return "", protocol.ErrInvalidRequest().WithDescription("login_hint_token has expired")
+		}
+		return claims.GetSubject(), nil
+	}
+	return "", nil
 }
 
 // handleApprovalPage handles GET /ciba — the CIBA approval page.
