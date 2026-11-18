@@ -37,6 +37,10 @@ import (
 type Storage struct {
 	lock sync.Mutex
 
+	// skipTLSCertVerify disables TLS certificate verification for outbound
+	// CIBA notifications. Set once during setup; defaults to false.
+	skipTLSCertVerify bool
+
 	clients       map[string]*Client // registered clients (clientID -> *Client)
 	authRequests  map[string]*AuthRequest
 	authCodes     map[string]string
@@ -429,14 +433,20 @@ func (s *Storage) SigningKeyByAlg(_ context.Context, alg string) (storm.SigningK
 // Storm compatibility assertions
 // =================================================================
 
+// SetSkipTLSCertVerify controls TLS certificate verification for outbound CIBA
+// notifications. The default is false; only enable it in test setups.
+func (s *Storage) SetSkipTLSCertVerify(skip bool) {
+	s.skipTLSCertVerify = skip
+}
+
 // RotateSigningKey generates a new RSA-2048/RS256 signing key and prepends it
 // to the key set. Old keys remain in KeySet() for token verification.
 // Note: this is an example server that restarts between test sessions, so
 // unbounded key accumulation is not a concern in practice.
-func (s *Storage) RotateSigningKey() error {
+func (s *Storage) RotateSigningKey(_ context.Context) (string, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return err
+		return "", err
 	}
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -447,7 +457,7 @@ func (s *Storage) RotateSigningKey() error {
 		rsaKey:    key,
 	}
 	s.signingKeys = append([]signingKey{sk}, s.signingKeys...)
-	return nil
+	return sk.id, nil
 }
 
 // SigningKeyCount returns the number of signing keys.
@@ -471,4 +481,5 @@ var (
 	_ storm.ClientCredentialsStore = (*Storage)(nil)
 	_ storm.JWTProfileStore        = (*Storage)(nil)
 	_ storm.DCRStore               = (*Storage)(nil)
+	_ storm.SigningKeyRotator      = (*Storage)(nil)
 )

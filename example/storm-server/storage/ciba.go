@@ -172,7 +172,9 @@ func (s *Storage) OnCIBAStatusChange(_ context.Context, req *storm.CIBARequest) 
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			// Verification is on by default; ENABLE_SKIP_TLS_CERT_VERIFY=true
+			// is only for local/self-signed test setups.
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: s.skipTLSCertVerify}, //nolint:gosec
 		},
 		// CIBA Core 1.0 §10.1: the server MUST NOT follow redirect responses
 		// from the client_notification_endpoint.

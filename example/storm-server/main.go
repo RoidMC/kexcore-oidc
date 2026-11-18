@@ -157,8 +157,9 @@ func main() {
 		Logger:            logger,
 		UserStore:         userStore,
 		Clients:           clients,
-		AllowPrivateIPs:   config.EnableSelfSignSSL == "true",
-		SkipTLSCertVerify: config.EnableSkipTLSCertVerify == "true",
+		AllowPrivateIPs:   cfg.EnableSelfSignSSL,
+		SkipTLSCertVerify: cfg.EnableSkipTLSCertVerify,
+		CryptoKey:         cfg.CryptoKey,
 		// Automated CIBA approval (POST /ciba/approve) is opt-in and only used
 		// by the OIDF conformance suite.
 		EnableAutomatedCIBAApproval: cfg.EnableAutomatedCIBAApproval,

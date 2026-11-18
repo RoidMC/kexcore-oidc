@@ -92,6 +92,12 @@ Example server allows extra configuration using environment variables and could 
 | USERS_FILE         | Path to json in local filesystem | Users with their data and credentials                            |
 | ISSUER             | URL                              | Issuer identifier (e.g. `https://your-domain.com/`)              |
 | SIGNING_ALGORITHMS | Comma-separated algorithms       | Enabled JWS algorithms (default: `RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512,EdDSA,HS256,HS384,HS512,SGD_SM3_SM2,SGD_SM3_SM9`) |
+| CRYPTO_METHOD      | `aes` or `sm4`                   | Token encryption method (default: `aes`)                         |
+| CRYPTO_KEY         | String                           | Passphrase hashed with SHA-256 to derive the token encryption key |
+| TLS_CERT_FILE      | Path                             | Server certificate (defaults to the bundled self-signed cert)    |
+| TLS_KEY_FILE       | Path                             | Server private key (defaults to the bundled self-signed key)     |
+| ENABLE_SELF_SIGN_SSL | Boolean                        | Use the bundled self-signed certificate when no cert/key is set (default: `true`) |
+| ENABLE_SKIP_TLS_CERT_VERIFY | Boolean                 | Skip TLS verification for outbound CIBA notifications (default: `false`) |
 
 Here is json equivalent for one of the default users
 
@@ -103,7 +109,7 @@ Here is json equivalent for one of the default users
     "Password": "verysecure",
     "FirstName": "Test",
     "LastName": "User2",
-    "Email": "test-user2@zitadel.ch",
+    "Email": "test-user2@example.com",
     "EmailVerified": true,
     "Phone": "",
     "PhoneVerified": false,
@@ -160,6 +166,37 @@ Plugin-based OIDC server framework.
 | Front-Channel Logout | — | OIDC Front-Channel | ❌ 不实现（纯后端 API 不需要） |
 | Session Management (iframe) | — | OIDC Session Management §3 | ❌ 不实现（纯后端 API 不需要） |
 
+#### Plugin assembly
+
+Endpoints are assembled from an explicit plugin list — `storm.New` does **not** auto-discover
+`init()` registrations.
+
+```go
+engine := storm.New(storage, issuerFn,
+    storm.WithMiddleware(shared.IssuerMiddleware(issuerFn)),
+    storm.WithPlugins(storm.RegisteredPlugins()...),
+)
+```
+
+Each plugin declares one of three categories, either at registration
+(`storm.PluginDescriptor`) or by implementing `storm.CategorizablePlugin`:
+
+| Category | Registered by default | `Disable` | `Enable` |
+|---|---|---|---|
+| `CategoryCore` | yes | panics — core plugins cannot be disabled | — |
+| `CategoryStandard` | yes | skips the plugin | — |
+| `CategoryOptional` | no | — | required |
+| `CategoryUnspecified` (zero value) | falls back to `Category()`; if absent, `Standard` | | |
+
+- `RegisterPluginWith(PluginDescriptor{Name, Priority, Category}, factory)` lets the engine decide
+  before the plugin is instantiated. The older `RegisterPlugin(name, priority, factory)` still works.
+- Duplicate plugin names panic during `storm.New`, instead of surfacing later as a chi route conflict.
+- `Enable` / `Disable` match the plugin's actual `Name()`. Unknown names log a warning and are
+  ignored, so build-tag-trimmed plugins can stay in configuration.
+- Built-in core plugins (`authorization`, `token`, `keys`, `discovery`) cannot be disabled.
+
+See [docs/plugins.md](docs/plugins.md) for the full plugin guide.
+
 #### FAPI Profiles (Financial-grade API)
 
 StormEngine 实现 [FAPI 1.0 Advanced][35] 与 [FAPI 2.0 Security Profile][36] 的核心安全要求，支持通过 OIDF Conformance Test Suite 认证。
@@ -193,6 +230,7 @@ StormEngine 实现 [FAPI 1.0 Advanced][35] 与 [FAPI 2.0 Security Profile][36] �
 - `RegisterSigner` / `RegisterVerifier` / `RegisterJWEEncryptor` / … add an algorithm. Registering the same algorithm twice panics, and so does registering a provider whose `Algorithm()` (or `KeyAlgorithm()`) does not match the registry key.
 - To replace a built-in implementation (HSM/KMS), use the matching `Override*` method (`OverrideSigner`, `OverrideJWEEncryptor`, …). Replacement is explicit on purpose — there is no "last registration wins".
 - `BytesToPrivateKey` derives the JWA algorithm from the key material: P-256 → ES256, P-384 → ES384, P-521 → ES512. An unsupported curve returns `ErrUnsupportedPrivateKey` instead of being mislabelled ES256.
+- Key rotation: implement `storm.SigningKeyRotator` on your storage and call `Engine.RotateSigningKey(ctx)`. The engine checks that the new key is the active `SigningKey` and is present in `KeySet`, and warns if the previous key was removed before tokens signed with it expired.
 - A `storm.KeyStore` should hold one key per algorithm it advertises: `SignatureAlgorithms` returns all of them (used by discovery), `SigningKey` returns the active one, and `SigningKeyByAlg` fails closed for an algorithm the store cannot serve. Retaining the previous key after a switch keeps already issued tokens verifiable.
 - SM9 signing takes its `uid` from `Signer.SetSM9UID`; it is passed to the provider as `crypto.SM9SignKey`, not through a context key.
 
@@ -268,7 +306,6 @@ Made with [contrib.rocks](https://contrib.rocks).
 For your convenience you can find the relevant guides linked below.
 
 - [OpenID Connect Core 1.0 incorporating errata set 1](https://openid.net/specs/openid-connect-core-1_0.html)
-- [OIDC/OAuth Flow in Zitadel (using this library)](https://zitadel.com/docs/guides/integrate/login-users)
 
 ## Supported Go Versions
 
@@ -311,9 +348,6 @@ See the exact licensing terms [here](LICENSE)
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "
 AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
 language governing permissions and limitations under the License.
-
-<!--zitadel/oidc issue reference-->
-[^1]: https://github.com/zitadel/oidc/issues/135#issuecomment-950563892
 
 [oidf-basic]: https://www.certification.openid.net/log-detail.html?log=SpSbfydiglCBorB&public=true
 [oidf-basic-dynamic]: https://www.certification.openid.net/plan-detail.html?plan=sF23YfvEbhrKt&public=true

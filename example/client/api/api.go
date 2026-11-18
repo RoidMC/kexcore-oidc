@@ -64,7 +64,7 @@ func main() {
 
 	// protected url which needs an active token and checks if the response of the introspect endpoint
 	// contains a requested claim with the required (string) value
-	// e.g. /protected/username/livio@zitadel.example
+	// e.g. /protected/username/alice@example.com
 	router.HandleFunc(protectedClaimURL, func(w http.ResponseWriter, r *http.Request) {
 		ok, token := checkToken(w, r)
 		if !ok {

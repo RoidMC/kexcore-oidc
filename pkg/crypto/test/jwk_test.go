@@ -6,9 +6,18 @@ package crypto_test
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"math/big"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/emmansun/gmsm/sm9"
 	"github.com/go-openapi/testify/v2/assert"
@@ -48,6 +57,81 @@ func TestNewSM9SignJWK(t *testing.T) {
 	assert.NotEmpty(t, jwk.X)
 	assert.NotEmpty(t, jwk.Y)
 	assert.Equal(t, 1, jwk.Hid)
+}
+
+func testCertificate(t *testing.T, serial int64) *x509.Certificate {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(serial),
+		Subject:      pkix.Name{CommonName: "kexcore-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+
+	cert, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	return cert
+}
+
+func TestNewSM2JWKWithChain(t *testing.T) {
+	key, err := gm.SM2GenerateKey()
+	require.NoError(t, err)
+
+	leaf := testCertificate(t, 1)
+	ca := testCertificate(t, 2)
+
+	jwk := crypto.NewSM2JWKWithChain(&key.PublicKey, "test-kid", "sig", []*x509.Certificate{leaf, nil, ca})
+
+	assert.Equal(t, 2, len(jwk.X5c))
+	assert.Equal(t, base64.StdEncoding.EncodeToString(leaf.Raw), jwk.X5c[0])
+	assert.Equal(t, base64.StdEncoding.EncodeToString(ca.Raw), jwk.X5c[1])
+
+	sha1Sum := sha1.Sum(leaf.Raw)
+	assert.Equal(t, base64.RawURLEncoding.EncodeToString(sha1Sum[:]), jwk.X5t)
+
+	sha256Sum := sha256.Sum256(leaf.Raw)
+	assert.Equal(t, base64.RawURLEncoding.EncodeToString(sha256Sum[:]), jwk.X5tS256)
+
+	data, err := json.Marshal(jwk)
+	require.NoError(t, err)
+	assert.True(t, strings.Contains(string(data), `"x5t#S256"`))
+	assert.True(t, strings.Contains(string(data), `"x5c"`))
+}
+
+func TestNewSM9SignJWKWithChain(t *testing.T) {
+	masterKey, err := gm.SM9GenerateSignMasterKey()
+	require.NoError(t, err)
+
+	leaf := testCertificate(t, 3)
+	jwk, err := crypto.NewSM9SignJWKWithChain(masterKey.PublicKey(), "test-kid", "sig", 1, []*x509.Certificate{leaf})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, len(jwk.X5c))
+	assert.NotEmpty(t, jwk.X5t)
+	assert.NotEmpty(t, jwk.X5tS256)
+}
+
+func TestJWKWithoutChainOmitsCertificateFields(t *testing.T) {
+	key, err := gm.SM2GenerateKey()
+	require.NoError(t, err)
+
+	jwk := crypto.NewSM2JWK(&key.PublicKey, "test-kid", "sig")
+
+	assert.Equal(t, 0, len(jwk.X5c))
+	assert.Equal(t, "", jwk.X5t)
+	assert.Equal(t, "", jwk.X5tS256)
+
+	data, err := json.Marshal(jwk)
+	require.NoError(t, err)
+	assert.False(t, strings.Contains(string(data), `"x5c"`))
+	assert.False(t, strings.Contains(string(data), `"x5t`))
 }
 
 func TestParseSM9SignMasterPublicKey(t *testing.T) {

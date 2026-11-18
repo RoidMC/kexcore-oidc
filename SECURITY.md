@@ -1,20 +1,30 @@
 # Security Policy
 
-Please refer to the security policy [on zitadel/zitadel](https://github.com/zitadel/zitadel/blob/main/SECURITY.md) which is applicable for all open source repositories of our organization.
-
 ## Supported Versions
 
-We currently support the following version of the OIDC framework:
+Only the latest v3 release receives security fixes.
 
-| Version  | Supported          | Branch      | Details                              |
-| -------- | ------------------ | ----------- | ------------------------------------ |
-| 0.x.x    | :x:                |             | not maintained                       |
-| <2.11    | :x:                |             | not maintained                       |
-| 2.11.x   | :lock: :warning:   | [2.11.x][1] | security only, [community effort][2] |
-| 3.x.x    | :heavy_check_mark: | [main][3]   | supported                            |
-| 4.0.0-xx | :white_check_mark: | [next][4]   | [development branch]                 |
+| Version | Supported |
+| --- | --- |
+| 3.x (latest) | :heavy_check_mark: |
+| < 3.0 | :x: |
 
-[1]: https://github.com/zitadel/oidc/tree/2.11.x
-[2]: https://github.com/zitadel/oidc/discussions/458
-[3]: https://github.com/zitadel/oidc/tree/main
-[4]: https://github.com/zitadel/oidc/tree/next
+## Reporting a Vulnerability
+
+Please do not open a public issue for security problems.
+
+Report privately through GitHub Security Advisories:
+
+https://github.com/RoidMC/kexcore-oidc/security/advisories/new
+
+If that form is unavailable, contact the maintainers through GitHub
+([@RoidMC](https://github.com/RoidMC)) instead of opening a public issue.
+
+Please include:
+
+- affected version (output of `go list -m github.com/roidmc/kexcore-oidc/v3`)
+- a minimal reproduction or proof of concept
+- impact and any known workaround
+
+We will acknowledge the report as soon as possible and coordinate the fix and
+disclosure timeline with you.

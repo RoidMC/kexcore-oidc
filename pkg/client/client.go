@@ -26,7 +26,7 @@ import (
 
 var (
 	Encoder = httphelper.Encoder(protocol.NewEncoder())
-	Tracer  = otel.Tracer("github.com/zitadel/oidc/pkg/client")
+	Tracer  = otel.Tracer("github.com/roidmc/kexcore-oidc/v3/pkg/client")
 )
 
 type ClientSecretBasicAuthRequest interface {

@@ -1,27 +1,27 @@
-# How to contribute to the OIDC SDK for Go
+# How to contribute to the KexCore OIDC SDK for Go
 
 ## Did you find a bug?
 
-Please file an issue [here](https://github.com/zitadel/oidc/issues/new?assignees=&labels=bug&template=bug_report.md&title=).
+Please file an issue [here](https://github.com/RoidMC/kexcore-oidc/issues/new/choose).
 
-Bugs are evaluated every day as soon as possible.
+Bugs are triaged as soon as possible.
 
 ## Enhancement
 
-Do you miss a feature? Please file an issue [here](https://github.com/zitadel/oidc/issues/new?assignees=&labels=enhancement&template=feature_request.md&title=)
+Do you miss a feature? Please file an issue [here](https://github.com/RoidMC/kexcore-oidc/issues/new/choose).
 
-Enhancements are discussed and evaluated every Wednesday by the ZITADEL core team.
+Enhancements are discussed and evaluated in the issue tracker.
 
-## Grab an Issues
+## Grab an Issue
 
 We add the label "good first issue" for problems we think are a good starting point to contribute to the OIDC SDK.
 
-* [Issues for first time contributors](https://github.com/zitadel/oidc/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
-* [All issues](https://github.com/zitadel/oidc/issues)
+* [Issues for first time contributors](https://github.com/RoidMC/kexcore-oidc/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+* [All issues](https://github.com/RoidMC/kexcore-oidc/issues)
 
 ## Submitting a pull request (PR)
 
-If you like to contribute fork the OIDC repository. After you implemented the new feature create a Pull Request in the OIDC repository.
+If you like to contribute, fork the KexCore OIDC repository. After you implemented the new feature create a Pull Request in the repository.
 
 Make sure you use [semantic release messages format](https://github.com/angular/angular.js/blob/master/DEVELOPERS.md#type).
 
@@ -45,7 +45,7 @@ Provide a brief description of the change.
 
 Checkout the [examples folder](example) for different client and server implementations.
 
-Or checkout how we use it ourselves in our OpenSource Identity and Access Management [ZITADEL](https://github.com/zitadel/zitadel).
+The SDK powers the [KexCore](https://github.com/RoidMC/KexCore) IAM backend.
 
 ## **Did you find a security flaw?**
 

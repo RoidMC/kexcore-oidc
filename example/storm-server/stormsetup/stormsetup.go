@@ -40,6 +40,9 @@ type TenantConfig struct {
 	Issuer            string
 	SigningAlgorithms []string
 	CryptoMethod      string
+	// CryptoKey is hashed with SHA-256 to derive the token encryption key.
+	// Empty falls back to the example-only default.
+	CryptoKey         string
 	Logger            *slog.Logger
 	Discovery         storm.DiscoveryConfig
 	Storage           *storage.Storage  // optional, if provided will be used instead of creating a new one
@@ -93,8 +96,13 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 	if len(cfg.Clients) > 0 {
 		stor.RegisterClients(cfg.Clients...)
 	}
+	stor.SetSkipTLSCertVerify(cfg.SkipTLSCertVerify)
 
-	tokenCrypto := storage.NewTokenCrypto(sha256.Sum256([]byte("test")), cfg.CryptoMethod)
+	cryptoKey := cfg.CryptoKey
+	if cryptoKey == "" {
+		cryptoKey = "test" // example-only default
+	}
+	tokenCrypto := storage.NewTokenCrypto(sha256.Sum256([]byte(cryptoKey)), cfg.CryptoMethod)
 
 	decoder := protocol.NewDecoder()
 
@@ -126,7 +134,7 @@ func SetupTenant(cfg TenantConfig) http.Handler {
 	router := chi.NewRouter()
 	router.Post("/admin/rotate-keys", func(w http.ResponseWriter, r *http.Request) {
 		before := stor.SigningKeyCount()
-		if err := stor.RotateSigningKey(); err != nil {
+		if _, err := stor.RotateSigningKey(r.Context()); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

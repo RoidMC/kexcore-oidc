@@ -79,6 +79,7 @@ package storm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v4/jwk"
@@ -258,6 +259,23 @@ type KeyStore interface {
 	KeySet(ctx context.Context) ([]protocol.Key, error)
 	SignatureAlgorithms(ctx context.Context) ([]string, error)
 	SigningKey(ctx context.Context) (SigningKey, error)
+}
+
+// ErrSigningKeyRotationUnsupported is returned by Engine.RotateSigningKey when
+// the configured Storage does not implement SigningKeyRotator.
+var ErrSigningKeyRotationUnsupported = errors.New("storm: storage does not support signing key rotation")
+
+// SigningKeyRotator is an optional interface for KeyStore implementations that
+// can rotate their signing key at runtime.
+//
+// RotateSigningKey must install a new signing key and return its key ID. The
+// new key MUST already be the active SigningKey and MUST be present in KeySet
+// when the method returns. The previous key MUST remain in KeySet until all
+// tokens signed with it have expired.
+//
+// Engine.RotateSigningKey calls this method and validates both invariants.
+type SigningKeyRotator interface {
+	RotateSigningKey(ctx context.Context) (newKeyID string, err error)
 }
 
 // SigningKeyByAlgProvider is an optional interface that a KeyStore can

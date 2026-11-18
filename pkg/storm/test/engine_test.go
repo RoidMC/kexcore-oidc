@@ -6,9 +6,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lestrrat-go/jwx/v4/jwk"
 
 	"github.com/roidmc/kexcore-oidc/v3/pkg/protocol"
 	"github.com/roidmc/kexcore-oidc/v3/pkg/storm"
@@ -41,6 +43,81 @@ func (s *stubStorage) SigningKey(ctx context.Context) (storm.SigningKey, error) 
 
 func (s *stubStorage) Health(ctx context.Context) error {
 	return nil
+}
+
+// --- signing key rotation ---
+
+type testKey struct{ id string }
+
+func (k *testKey) ID() string        { return k.id }
+func (k *testKey) Algorithm() string { return "RS256" }
+func (k *testKey) Use() string       { return "sig" }
+func (k *testKey) Key() jwk.Key      { return nil }
+
+type rotatingStorage struct {
+	*stubStorage
+	signingKey *testKey
+	keySet     []storm.Key
+	dropNewKey bool
+}
+
+func (s *rotatingStorage) SigningKey(context.Context) (storm.SigningKey, error) {
+	return s.signingKey, nil
+}
+
+func (s *rotatingStorage) KeySet(context.Context) ([]storm.Key, error) {
+	return s.keySet, nil
+}
+
+func (s *rotatingStorage) RotateSigningKey(context.Context) (string, error) {
+	old := s.signingKey
+	s.signingKey = &testKey{id: "new"}
+	if s.dropNewKey {
+		s.keySet = []storm.Key{old}
+	} else {
+		s.keySet = []storm.Key{old, s.signingKey}
+	}
+	return "new", nil
+}
+
+func TestEngine_RotateSigningKeyUnsupported(t *testing.T) {
+	engine := storm.New(&stubStorage{}, shared.StaticIssuer("https://example.com"))
+
+	if _, err := engine.RotateSigningKey(context.Background()); !errors.Is(err, storm.ErrSigningKeyRotationUnsupported) {
+		t.Fatalf("err = %v, want ErrSigningKeyRotationUnsupported", err)
+	}
+}
+
+func TestEngine_RotateSigningKey(t *testing.T) {
+	store := &rotatingStorage{
+		stubStorage: &stubStorage{},
+		signingKey:  &testKey{id: "old"},
+		keySet:      []storm.Key{&testKey{id: "old"}},
+	}
+	engine := storm.New(store, shared.StaticIssuer("https://example.com"))
+
+	id, err := engine.RotateSigningKey(context.Background())
+	if err != nil {
+		t.Fatalf("RotateSigningKey() error = %v", err)
+	}
+	if id != "new" {
+		t.Fatalf("RotateSigningKey() = %q, want %q", id, "new")
+	}
+}
+
+func TestEngine_RotateSigningKeyRequiresKeyInSet(t *testing.T) {
+	store := &rotatingStorage{
+		stubStorage: &stubStorage{},
+		signingKey:  &testKey{id: "old"},
+		keySet:      []storm.Key{&testKey{id: "old"}},
+		dropNewKey:  true,
+	}
+	engine := storm.New(store, shared.StaticIssuer("https://example.com"))
+
+	_, err := engine.RotateSigningKey(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "missing from KeySet") {
+		t.Fatalf("err = %v, want missing-from-KeySet error", err)
+	}
 }
 
 // --- minimal plugin ---

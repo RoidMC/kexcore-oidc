@@ -7,6 +7,9 @@ package crypto
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -28,6 +31,15 @@ type SM2JWK struct {
 	Alg string `json:"alg,omitempty"`
 	Kid string `json:"kid,omitempty"`
 	Use string `json:"use,omitempty"`
+	// X5u is the URI of the leaf certificate (RFC 7517 §4.5).
+	X5u string `json:"x5u,omitempty"`
+	// X5c is the base64 (standard encoding) DER certificate chain; the leaf
+	// certificate is first (RFC 7517 §4.7).
+	X5c []string `json:"x5c,omitempty"`
+	// X5t is the base64url SHA-1 thumbprint of the leaf certificate (RFC 7517 §4.8).
+	X5t string `json:"x5t,omitempty"`
+	// X5tS256 is the base64url SHA-256 thumbprint of the leaf certificate (RFC 7517 §4.9).
+	X5tS256 string `json:"x5t#S256,omitempty"`
 }
 
 // NewSM2JWK constructs an SM2JWK from an SM2 public key.
@@ -39,19 +51,57 @@ type SM2JWK struct {
 // alternative, gm.SM2PublicKeyToBytes (sm2.PublicKeyToECDH), returns an error
 // that this signature cannot surface. Decoding does use gm.SM2NewPublicKey.
 func NewSM2JWK(pubKey *ecdsa.PublicKey, kid, use string) SM2JWK {
+	return NewSM2JWKWithChain(pubKey, kid, use, nil)
+}
+
+// NewSM2JWKWithChain is NewSM2JWK with an X.509 certificate chain. The leaf
+// certificate must come first. The chain is embedded as-is: no signature or
+// trust validation is performed.
+func NewSM2JWKWithChain(pubKey *ecdsa.PublicKey, kid, use string, chain []*x509.Certificate) SM2JWK {
 	byteLen := (pubKey.Curve.Params().BitSize + 7) / 8
 	xBytes := pubKey.X.FillBytes(make([]byte, byteLen))
 	yBytes := pubKey.Y.FillBytes(make([]byte, byteLen))
+	x5c, x5t, x5tS256 := certificateFields(chain)
 
 	return SM2JWK{
-		Kty: "EC",
-		Crv: "SM2-P-256",
-		X:   base64.RawURLEncoding.EncodeToString(xBytes),
-		Y:   base64.RawURLEncoding.EncodeToString(yBytes),
-		Alg: SGD_SM3_SM2,
-		Kid: kid,
-		Use: use,
+		Kty:     "EC",
+		Crv:     "SM2-P-256",
+		X:       base64.RawURLEncoding.EncodeToString(xBytes),
+		Y:       base64.RawURLEncoding.EncodeToString(yBytes),
+		Alg:     SGD_SM3_SM2,
+		Kid:     kid,
+		Use:     use,
+		X5c:     x5c,
+		X5t:     x5t,
+		X5tS256: x5tS256,
 	}
+}
+
+// certificateFields encodes an X.509 chain for the JWK x5c / x5t / x5t#S256
+// members (RFC 7517 §4.7-4.9). Nil certificates are skipped and the first
+// remaining certificate is treated as the leaf. No validation is performed.
+func certificateFields(chain []*x509.Certificate) (x5c []string, x5t, x5tS256 string) {
+	certs := make([]*x509.Certificate, 0, len(chain))
+	for _, cert := range chain {
+		if cert != nil {
+			certs = append(certs, cert)
+		}
+	}
+	if len(certs) == 0 {
+		return nil, "", ""
+	}
+
+	x5c = make([]string, len(certs))
+	for i, cert := range certs {
+		x5c[i] = base64.StdEncoding.EncodeToString(cert.Raw)
+	}
+
+	// RFC 7517 §4.8 defines x5t as SHA-1 over the DER-encoded leaf certificate.
+	sha1Sum := sha1.Sum(certs[0].Raw)
+	sha256Sum := sha256.Sum256(certs[0].Raw)
+	return x5c,
+		base64.RawURLEncoding.EncodeToString(sha1Sum[:]),
+		base64.RawURLEncoding.EncodeToString(sha256Sum[:])
 }
 
 // VerifySM2JWSSignature verifies an SM2 JWS signature using SM3 hash.
@@ -126,12 +176,28 @@ type SM9SignJWK struct {
 	Alg string `json:"alg,omitempty"`
 	Kid string `json:"kid,omitempty"`
 	Use string `json:"use,omitempty"`
+	// X5u is the URI of the leaf certificate (RFC 7517 §4.5).
+	X5u string `json:"x5u,omitempty"`
+	// X5c is the base64 (standard encoding) DER certificate chain; the leaf
+	// certificate is first (RFC 7517 §4.7).
+	X5c []string `json:"x5c,omitempty"`
+	// X5t is the base64url SHA-1 thumbprint of the leaf certificate (RFC 7517 §4.8).
+	X5t string `json:"x5t,omitempty"`
+	// X5tS256 is the base64url SHA-256 thumbprint of the leaf certificate (RFC 7517 §4.9).
+	X5tS256 string `json:"x5t#S256,omitempty"`
 }
 
 // NewSM9SignJWK constructs an SM9SignJWK from an SM9 signing master public key.
 // The hid parameter is the SM9 private key generation function identifier
 // (1 for signing, 3 for encryption).
 func NewSM9SignJWK(masterPubKey *sm9.SignMasterPublicKey, kid, use string, hid int) (SM9SignJWK, error) {
+	return NewSM9SignJWKWithChain(masterPubKey, kid, use, hid, nil)
+}
+
+// NewSM9SignJWKWithChain is NewSM9SignJWK with an X.509 certificate chain. The
+// leaf certificate must come first. The chain is embedded as-is: no signature
+// or trust validation is performed.
+func NewSM9SignJWKWithChain(masterPubKey *sm9.SignMasterPublicKey, kid, use string, hid int, chain []*x509.Certificate) (SM9SignJWK, error) {
 	raw := masterPubKey.Bytes()
 	// SignMasterPublicKey.Bytes() returns uncompressed point: 04 || x(64 bytes) || y(64 bytes)
 	// Total length should be 129 bytes (1 + 64 + 64).
@@ -140,16 +206,20 @@ func NewSM9SignJWK(masterPubKey *sm9.SignMasterPublicKey, kid, use string, hid i
 	}
 	xBytes := raw[1:65]
 	yBytes := raw[65:129]
+	x5c, x5t, x5tS256 := certificateFields(chain)
 
 	return SM9SignJWK{
-		Kty: "EC",
-		Crv: "SM9",
-		X:   base64.RawURLEncoding.EncodeToString(xBytes),
-		Y:   base64.RawURLEncoding.EncodeToString(yBytes),
-		Hid: hid,
-		Alg: SGD_SM3_SM9,
-		Kid: kid,
-		Use: use,
+		Kty:     "EC",
+		Crv:     "SM9",
+		X:       base64.RawURLEncoding.EncodeToString(xBytes),
+		Y:       base64.RawURLEncoding.EncodeToString(yBytes),
+		Hid:     hid,
+		Alg:     SGD_SM3_SM9,
+		Kid:     kid,
+		Use:     use,
+		X5c:     x5c,
+		X5t:     x5t,
+		X5tS256: x5tS256,
 	}, nil
 }
 

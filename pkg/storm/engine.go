@@ -3,6 +3,7 @@ package storm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -699,6 +700,70 @@ func (e *Engine) Plugins() []Plugin {
 // Storage returns the engine's storage.
 func (e *Engine) Storage() Storage {
 	return e.storage
+}
+
+// RotateSigningKey rotates the storage's signing key and validates the result.
+//
+// It requires Storage to implement SigningKeyRotator. After rotation the new
+// key must be the active SigningKey and must be present in KeySet; otherwise
+// tokens would be signed with a key that other instances cannot verify. The
+// previous key is expected to remain in KeySet until tokens signed with it
+// have expired.
+func (e *Engine) RotateSigningKey(ctx context.Context) (string, error) {
+	rotator, ok := e.storage.(SigningKeyRotator)
+	if !ok {
+		return "", fmt.Errorf("%w: %T", ErrSigningKeyRotationUnsupported, e.storage)
+	}
+
+	var oldKeyID string
+	if oldKey, err := e.storage.SigningKey(ctx); err == nil {
+		oldKeyID = oldKey.ID()
+	}
+
+	newKeyID, err := rotator.RotateSigningKey(ctx)
+	if err != nil {
+		return "", fmt.Errorf("storm: rotate signing key: %w", err)
+	}
+
+	signingKey, err := e.storage.SigningKey(ctx)
+	if err != nil {
+		return newKeyID, fmt.Errorf("storm: read signing key after rotation: %w", err)
+	}
+	if newKeyID == "" {
+		newKeyID = signingKey.ID()
+	}
+	if newKeyID == "" {
+		return "", errors.New("storm: rotated signing key has no key ID")
+	}
+	if signingKey.ID() != "" && signingKey.ID() != newKeyID {
+		return newKeyID, fmt.Errorf("storm: storage reported new key %q but SigningKey returns %q", newKeyID, signingKey.ID())
+	}
+
+	keySet, err := e.storage.KeySet(ctx)
+	if err != nil {
+		return newKeyID, fmt.Errorf("storm: read KeySet after rotation: %w", err)
+	}
+	if !keySetContains(keySet, newKeyID) {
+		return newKeyID, fmt.Errorf("storm: rotated signing key %q is missing from KeySet", newKeyID)
+	}
+	if oldKeyID != "" && oldKeyID != newKeyID && !keySetContains(keySet, oldKeyID) {
+		slog.Warn("storm: previous signing key was removed from KeySet immediately after rotation; "+
+			"tokens signed with it will fail verification until they expire",
+			"old_key_id", oldKeyID,
+			"new_key_id", newKeyID,
+		)
+	}
+
+	return newKeyID, nil
+}
+
+func keySetContains(keys []protocol.Key, id string) bool {
+	for _, key := range keys {
+		if key.ID() == id {
+			return true
+		}
+	}
+	return false
 }
 
 // --- internal ---
