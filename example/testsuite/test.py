@@ -11,6 +11,9 @@ Usage:
     python test.py --group oidc_core              # Same as above
     python test.py --group fapi2_security_mtls    # Run FAPI2 mTLS plans
     python test.py --group all                    # Run everything
+    python test.py --group all --parallel 4       # Run 4 plans concurrently
+                                                  # (key rotation / logout / session
+                                                  #  modules are serialized)
 
 Prerequisites:
     1. OIDC conformance suite running (docker compose up)
@@ -121,7 +124,77 @@ def load_config(path="config.yml") -> dict:
     return expanded
 
 
-async def run_plan(conformance, plan_name, variant, base_plan_config, skip_modules=None, label="", hooks=None):
+# Modules that mutate global server state and therefore must never overlap
+# with any other module when plans run in parallel:
+#   - key rotation swaps the signing keys for every client;
+#   - session/logout flows rely on browser cookies shared by the suite.
+_SERIAL_MODULE_PATTERNS = (
+    "rotate-keys",
+    "logout",
+    "session",
+    "front-channel",
+    "back-channel",
+)
+
+
+def _is_serial_module(module_name: str) -> bool:
+    name = module_name.lower()
+    return any(pat in name for pat in _SERIAL_MODULE_PATTERNS)
+
+
+class _Gate:
+    """Read/write gate for parallel plan execution.
+
+    Plans run concurrently holding a shared slot (up to ``permits``). Modules
+    that need exclusive access (key rotation, logout/session flows) give back
+    their shared slot and wait until no other plan is running, so they never
+    overlap with anything, then restore their shared slot.
+    """
+
+    def __init__(self, permits: int):
+        self.permits = max(1, permits)
+        self._active = 0
+        self._exclusive = False
+        self._pending_exclusive = 0
+        self._cond = asyncio.Condition()
+
+    async def acquire_shared(self):
+        async with self._cond:
+            await self._cond.wait_for(
+                lambda: not self._exclusive
+                and self._pending_exclusive == 0
+                and self._active < self.permits
+            )
+            self._active += 1
+
+    async def release_shared(self):
+        async with self._cond:
+            self._active -= 1
+            self._cond.notify_all()
+
+    async def acquire_exclusive(self):
+        async with self._cond:
+            # Hand back the shared slot so other plans can drain.
+            self._active -= 1
+            self._pending_exclusive += 1
+            self._cond.notify_all()
+            try:
+                await self._cond.wait_for(
+                    lambda: not self._exclusive and self._active == 0
+                )
+            finally:
+                self._pending_exclusive -= 1
+            self._exclusive = True
+
+    async def release_exclusive(self):
+        async with self._cond:
+            self._exclusive = False
+            # Restore the shared slot held by this plan.
+            self._active += 1
+            self._cond.notify_all()
+
+
+async def run_plan(conformance, plan_name, variant, base_plan_config, skip_modules=None, label="", hooks=None, gate=None):
     """Create a test plan, run all modules, return (passed, failed, errors, review, skipped_manual, skipped_auto).
     hooks: dict mapping module_name -> async hook_fn(conformance, module_id) -> bool (True to resume)."""
     print(f"\n{'=' * 60}")
@@ -147,14 +220,18 @@ async def run_plan(conformance, plan_name, variant, base_plan_config, skip_modul
 
     passed = failed = errors = review = skipped_manual = skipped_auto = 0
 
-    for test in test_plan["modules"]:
+    if gate is not None:
+        await gate.acquire_shared()
+
+    async def _run_module(test):
+        nonlocal passed, failed, errors, review, skipped_manual, skipped_auto
         module_name = test["testModule"]
         module_variant = test["variant"]
 
         if skip_modules and module_name in skip_modules:
             print(f"\n  Module: {module_name} — SKIPPED (in skip list)")
             skipped_manual += 1
-            continue
+            return
 
         print(f"\n  Module: {module_name}")
 
@@ -208,7 +285,7 @@ async def run_plan(conformance, plan_name, variant, base_plan_config, skip_modul
                 if status2 == "FINISHED" and result2 == "PASSED":
                     print(f"  Result: [PASS] PASSED (after retry)")
                     passed += 1
-                    continue
+                    return
                 # Retry also failed — report original failure
                 print(f"  Retry also: {result2}")
                 status = info.get("status")
@@ -248,6 +325,22 @@ async def run_plan(conformance, plan_name, variant, base_plan_config, skip_modul
 
         # Small delay between modules to let the server settle
         await asyncio.sleep(0.5)
+
+    try:
+        for test in test_plan["modules"]:
+            module_name = test["testModule"]
+            if gate is not None and _is_serial_module(module_name):
+                print(f"  (exclusive: {module_name} — draining parallel plans)")
+                await gate.acquire_exclusive()
+                try:
+                    await _run_module(test)
+                finally:
+                    await gate.release_exclusive()
+            else:
+                await _run_module(test)
+    finally:
+        if gate is not None:
+            await gate.release_shared()
 
     print(f"\n  Plan summary: {passed} passed, {failed} failed, {review} review, {errors} errors, "
           f"{skipped_manual} skipped (manual), {skipped_auto} skipped (auto)")
@@ -339,6 +432,13 @@ async def main():
     parser.add_argument("--suite-url", default=None, help="Override suite URL")
     parser.add_argument("--token", default=None, help="Override API token")
     parser.add_argument("--publish", default=None, help="Publish results (e.g. 'summary')")
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help="Run up to N test plans concurrently (default 1 = sequential). "
+             "Key-rotation and logout/session modules are automatically serialized.",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -386,6 +486,7 @@ async def main():
     total_passed = total_failed = total_errors = total_review = 0
     total_skipped_manual = total_skipped_auto = 0
     skip_modules = set(config.get("skip_modules", []))
+    jobs = []  # (plan_name, variant, plan_config, label) — expanded plan runs
 
     # Build module hooks from config (e.g. rotate_key_endpoint)
     hooks = {}
@@ -453,40 +554,48 @@ async def main():
                         for v, vals in _expand_ranges(base, range_keys):
                             label = f"{tc_name}/{'_'.join(vals)}"
                             print(f"\n  [{label}]")
-                            p, f, e, r, sm, sa = await run_plan(
-                                conformance, plan_name, v,
-                                tc_cfg, skip_modules, label=label, hooks=hooks,
-                            )
-                            total_passed += p
-                            total_failed += f
-                            total_errors += e
-                            total_review += r
-                            total_skipped_manual += sm
-                            total_skipped_auto += sa
+                            jobs.append((plan_name, v, tc_cfg, label))
                     else:
                         label = tc_name
                         print(f"\n  [{label}]")
-                        p, f, e, r, sm, sa = await run_plan(
-                            conformance, plan_name, variant,
-                            tc_cfg, skip_modules, label=label, hooks=hooks,
-                        )
-                        total_passed += p
-                        total_failed += f
-                        total_errors += e
-                        total_review += r
-                        total_skipped_manual += sm
-                        total_skipped_auto += sa
+                        jobs.append((plan_name, variant, tc_cfg, label))
             else:
-                p, f, e, r, sm, sa = await run_plan(
-                    conformance, plan_name, plan_def.get("variant"),
-                    plan_cfg, skip_modules, hooks=hooks,
-                )
-                total_passed += p
-                total_failed += f
-                total_errors += e
-                total_review += r
-                total_skipped_manual += sm
-                total_skipped_auto += sa
+                jobs.append((plan_name, plan_def.get("variant"), plan_cfg, ""))
+
+    gate = _Gate(args.parallel) if args.parallel > 1 else None
+    if args.parallel > 1:
+        print(f"\nRunning {len(jobs)} plan(s), up to {args.parallel} in parallel "
+              f"(key rotation and logout/session modules are serialized)")
+
+    async def _run_job(job):
+        plan_name, variant, cfg, label = job
+        return await run_plan(
+            conformance, plan_name, variant, cfg,
+            skip_modules, label=label, hooks=hooks, gate=gate,
+        )
+
+    def _accumulate(res):
+        nonlocal total_passed, total_failed, total_errors, total_review
+        nonlocal total_skipped_manual, total_skipped_auto
+        if isinstance(res, BaseException):
+            print(f"  Plan error: {type(res).__name__}: {res}")
+            total_errors += 1
+            return
+        p, f, e, r, sm, sa = res
+        total_passed += p
+        total_failed += f
+        total_errors += e
+        total_review += r
+        total_skipped_manual += sm
+        total_skipped_auto += sa
+
+    if args.parallel > 1:
+        results = await asyncio.gather(*[_run_job(j) for j in jobs], return_exceptions=True)
+        for res in results:
+            _accumulate(res)
+    else:
+        for job in jobs:
+            _accumulate(await _run_job(job))
 
     print(f"\n{'=' * 60}")
     print(f"TOTAL: {total_passed} passed, {total_failed} failed, {total_review} review, {total_errors} errors, "
